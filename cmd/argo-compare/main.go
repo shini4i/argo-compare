@@ -1,10 +1,22 @@
 package main
 
-import "fmt"
-
 func main() {
-	app := Application{File: "tmp/example.yaml"}
+	app := Application{File: "tmp/example-src.yaml", Type: "src"}
 	app.parse()
-	fmt.Println(app.App.Spec.Source.Helm.Values)
 	app.writeValuesYaml()
+	app.collectHelmChart()
+	app.extractChart()
+	app.renderTemplate()
+
+	app2 := Application{File: "tmp/example-dst.yaml", Type: "dst"}
+	app2.parse()
+	app2.writeValuesYaml()
+	if app.App.Spec.Source.TargetRevision != app2.App.Spec.Source.TargetRevision {
+		app2.collectHelmChart()
+	}
+	app2.extractChart()
+	app2.renderTemplate()
+
+	comparer := Compare{}
+	comparer.findFiles()
 }
