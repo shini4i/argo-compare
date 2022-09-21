@@ -2,13 +2,11 @@ package main
 
 import (
 	"fmt"
-	"github.com/romana/rlog"
+	m "github.com/shini4i/argo-compare/internal/models"
 	"gopkg.in/yaml.v3"
 	"log"
 	"os"
 	"os/exec"
-
-	m "github.com/shini4i/argo-compare/internal/models"
 )
 
 type Application struct {
@@ -20,7 +18,7 @@ type Application struct {
 func (a *Application) parse() {
 	app := m.Application{}
 
-	rlog.Debugf("Parsing %s file...\n", a.File)
+	log.Printf("Parsing %s file...\n", a.File)
 
 	yamlFile, err := os.ReadFile(a.File)
 	if err != nil {
@@ -48,7 +46,7 @@ func (a *Application) writeValuesYaml() {
 }
 
 func (a *Application) collectHelmChart() {
-	rlog.Debugf("Downloading version %s of %s chart...\n",
+	log.Printf("Downloading version %s of %s chart...\n",
 		a.App.Spec.Source.TargetRevision,
 		a.App.Spec.Source.Chart,
 	)
@@ -60,8 +58,6 @@ func (a *Application) collectHelmChart() {
 		"--repo", a.App.Spec.Source.RepoURL,
 		a.App.Spec.Source.Chart,
 		"--version", a.App.Spec.Source.TargetRevision)
-
-	rlog.Debugf("Running command: %s\n", cmd.String())
 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -76,7 +72,7 @@ func (a *Application) collectHelmChart() {
 func (a *Application) extractChart() {
 	// We have a separate function for this and not using helm to extract the content of the chart
 	// because we don't want to re-download the chart if the TargetRevision is the same
-	rlog.Debugf("Extracting %s chart to tmp/charts/%s...\n", a.App.Spec.Source.Chart, a.Type)
+	log.Printf("Extracting %s chart to tmp/charts/%s...\n", a.App.Spec.Source.Chart, a.Type)
 
 	path := fmt.Sprintf("tmp/charts/%s/%s", a.Type, a.App.Spec.Source.Chart)
 	if err := os.MkdirAll(path, os.ModePerm); err != nil {
@@ -90,8 +86,6 @@ func (a *Application) extractChart() {
 		"-C", fmt.Sprintf("tmp/charts/%s", a.Type),
 	)
 
-	rlog.Debugf("Running command: %s\n", cmd.String())
-
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -103,7 +97,7 @@ func (a *Application) extractChart() {
 }
 
 func (a *Application) renderTemplate() {
-	rlog.Debugf("Rendering %s template...\n", a.App.Spec.Source.Chart)
+	log.Printf("Rendering %s template...\n", a.App.Spec.Source.Chart)
 
 	cmd := exec.Command(
 		"helm",
@@ -113,8 +107,6 @@ func (a *Application) renderTemplate() {
 		"--values", fmt.Sprintf("tmp/charts/%s/%s/values.yaml", a.Type, a.App.Spec.Source.Chart),
 		"--values", fmt.Sprintf("tmp/values-%s.yaml", a.Type),
 	)
-
-	rlog.Debugf("Running command: %s\n", cmd.String())
 
 	cmd.Stderr = os.Stderr
 
