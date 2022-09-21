@@ -1,3 +1,7 @@
+github.com/mattn/go-zglob v0.0.3 h1:6Ry4EYsScDyt5di4OI6xw1bYhOqfE5S33Z1OPy+d+To=
+github.com/mattn/go-zglob v0.0.3/go.mod h1:9fxibJccNxU2cnpIKLRRFA7zX7qhkJIQWBb449FYHOo=
+github.com/romana/rlog v0.0.0-20220412051723-c08f605858a9 h1:8tVb/1pwM1HrrK4HuBJIWREOSJ5Z1oouS6nilsXrL+Q=
+github.com/romana/rlog v0.0.0-20220412051723-c08f605858a9/go.mod h1:kPzumBKm/AKQWtDbtf8w0s/R+LwoYT1rTjsOYGcS82k=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
