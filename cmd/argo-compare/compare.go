@@ -3,9 +3,9 @@ package main
 import (
 	"crypto/sha256"
 	"github.com/mattn/go-zglob"
+	"github.com/romana/rlog"
 	"hash"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"reflect"
@@ -41,7 +41,6 @@ func (c *Compare) findFiles() {
 		c.compareFiles()
 	}
 
-	c.printDiffFiles()
 	c.findNewOrRemovedFiles()
 }
 
@@ -60,7 +59,7 @@ func getFileSha(file string) hash.Hash {
 	// We are using SHA as a way to detect if two files are identical
 	f, err := os.Open(file)
 	if err != nil {
-		log.Fatal(err)
+		rlog.Criticalf(err.Error())
 	}
 	defer func(f *os.File) {
 		err := f.Close()
@@ -71,7 +70,7 @@ func getFileSha(file string) hash.Hash {
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
-		log.Fatal(err)
+		rlog.Criticalf(err.Error())
 	}
 
 	return h
@@ -93,7 +92,7 @@ func (c *Compare) compareFiles() {
 
 func (c *Compare) printDiffFiles() {
 	for _, diffFile := range c.diffFiles {
-		log.Println("File: " + diffFile.Name + " is different")
+		rlog.Println("File: " + diffFile.Name + " is different")
 
 		cmd := exec.Command("diff", "tmp/templates/src/"+diffFile.Name, "tmp/templates/dst/"+diffFile.Name)
 
@@ -135,4 +134,28 @@ func (c *Compare) findNewOrRemovedFiles() {
 
 	c.addedFiles = newFiles
 	c.removedFiles = removedFiles
+}
+
+func (c *Compare) printCompareResults() {
+	if len(c.addedFiles) > 0 {
+		rlog.Debugf("New files:")
+		for _, addedFile := range c.addedFiles {
+			rlog.Debugf(addedFile.Name)
+		}
+	}
+
+	if len(c.removedFiles) > 0 {
+		rlog.Debugf("Removed files:")
+		for _, removedFile := range c.removedFiles {
+			rlog.Debugf(removedFile.Name)
+		}
+	}
+
+	if len(c.diffFiles) > 0 {
+		rlog.Debugf("Files with differences:")
+		for _, diffFile := range c.diffFiles {
+			rlog.Debugf(diffFile.Name)
+		}
+		c.printDiffFiles()
+	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/romana/rlog"
 	m "github.com/shini4i/argo-compare/internal/models"
 	"gopkg.in/yaml.v3"
 	"log"
@@ -18,7 +19,7 @@ type Application struct {
 func (a *Application) parse() {
 	app := m.Application{}
 
-	log.Printf("Parsing %s file...\n", a.File)
+	rlog.Debugf("Parsing %s file...\n", a.File)
 
 	yamlFile, err := os.ReadFile(a.File)
 	if err != nil {
@@ -46,7 +47,7 @@ func (a *Application) writeValuesYaml() {
 }
 
 func (a *Application) collectHelmChart() {
-	log.Printf("Downloading version %s of %s chart...\n",
+	rlog.Infof("Downloading version %s of %s chart...\n",
 		a.App.Spec.Source.TargetRevision,
 		a.App.Spec.Source.Chart,
 	)
@@ -65,18 +66,18 @@ func (a *Application) collectHelmChart() {
 	err := cmd.Run()
 
 	if err != nil {
-		log.Fatal(err)
+		rlog.Critical(err)
 	}
 }
 
 func (a *Application) extractChart() {
 	// We have a separate function for this and not using helm to extract the content of the chart
 	// because we don't want to re-download the chart if the TargetRevision is the same
-	log.Printf("Extracting %s chart to tmp/charts/%s...\n", a.App.Spec.Source.Chart, a.Type)
+	rlog.Debugf("Extracting %s chart to tmp/charts/%s...\n", a.App.Spec.Source.Chart, a.Type)
 
 	path := fmt.Sprintf("tmp/charts/%s/%s", a.Type, a.App.Spec.Source.Chart)
 	if err := os.MkdirAll(path, os.ModePerm); err != nil {
-		log.Fatal(err)
+		rlog.Critical(err)
 	}
 
 	cmd := exec.Command(
@@ -97,7 +98,7 @@ func (a *Application) extractChart() {
 }
 
 func (a *Application) renderTemplate() {
-	log.Printf("Rendering %s template...\n", a.App.Spec.Source.Chart)
+	rlog.Debugf("Rendering %s template...\n", a.App.Spec.Source.Chart)
 
 	cmd := exec.Command(
 		"helm",
@@ -113,6 +114,6 @@ func (a *Application) renderTemplate() {
 	err := cmd.Run()
 
 	if err != nil {
-		log.Fatal(err)
+		rlog.Critical(err)
 	}
 }
