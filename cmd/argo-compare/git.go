@@ -61,6 +61,11 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 		rlog.Criticalf(err.Error())
 	}
 
+	_, err = tmpFile.WriteString(out.String())
+	if err != nil {
+		rlog.Criticalf(err.Error())
+	}
+
 	defer func(name string) {
 		err := os.Remove(name)
 		if err != nil {

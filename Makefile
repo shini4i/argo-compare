@@ -6,4 +6,4 @@ help: ## Print this help
 
 .PHONY: test
 test: ## Run tests
-	@go test -v ./...
+	@RLOG_LOG_LEVEL=NONE go test -v ./... -count=1
