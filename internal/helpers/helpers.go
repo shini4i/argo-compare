@@ -1,6 +1,18 @@
 package helpers
 
-import "os"
+import (
+	"github.com/romana/rlog"
+	"os"
+)
+
+func ReadFile(file string) []byte {
+	readFile, err := os.ReadFile(file)
+	if err != nil {
+		rlog.Critical(err)
+	}
+
+	return readFile
+}
 
 func GetEnv(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {

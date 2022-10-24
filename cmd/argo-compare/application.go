@@ -3,11 +3,13 @@ package main
 import (
 	"fmt"
 	"github.com/romana/rlog"
-	m "github.com/shini4i/argo-compare/internal/models"
 	"gopkg.in/yaml.v3"
 	"log"
 	"os"
 	"os/exec"
+
+	h "github.com/shini4i/argo-compare/internal/helpers"
+	m "github.com/shini4i/argo-compare/internal/models"
 )
 
 type Application struct {
@@ -21,12 +23,9 @@ func (a *Application) parse() {
 
 	rlog.Debugf("Parsing %s file...\n", a.File)
 
-	yamlFile, err := os.ReadFile(a.File)
-	if err != nil {
-		panic(err)
-	}
+	yamlFile := h.ReadFile(a.File)
 
-	err = yaml.Unmarshal(yamlFile, &app)
+	err := yaml.Unmarshal(yamlFile, &app)
 	if err != nil {
 		panic(err)
 	}
