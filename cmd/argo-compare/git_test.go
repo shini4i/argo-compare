@@ -39,7 +39,7 @@ func TestChangedFilesSuccess(t *testing.T) {
 
 func TestCheckIfApp(t *testing.T) {
 	if !checkIfApp(appFile) {
-		t.Errorf("test.yaml should be an app")
+		t.Errorf("test.yaml should be detected as app")
 	}
 }
 

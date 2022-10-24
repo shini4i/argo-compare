@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/romana/rlog"
 	"gopkg.in/yaml.v3"
 	"os"
@@ -38,6 +39,24 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) []string {
 	rlog.Debugf("Changed files: %v", g.changedFiles)
 
 	return g.changedFiles
+}
+
+func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, cmdContext execContext) string {
+	rlog.Debugf("Getting content of %s from %s", targetFile, targetBranch)
+
+	cmd := cmdContext(fmt.Sprintf("git show %s:%s", targetBranch, targetFile))
+
+	var out bytes.Buffer
+
+	cmd.Stdout = &out
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Run()
+	if err != nil {
+		rlog.Criticalf(err.Error())
+	}
+
+	return out.String()
 }
 
 func checkIfApp(file string) bool {
