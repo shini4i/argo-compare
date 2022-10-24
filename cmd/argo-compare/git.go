@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/romana/rlog"
-	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,10 +40,10 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) []string {
 	return g.changedFiles
 }
 
-func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, cmdContext execContext) string {
+func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, cmdContext execContext) m.Application {
 	rlog.Debugf("Getting content of %s from %s", targetFile, targetBranch)
 
-	cmd := cmdContext(fmt.Sprintf("git show %s:%s", targetBranch, targetFile))
+	cmd := cmdContext(fmt.Sprintf("git --no-pager show %s:%s", targetBranch, targetFile))
 
 	var out bytes.Buffer
 
@@ -56,22 +55,32 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 		rlog.Criticalf(err.Error())
 	}
 
-	return out.String()
+	// writing the content to a temporary file to be able to pass it to the parser
+	tmpFile, err := os.CreateTemp("/tmp", "compare-*.yaml")
+	if err != nil {
+		rlog.Criticalf(err.Error())
+	}
+
+	defer func(name string) {
+		err := os.Remove(name)
+		if err != nil {
+			rlog.Criticalf(err.Error())
+		}
+	}(tmpFile.Name())
+
+	app := Application{File: tmpFile.Name()}
+	app.parse()
+
+	return app.App
 }
 
 func checkIfApp(file string) bool {
-	app := m.Application{}
-	yamlFile, err := os.ReadFile(file)
-	if err != nil {
-		panic(err)
-	}
+	rlog.Debugf("Checking if %s is an app", file)
 
-	err = yaml.Unmarshal(yamlFile, &app)
-	if err != nil {
-		return false
-	}
+	app := Application{File: file}
+	app.parse()
 
-	if app.Kind == "Application" {
+	if app.App.Kind == "Application" {
 		return true
 	}
 	return false
