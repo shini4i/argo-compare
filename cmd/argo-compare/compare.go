@@ -4,11 +4,13 @@ import (
 	"crypto/sha256"
 	"github.com/mattn/go-zglob"
 	"github.com/romana/rlog"
+	h "github.com/shini4i/argo-compare/internal/helpers"
 	"hash"
 	"io"
 	"os"
-	"os/exec"
 	"reflect"
+
+	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
 type File struct {
@@ -68,12 +70,12 @@ func getFileSha(file string) hash.Hash {
 		}
 	}(f)
 
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	fileHash := sha256.New()
+	if _, err := io.Copy(fileHash, f); err != nil {
 		rlog.Criticalf(err.Error())
 	}
 
-	return h
+	return fileHash
 }
 
 func (c *Compare) compareFiles() {
@@ -94,13 +96,14 @@ func (c *Compare) printDiffFiles() {
 	for _, diffFile := range c.diffFiles {
 		rlog.Println("File: " + diffFile.Name + " is different")
 
-		cmd := exec.Command("diff", "tmp/templates/src/"+diffFile.Name, "tmp/templates/dst/"+diffFile.Name)
+		diff := diffmatchpatch.New()
 
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		srcFile := string(h.ReadFile("tmp/templates/src/" + diffFile.Name))
+		dstFile := string(h.ReadFile("tmp/templates/dst/" + diffFile.Name))
 
-		// We don't care about the error here, as diff exits 1 if there are differences
-		_ = cmd.Run()
+		diffs := diff.DiffMain(srcFile, dstFile, false)
+
+		rlog.Println(diff.DiffPrettyText(diffs))
 	}
 }
 

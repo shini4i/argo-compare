@@ -14,8 +14,9 @@ const (
 )
 
 var (
-	git             = GitRepo{}
-	gitChangedFiles = fmt.Sprintf("go.mod\n%s\n", appFile)
+	git                = GitRepo{}
+	gitChangedFiles    = fmt.Sprintf("go.mod\n%s\n", appFile)
+	changedFileContent = h.ReadFile(appFile)
 )
 
 func TestChangedFiles(t *testing.T) {
@@ -23,6 +24,17 @@ func TestChangedFiles(t *testing.T) {
 
 	if !h.Contains(stdout, appFile) {
 		t.Errorf("test.yaml should be in the list")
+	}
+}
+
+func TestGetChangedFileContent(t *testing.T) {
+	content := git.getChangedFileContent("main", appFile, fakeFileContent)
+
+	app := Application{File: appFile}
+	app.parse()
+
+	if content != app.App {
+		t.Errorf("content should be equal to app.App")
 	}
 }
 
@@ -37,14 +49,33 @@ func TestChangedFilesSuccess(t *testing.T) {
 	os.Exit(0)
 }
 
+func TestFileContentSuccess(t *testing.T) {
+	if os.Getenv("GO_TEST_PROCESS") != "1" {
+		return
+	}
+	_, err := fmt.Fprintf(os.Stdout, string(changedFileContent))
+	if err != nil {
+		return
+	}
+	os.Exit(0)
+}
+
 func TestCheckIfApp(t *testing.T) {
 	if !checkIfApp(appFile) {
-		t.Errorf("test.yaml should be an app")
+		t.Errorf("test.yaml should be detected as app")
 	}
 }
 
 func fakeChangedFile(command string, args ...string) *exec.Cmd {
 	cs := []string{"-test.run=TestChangedFilesSuccess", "--", command}
+	cs = append(cs, args...)
+	cmd := exec.Command(os.Args[0], cs...)
+	cmd.Env = []string{"GO_TEST_PROCESS=1"}
+	return cmd
+}
+
+func fakeFileContent(command string, args ...string) *exec.Cmd {
+	cs := []string{"-test.run=TestFileContentSuccess", "--", command}
 	cs = append(cs, args...)
 	cmd := exec.Command(os.Args[0], cs...)
 	cmd.Env = []string{"GO_TEST_PROCESS=1"}
