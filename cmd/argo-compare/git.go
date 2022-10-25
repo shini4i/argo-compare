@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"github.com/romana/rlog"
 	"os"
 	"path/filepath"
@@ -43,7 +42,7 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) []string {
 func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, cmdContext execContext) m.Application {
 	rlog.Debugf("Getting content of %s from %s", targetFile, targetBranch)
 
-	cmd := cmdContext(fmt.Sprintf("git --no-pager show %s:%s", targetBranch, targetFile))
+	cmd := cmdContext("git", "--no-pager", "show", targetBranch+":"+targetFile)
 
 	var out bytes.Buffer
 
