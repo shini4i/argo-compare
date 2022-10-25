@@ -70,12 +70,12 @@ func getFileSha(file string) hash.Hash {
 		}
 	}(f)
 
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	fileHash := sha256.New()
+	if _, err := io.Copy(fileHash, f); err != nil {
 		rlog.Criticalf(err.Error())
 	}
 
-	return h
+	return fileHash
 }
 
 func (c *Compare) compareFiles() {
