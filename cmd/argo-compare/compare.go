@@ -101,7 +101,7 @@ func (c *Compare) printDiffFiles() {
 		srcFile := string(h.ReadFile("tmp/templates/src/" + diffFile.Name))
 		dstFile := string(h.ReadFile("tmp/templates/dst/" + diffFile.Name))
 
-		diffs := diff.DiffMain(srcFile, dstFile, false)
+		diffs := diff.DiffMain(dstFile, srcFile, false)
 
 		rlog.Println(diff.DiffPrettyText(diffs))
 	}
