@@ -2,19 +2,32 @@ package main
 
 import (
 	"fmt"
+	"github.com/alecthomas/kong"
 	"github.com/romana/rlog"
-	h "github.com/shini4i/argo-compare/internal/helpers"
 	m "github.com/shini4i/argo-compare/internal/models"
 	"os"
 	"os/exec"
 )
 
-var targetBranch = h.GetEnv("TARGET_BRANCH", "main")
+var (
+	targetBranch string
+	debug        = false
+)
+
+var CLI struct {
+	Debug bool `help:"Enable debug mode" short:"d"`
+
+	Branch struct {
+		Name string `arg:"" type:"string"`
+	} `cmd:"" help:"Compare with a specific branch" type:"string"`
+}
 
 type execContext = func(name string, arg ...string) *exec.Cmd
 
 func processFiles(fileName string, fileType string, application m.Application) {
-	rlog.Debugf("Processing %s changed files", fileType)
+	if debug {
+		fmt.Printf("Processing %s changed files\n", fileType)
+	}
 
 	app := Application{File: fileName, Type: fileType, App: application}
 	if fileType == "src" {
@@ -34,6 +47,21 @@ func compareFiles() {
 }
 
 func main() {
+	ctx := kong.Parse(&CLI,
+		kong.Name("argo-compare"),
+		kong.Description("Compare ArgoCD applications between git branches"))
+
+	switch ctx.Command() {
+	case "branch <name>":
+		targetBranch = CLI.Branch.Name
+	default:
+		panic(ctx.Command())
+	}
+
+	if CLI.Debug {
+		debug = true
+	}
+
 	repo := GitRepo{}
 
 	changedFiles := repo.getChangedFiles(exec.Command)

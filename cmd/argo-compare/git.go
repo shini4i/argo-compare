@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/romana/rlog"
 	"os"
 	"path/filepath"
@@ -33,13 +34,17 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) []string {
 		}
 	}
 
-	rlog.Debugf("Changed files: %v", g.changedFiles)
+	if debug {
+		fmt.Printf("Changed files: %v\n", g.changedFiles)
+	}
 
 	return g.changedFiles
 }
 
 func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, cmdContext execContext) m.Application {
-	rlog.Debugf("Getting content of %s from %s", targetFile, targetBranch)
+	if debug {
+		fmt.Printf("Getting content of %s from %s\n", targetFile, targetBranch)
+	}
 
 	cmd := cmdContext("git", "--no-pager", "show", targetBranch+":"+targetFile)
 
@@ -78,7 +83,9 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 }
 
 func checkIfApp(file string) bool {
-	rlog.Debugf("Checking if %s is an app", file)
+	if debug {
+		fmt.Printf("Checking if %s is an app\n", file)
+	}
 
 	app := Application{File: file}
 	app.parse()

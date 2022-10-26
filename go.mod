@@ -8,3 +8,5 @@ require (
 	github.com/sergi/go-diff v1.1.0
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+require github.com/alecthomas/kong v0.7.0
