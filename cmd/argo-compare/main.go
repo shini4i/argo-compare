@@ -3,10 +3,13 @@ package main
 import (
 	"fmt"
 	"github.com/romana/rlog"
+	h "github.com/shini4i/argo-compare/internal/helpers"
 	m "github.com/shini4i/argo-compare/internal/models"
 	"os"
 	"os/exec"
 )
+
+var targetBranch = h.GetEnv("TARGET_BRANCH", "main")
 
 type execContext = func(name string, arg ...string) *exec.Cmd
 
@@ -52,7 +55,7 @@ func main() {
 		}
 
 		processFiles(file, "src", m.Application{})
-		app := repo.getChangedFileContent("main", file, exec.Command)
+		app := repo.getChangedFileContent(targetBranch, file, exec.Command)
 		processFiles(file, "dst", app)
 		compareFiles()
 
