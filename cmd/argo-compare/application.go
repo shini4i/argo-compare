@@ -46,7 +46,7 @@ func (a *Application) writeValuesYaml() {
 }
 
 func (a *Application) collectHelmChart() {
-	rlog.Infof("Downloading version %s of %s chart...\n",
+	rlog.Debugf("Downloading version %s of %s chart...\n",
 		a.App.Spec.Source.TargetRevision,
 		a.App.Spec.Source.Chart,
 	)

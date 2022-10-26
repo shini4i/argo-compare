@@ -15,7 +15,6 @@ type GitRepo struct {
 }
 
 func (g *GitRepo) getChangedFiles(cmdContext execContext) []string {
-	rlog.Println("Getting changed files")
 	cmd := cmdContext("git", "--no-pager", "diff", "--name-only", "main")
 
 	var out bytes.Buffer

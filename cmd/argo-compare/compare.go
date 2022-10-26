@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"fmt"
 	"github.com/mattn/go-zglob"
 	"github.com/romana/rlog"
 	h "github.com/shini4i/argo-compare/internal/helpers"
@@ -94,8 +95,6 @@ func (c *Compare) compareFiles() {
 
 func (c *Compare) printDiffFiles() {
 	for _, diffFile := range c.diffFiles {
-		rlog.Println("File: " + diffFile.Name + " is different")
-
 		diff := diffmatchpatch.New()
 
 		srcFile := string(h.ReadFile("tmp/templates/src/" + diffFile.Name))
@@ -103,7 +102,7 @@ func (c *Compare) printDiffFiles() {
 
 		diffs := diff.DiffMain(dstFile, srcFile, false)
 
-		rlog.Println(diff.DiffPrettyText(diffs))
+		fmt.Println(diff.DiffPrettyText(diffs))
 	}
 }
 
@@ -141,24 +140,27 @@ func (c *Compare) findNewOrRemovedFiles() {
 
 func (c *Compare) printCompareResults() {
 	if len(c.addedFiles) > 0 {
-		rlog.Debugf("New files:")
+		fmt.Println("The following files would be added:")
 		for _, addedFile := range c.addedFiles {
-			rlog.Debugf(addedFile.Name)
+			fmt.Println(" - " + addedFile.Name)
 		}
+		fmt.Println()
 	}
 
 	if len(c.removedFiles) > 0 {
-		rlog.Debugf("Removed files:")
+		fmt.Println("The following files would be removed:")
 		for _, removedFile := range c.removedFiles {
-			rlog.Debugf(removedFile.Name)
+			fmt.Println(" - " + removedFile.Name)
 		}
+		fmt.Println()
 	}
 
 	if len(c.diffFiles) > 0 {
-		rlog.Debugf("Files with differences:")
+		fmt.Println("The following files would be changed:")
 		for _, diffFile := range c.diffFiles {
-			rlog.Debugf(diffFile.Name)
+			fmt.Println(" - " + diffFile.Name)
 		}
+		fmt.Println()
 		c.printDiffFiles()
 	}
 }
