@@ -9,19 +9,14 @@ import (
 
 type execContext = func(name string, arg ...string) *exec.Cmd
 
-func processSrcFiles(fileName string) {
-	rlog.Info("Processing changed files")
-	app := Application{File: fileName, Type: "src"}
-	app.parse()
-	app.writeValuesYaml()
-	app.collectHelmChart()
-	app.extractChart()
-	app.renderTemplate()
-}
+func processFiles(fileName string, fileType string, application m.Application) {
+	rlog.Infof("Processing %s changed files", fileType)
 
-func processDstFiles(fileName string, application m.Application) {
-	rlog.Info("Processing destination files")
-	app := Application{File: fileName, App: application, Type: "dst"}
+	app := Application{File: fileName, Type: fileType, App: application}
+	if fileType == "src" {
+		app.parse()
+	}
+	
 	app.writeValuesYaml()
 	app.collectHelmChart()
 	app.extractChart()
@@ -46,9 +41,9 @@ func main() {
 	repo := GitRepo{}
 
 	for _, file := range repo.getChangedFiles(exec.Command) {
-		processSrcFiles(file)
+		processFiles(file, "src", m.Application{})
 		app := repo.getChangedFileContent("main", file, exec.Command)
-		processDstFiles(file, app)
+		processFiles(file, "dst", app)
 	}
 
 	comparer := Compare{}
