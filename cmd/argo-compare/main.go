@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/romana/rlog"
 	m "github.com/shini4i/argo-compare/internal/models"
+	"os"
 	"os/exec"
 )
 
@@ -28,6 +29,20 @@ func processDstFiles(fileName string, application m.Application) {
 }
 
 func main() {
+	if _, err := os.Stat("tmp/"); os.IsNotExist(err) {
+		err := os.Mkdir("tmp/", 0755)
+		if err != nil {
+			rlog.Criticalf(err.Error())
+		}
+	}
+
+	defer func() {
+		err := os.RemoveAll("tmp/")
+		if err != nil {
+			rlog.Criticalf(err.Error())
+		}
+	}()
+
 	repo := GitRepo{}
 
 	for _, file := range repo.getChangedFiles(exec.Command) {
