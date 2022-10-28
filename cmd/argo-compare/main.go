@@ -12,6 +12,7 @@ import (
 var (
 	targetBranch string
 	debug        = false
+	cacheDir     = fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME"))
 )
 
 var CLI struct {

@@ -13,9 +13,10 @@ import (
 )
 
 type Application struct {
-	File string
-	Type string // src or dst version
-	App  m.Application
+	File          string
+	Type          string // src or dst version
+	App           m.Application
+	chartLocation string
 }
 
 func (a *Application) parse() {
@@ -48,27 +49,44 @@ func (a *Application) writeValuesYaml() {
 }
 
 func (a *Application) collectHelmChart() {
-	if debug {
-		fmt.Printf("Downloading version %s of %s chart...\n",
-			a.App.Spec.Source.TargetRevision,
-			a.App.Spec.Source.Chart)
+	a.chartLocation = fmt.Sprintf("%s/%s", cacheDir, a.App.Spec.Source.RepoURL)
+
+	if err := os.MkdirAll(a.chartLocation, os.ModePerm); err != nil {
+		fmt.Println(err)
 	}
 
-	cmd := exec.Command(
-		"helm",
-		"pull",
-		"--destination", "tmp/",
-		"--repo", a.App.Spec.Source.RepoURL,
-		a.App.Spec.Source.Chart,
-		"--version", a.App.Spec.Source.TargetRevision)
+	fmt.Println(cacheDir)
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	if _, err := os.Stat(fmt.Sprintf("%s/%s-%s.tgz", a.chartLocation, a.App.Spec.Source.Chart, a.App.Spec.Source.TargetRevision)); os.IsNotExist(err) {
+		if debug {
+			fmt.Printf("Downloading version %s of %s chart...\n",
+				a.App.Spec.Source.TargetRevision,
+				a.App.Spec.Source.Chart)
+		}
 
-	err := cmd.Run()
+		cmd := exec.Command(
+			"helm",
+			"pull",
+			"--destination", a.chartLocation,
+			"--repo", a.App.Spec.Source.RepoURL,
+			a.App.Spec.Source.Chart,
+			"--version", a.App.Spec.Source.TargetRevision)
 
-	if err != nil {
-		rlog.Critical(err)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		err := cmd.Run()
+
+		if err != nil {
+			rlog.Critical(err)
+		}
+
+	} else {
+		if debug {
+			fmt.Printf("Version %s of %s chart already downloaded...\n",
+				a.App.Spec.Source.TargetRevision,
+				a.App.Spec.Source.Chart)
+		}
 	}
 }
 
@@ -87,7 +105,7 @@ func (a *Application) extractChart() {
 	cmd := exec.Command(
 		"tar",
 		"xf",
-		fmt.Sprintf("tmp/%s-%s.tgz", a.App.Spec.Source.Chart, a.App.Spec.Source.TargetRevision),
+		fmt.Sprintf("%s/%s-%s.tgz", a.chartLocation, a.App.Spec.Source.Chart, a.App.Spec.Source.TargetRevision),
 		"-C", fmt.Sprintf("tmp/charts/%s", a.Type),
 	)
 
