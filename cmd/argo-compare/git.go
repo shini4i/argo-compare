@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"github.com/romana/rlog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,7 +24,7 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) []string {
 
 	err := cmd.Run()
 	if err != nil {
-		rlog.Criticalf(err.Error())
+		fmt.Println(err.Error())
 	}
 
 	for _, file := range strings.Split(out.String(), "\n") {
@@ -55,24 +54,24 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 
 	err := cmd.Run()
 	if err != nil {
-		rlog.Criticalf(err.Error())
+		fmt.Println(err.Error())
 	}
 
 	// writing the content to a temporary file to be able to pass it to the parser
 	tmpFile, err := os.CreateTemp("/tmp", "compare-*.yaml")
 	if err != nil {
-		rlog.Criticalf(err.Error())
+		fmt.Println(err.Error())
 	}
 
 	_, err = tmpFile.WriteString(out.String())
 	if err != nil {
-		rlog.Criticalf(err.Error())
+		fmt.Println(err.Error())
 	}
 
 	defer func(name string) {
 		err := os.Remove(name)
 		if err != nil {
-			rlog.Criticalf(err.Error())
+			fmt.Println(err.Error())
 		}
 	}(tmpFile.Name())
 

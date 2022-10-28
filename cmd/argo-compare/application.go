@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/romana/rlog"
 	"gopkg.in/yaml.v3"
 	"log"
 	"os"
@@ -78,7 +77,7 @@ func (a *Application) collectHelmChart() {
 		err := cmd.Run()
 
 		if err != nil {
-			rlog.Critical(err)
+			fmt.Println(err)
 		}
 
 	} else {
@@ -138,6 +137,6 @@ func (a *Application) renderTemplate() {
 	err := cmd.Run()
 
 	if err != nil {
-		rlog.Critical(err)
+		fmt.Println(err)
 	}
 }

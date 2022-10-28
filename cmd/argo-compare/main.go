@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"github.com/alecthomas/kong"
-	"github.com/romana/rlog"
 	m "github.com/shini4i/argo-compare/internal/models"
 	"os"
 	"os/exec"
@@ -91,7 +90,7 @@ func main() {
 
 		err = os.RemoveAll(tmpDir)
 		if err != nil {
-			rlog.Criticalf(err.Error())
+			fmt.Println(err.Error())
 		}
 	}
 }
