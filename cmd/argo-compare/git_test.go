@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	appFile = "../../test/data/app-src.yaml"
+	appFile = "../../test/data/test.yaml"
 )
 
 var (
