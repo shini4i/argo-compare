@@ -4,12 +4,12 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"github.com/mattn/go-zglob"
-	"github.com/romana/rlog"
 	h "github.com/shini4i/argo-compare/internal/helpers"
 	"hash"
 	"io"
 	"os"
 	"reflect"
+	"strings"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
@@ -28,13 +28,13 @@ type Compare struct {
 }
 
 func (c *Compare) findFiles() {
-	srcFiles, err := zglob.Glob("tmp/templates/src/**/*.yaml")
+	srcFiles, err := zglob.Glob(fmt.Sprintf("%s/templates/src/**/*.yaml", tmpDir))
 	if err != nil {
 		panic(err)
 	}
 	c.srcFiles = c.processFiles(srcFiles)
 
-	dstFiles, err := zglob.Glob("tmp/templates/dst/**/*.yaml")
+	dstFiles, err := zglob.Glob(fmt.Sprintf("%s/templates/dst/**/*.yaml", tmpDir))
 	if err != nil {
 		panic(err)
 	}
@@ -51,8 +51,23 @@ func (c *Compare) processFiles(files []string) []File {
 	var strippedFiles []File
 	var file File
 
+	// TODO: Make this less ugly
 	for _, srcFile := range files {
-		file = File{Name: srcFile[18:], Sha: getFileSha(srcFile)}
+		s := strings.Split(srcFile, "/")
+		var count int
+
+		for _, v := range s {
+			count += len(v)
+			if v == "dst" {
+				break
+			} else if v == "src" {
+				break
+			}
+		}
+
+		count += 5 // add 5 for the length of /dst/ and /src/
+
+		file = File{Name: srcFile[count:], Sha: getFileSha(srcFile)}
 		strippedFiles = append(strippedFiles, file)
 	}
 	return strippedFiles
@@ -62,8 +77,9 @@ func getFileSha(file string) hash.Hash {
 	// We are using SHA as a way to detect if two files are identical
 	f, err := os.Open(file)
 	if err != nil {
-		rlog.Criticalf(err.Error())
+		fmt.Println(err.Error())
 	}
+
 	defer func(f *os.File) {
 		err := f.Close()
 		if err != nil {
@@ -73,7 +89,7 @@ func getFileSha(file string) hash.Hash {
 
 	fileHash := sha256.New()
 	if _, err := io.Copy(fileHash, f); err != nil {
-		rlog.Criticalf(err.Error())
+		fmt.Println(err.Error())
 	}
 
 	return fileHash
@@ -97,8 +113,8 @@ func (c *Compare) printDiffFiles() {
 	for _, diffFile := range c.diffFiles {
 		diff := diffmatchpatch.New()
 
-		srcFile := string(h.ReadFile("tmp/templates/src/" + diffFile.Name))
-		dstFile := string(h.ReadFile("tmp/templates/dst/" + diffFile.Name))
+		srcFile := string(h.ReadFile(tmpDir + "/templates/src/" + diffFile.Name))
+		dstFile := string(h.ReadFile(tmpDir + "/templates/dst/" + diffFile.Name))
 
 		diffs := diff.DiffMain(dstFile, srcFile, false)
 

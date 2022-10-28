@@ -13,6 +13,7 @@ var (
 	targetBranch string
 	debug        = false
 	cacheDir     = fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME"))
+	tmpDir       string
 )
 
 var CLI struct {
@@ -73,14 +74,14 @@ func main() {
 	}
 
 	for _, file := range changedFiles {
+		var err error
+
 		fmt.Println("Processing changed application: ", file)
 		fmt.Println()
 
-		if _, err := os.Stat("tmp/"); os.IsNotExist(err) {
-			err := os.Mkdir("tmp/", 0755)
-			if err != nil {
-				rlog.Criticalf(err.Error())
-			}
+		tmpDir, err = os.MkdirTemp("/tmp", "argo-compare-*")
+		if err != nil {
+			fmt.Println(err)
 		}
 
 		processFiles(file, "src", m.Application{})
@@ -88,7 +89,7 @@ func main() {
 		processFiles(file, "dst", app)
 		compareFiles()
 
-		err := os.RemoveAll("tmp/")
+		err = os.RemoveAll(tmpDir)
 		if err != nil {
 			rlog.Criticalf(err.Error())
 		}
