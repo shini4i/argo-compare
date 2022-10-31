@@ -17,6 +17,12 @@ A tool for showing difference between Application in a different git branches
 
 This tool will show what would be changed in the manifests rendered by helm after changes to the specific Application are merged into the target branch.
 
+### How to install
+The binary can be installed using homebrew:
+```bash
+brew install shini4i/tap/argo-compare
+```
+
 ### How it works
 - First, this tool will check which files are changed compared to the files in the target branch.
 - Then it will get the content of the changed Application files from the target branch.
