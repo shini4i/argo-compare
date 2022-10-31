@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"github.com/romana/rlog"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +24,7 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) []string {
 
 	err := cmd.Run()
 	if err != nil {
-		rlog.Criticalf(err.Error())
+		fmt.Println(err.Error())
 	}
 
 	for _, file := range strings.Split(out.String(), "\n") {
@@ -33,13 +33,17 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) []string {
 		}
 	}
 
-	rlog.Debugf("Changed files: %v", g.changedFiles)
+	if debug {
+		fmt.Printf("Changed files: %v\n", g.changedFiles)
+	}
 
 	return g.changedFiles
 }
 
 func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, cmdContext execContext) m.Application {
-	rlog.Debugf("Getting content of %s from %s", targetFile, targetBranch)
+	if debug {
+		fmt.Printf("Getting content of %s from %s\n", targetFile, targetBranch)
+	}
 
 	cmd := cmdContext("git", "--no-pager", "show", targetBranch+":"+targetFile)
 
@@ -50,24 +54,24 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 
 	err := cmd.Run()
 	if err != nil {
-		rlog.Criticalf(err.Error())
+		fmt.Println(err.Error())
 	}
 
 	// writing the content to a temporary file to be able to pass it to the parser
 	tmpFile, err := os.CreateTemp("/tmp", "compare-*.yaml")
 	if err != nil {
-		rlog.Criticalf(err.Error())
+		fmt.Println(err.Error())
 	}
 
 	_, err = tmpFile.WriteString(out.String())
 	if err != nil {
-		rlog.Criticalf(err.Error())
+		fmt.Println(err.Error())
 	}
 
 	defer func(name string) {
 		err := os.Remove(name)
 		if err != nil {
-			rlog.Criticalf(err.Error())
+			fmt.Println(err.Error())
 		}
 	}(tmpFile.Name())
 
@@ -78,7 +82,9 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 }
 
 func checkIfApp(file string) bool {
-	rlog.Debugf("Checking if %s is an app", file)
+	if debug {
+		fmt.Printf("Checking if %s is an app\n", file)
+	}
 
 	app := Application{File: file}
 	app.parse()

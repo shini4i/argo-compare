@@ -1,14 +1,14 @@
 package helpers
 
 import (
-	"github.com/romana/rlog"
+	"fmt"
 	"os"
 )
 
 func ReadFile(file string) []byte {
 	readFile, err := os.ReadFile(file)
 	if err != nil {
-		rlog.Critical(err)
+		fmt.Println(err)
 	}
 
 	return readFile
