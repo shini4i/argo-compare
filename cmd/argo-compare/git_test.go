@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"reflect"
 	"testing"
 
 	h "github.com/shini4i/argo-compare/internal/helpers"
@@ -33,7 +34,7 @@ func TestGetChangedFileContent(t *testing.T) {
 	app := Application{File: appFile}
 	app.parse()
 
-	if content != app.App {
+	if !reflect.DeepEqual(content, app.App) {
 		t.Errorf("content should be equal to app.App")
 	}
 }
