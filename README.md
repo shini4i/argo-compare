@@ -3,6 +3,7 @@
 # argo-compare
 A tool for showing difference between Application in a different git branches
 
+![GitHub Actions](https://img.shields.io/github/workflow/status/shini4i/argo-compare/Release)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/argo-compare)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/shini4i/argo-compare)
 [![Go Report Card](https://goreportcard.com/badge/github.com/shini4i/argo-compare)](https://goreportcard.com/report/github.com/shini4i/argo-compare)
