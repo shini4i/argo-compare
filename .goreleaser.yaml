@@ -1,0 +1,34 @@
+project_name: argo-compare
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{ .Env.GITHUB_REF_NAME }}
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    main: ./cmd/argo-compare
+
+archives:
+  - replacements:
+      darwin: Darwin
+      linux: Linux
+      amd64: x86_64
+
+brews:
+  - tap:
+      owner: shini4i
+      name: homebrew-tap
+    folder: Formula
+    homepage: https://github.com/shini4i/argo-compare
+    description: "A tool for showing difference between Application in a different git branches"
+    license: "MIT"

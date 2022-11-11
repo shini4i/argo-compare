@@ -54,8 +54,6 @@ func (a *Application) collectHelmChart() {
 		fmt.Println(err)
 	}
 
-	fmt.Println(cacheDir)
-
 	if _, err := os.Stat(fmt.Sprintf("%s/%s-%s.tgz", a.chartLocation, a.App.Spec.Source.Chart, a.App.Spec.Source.TargetRevision)); os.IsNotExist(err) {
 		if debug {
 			fmt.Printf("Downloading version %s of %s chart...\n",

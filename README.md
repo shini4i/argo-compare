@@ -3,6 +3,7 @@
 # argo-compare
 A tool for showing difference between Application in a different git branches
 
+![GitHub Actions](https://img.shields.io/github/workflow/status/shini4i/argo-compare/Release)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/argo-compare)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/shini4i/argo-compare)
 [![Go Report Card](https://goreportcard.com/badge/github.com/shini4i/argo-compare)](https://goreportcard.com/report/github.com/shini4i/argo-compare)
@@ -16,6 +17,12 @@ A tool for showing difference between Application in a different git branches
 ## General information
 
 This tool will show what would be changed in the manifests rendered by helm after changes to the specific Application are merged into the target branch.
+
+### How to install
+The binary can be installed using homebrew:
+```bash
+brew install shini4i/tap/argo-compare
+```
 
 ### How it works
 - First, this tool will check which files are changed compared to the files in the target branch.

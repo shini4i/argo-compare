@@ -13,14 +13,16 @@ var (
 	debug        = false
 	cacheDir     = fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME"))
 	tmpDir       string
+	version      = "local"
 )
 
 var CLI struct {
-	Debug bool `help:"Enable debug mode" short:"d"`
+	Debug   bool             `help:"Enable debug mode" short:"d"`
+	Version kong.VersionFlag `help:"Show version" short:"v"`
 
 	Branch struct {
 		Name string `arg:"" type:"string"`
-	} `cmd:"" help:"Compare with a specific branch" type:"string"`
+	} `cmd:"" help:"target branch to compare with" type:"string"`
 }
 
 type execContext = func(name string, arg ...string) *exec.Cmd
@@ -50,7 +52,8 @@ func compareFiles() {
 func main() {
 	ctx := kong.Parse(&CLI,
 		kong.Name("argo-compare"),
-		kong.Description("Compare ArgoCD applications between git branches"))
+		kong.Description("Compare ArgoCD applications between git branches"),
+		kong.Vars{"version": version})
 
 	switch ctx.Command() {
 	case "branch <name>":
