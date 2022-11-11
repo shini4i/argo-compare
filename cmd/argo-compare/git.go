@@ -14,17 +14,18 @@ type GitRepo struct {
 	changedFiles []string
 }
 
-func (g *GitRepo) getChangedFiles(cmdContext execContext) []string {
+func (g *GitRepo) getChangedFiles(cmdContext execContext) ([]string, error) {
 	cmd := cmdContext("git", "--no-pager", "diff", "--name-only", targetBranch)
 
 	var out bytes.Buffer
 
 	cmd.Stdout = &out
-	cmd.Stderr = os.Stderr
+	if debug {
+		cmd.Stderr = os.Stderr
+	}
 
-	err := cmd.Run()
-	if err != nil {
-		fmt.Println(err.Error())
+	if err := cmd.Run(); err != nil {
+		return []string{}, err
 	}
 
 	if debug {
@@ -37,15 +38,17 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) []string {
 		}
 	}
 
-	fmt.Println("===> Found the following changed Application files:")
-	for _, file := range g.changedFiles {
-		fmt.Printf("  - %s\n", file)
+	if len(g.changedFiles) > 0 {
+		fmt.Println("===> Found the following changed Application files")
+		for _, file := range g.changedFiles {
+			fmt.Printf("- %s\n", file)
+		}
 	}
 
-	return g.changedFiles
+	return g.changedFiles, nil
 }
 
-func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, cmdContext execContext) m.Application {
+func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, cmdContext execContext) (m.Application, error) {
 	if debug {
 		fmt.Printf("Getting content of %s from %s\n", targetFile, targetBranch)
 	}
@@ -55,11 +58,12 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 	var out bytes.Buffer
 
 	cmd.Stdout = &out
-	cmd.Stderr = os.Stderr
+	if debug {
+		cmd.Stderr = os.Stderr
+	}
 
-	err := cmd.Run()
-	if err != nil {
-		fmt.Println(err.Error())
+	if err := cmd.Run(); err != nil {
+		return m.Application{}, err
 	}
 
 	// writing the content to a temporary file to be able to pass it to the parser
@@ -83,7 +87,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 	app := Application{File: tmpFile.Name()}
 	app.parse()
 
-	return app.App
+	return app.App, nil
 }
 
 func checkIfApp(file string) bool {

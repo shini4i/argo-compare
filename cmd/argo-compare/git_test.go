@@ -21,7 +21,7 @@ var (
 )
 
 func TestChangedFiles(t *testing.T) {
-	stdout := git.getChangedFiles(fakeChangedFile)
+	stdout, _ := git.getChangedFiles(fakeChangedFile)
 
 	if !h.Contains(stdout, appFile) {
 		t.Errorf("test.yaml should be in the list")
@@ -29,7 +29,7 @@ func TestChangedFiles(t *testing.T) {
 }
 
 func TestGetChangedFileContent(t *testing.T) {
-	content := git.getChangedFileContent("main", appFile, fakeFileContent)
+	content, _ := git.getChangedFileContent("main", appFile, fakeFileContent)
 
 	app := Application{File: appFile}
 	app.parse()

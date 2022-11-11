@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"gopkg.in/yaml.v3"
 	"log"
@@ -47,7 +48,7 @@ func (a *Application) writeValuesYaml() {
 	}
 }
 
-func (a *Application) collectHelmChart() {
+func (a *Application) collectHelmChart() error {
 	a.chartLocation = fmt.Sprintf("%s/%s", cacheDir, a.App.Spec.Source.RepoURL)
 
 	if err := os.MkdirAll(a.chartLocation, os.ModePerm); err != nil {
@@ -70,14 +71,13 @@ func (a *Application) collectHelmChart() {
 			"--version", a.App.Spec.Source.TargetRevision)
 
 		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		err := cmd.Run()
-
-		if err != nil {
-			fmt.Println(err)
+		if debug {
+			cmd.Stderr = os.Stderr
 		}
 
+		if err := cmd.Run(); err != nil {
+			return errors.New("error downloading chart")
+		}
 	} else {
 		if debug {
 			fmt.Printf("Version %s of %s chart already downloaded...\n",
@@ -85,6 +85,8 @@ func (a *Application) collectHelmChart() {
 				a.App.Spec.Source.Chart)
 		}
 	}
+
+	return nil
 }
 
 func (a *Application) extractChart() {
