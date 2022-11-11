@@ -6,12 +6,14 @@ type Metadata struct {
 }
 
 type Helm struct {
-	Values string `yaml:"values"`
+	Values     string   `yaml:"values,omitempty"`
+	ValueFiles []string `yaml:"valueFiles,omitempty"`
+	Path       string   `yaml:"path,omitempty"`
 }
 
 type Source struct {
 	RepoURL        string `yaml:"repoURL"`
-	Chart          string `yaml:"chart"`
+	Chart          string `yaml:"chart,omitempty"`
 	TargetRevision string `yaml:"targetRevision"`
 	Helm           Helm   `yaml:"helm"`
 }
