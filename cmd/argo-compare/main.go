@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"github.com/alecthomas/kong"
 	m "github.com/shini4i/argo-compare/internal/models"
@@ -27,7 +28,7 @@ var CLI struct {
 
 type execContext = func(name string, arg ...string) *exec.Cmd
 
-func processFiles(fileName string, fileType string, application m.Application) {
+func processFiles(fileName string, fileType string, application m.Application) error {
 	if debug {
 		fmt.Printf("Processing %s changed files\n", fileType)
 	}
@@ -37,10 +38,17 @@ func processFiles(fileName string, fileType string, application m.Application) {
 		app.parse()
 	}
 
+	if len(app.App.Spec.Source.Chart) == 0 {
+		fmt.Println("Unsupported application configuration. Skipping...")
+		return errors.New("unsupported application configuration")
+	}
+
 	app.writeValuesYaml()
 	app.collectHelmChart()
 	app.extractChart()
 	app.renderTemplate()
+
+	return nil
 }
 
 func compareFiles() {
@@ -78,17 +86,24 @@ func main() {
 	for _, file := range changedFiles {
 		var err error
 
-		fmt.Println("Processing changed application: ", file)
-		fmt.Println()
+		fmt.Printf("===> Processing changed application: [%s]\n", file)
 
 		tmpDir, err = os.MkdirTemp("/tmp", "argo-compare-*")
 		if err != nil {
 			fmt.Println(err)
 		}
 
-		processFiles(file, "src", m.Application{})
+		err = processFiles(file, "src", m.Application{})
+		if err != nil {
+			continue
+		}
+
 		app := repo.getChangedFileContent(targetBranch, file, exec.Command)
-		processFiles(file, "dst", app)
+		err = processFiles(file, "dst", app)
+		if err != nil {
+			continue
+		}
+
 		compareFiles()
 
 		err = os.RemoveAll(tmpDir)

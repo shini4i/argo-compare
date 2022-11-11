@@ -27,14 +27,19 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) []string {
 		fmt.Println(err.Error())
 	}
 
+	if debug {
+		fmt.Printf("===> Found the following changed files:\n%s", out.String())
+	}
+
 	for _, file := range strings.Split(out.String(), "\n") {
 		if filepath.Ext(file) == ".yaml" && checkIfApp(file) {
 			g.changedFiles = append(g.changedFiles, file)
 		}
 	}
 
-	if debug {
-		fmt.Printf("Changed files: %v\n", g.changedFiles)
+	fmt.Println("===> Found the following changed Application files:")
+	for _, file := range g.changedFiles {
+		fmt.Printf("  - %s\n", file)
 	}
 
 	return g.changedFiles
@@ -83,7 +88,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 
 func checkIfApp(file string) bool {
 	if debug {
-		fmt.Printf("Checking if %s is an app\n", file)
+		fmt.Printf("===> Checking if [%s] is an Application\n", file)
 	}
 
 	app := Application{File: file}
