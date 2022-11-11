@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/alecthomas/kong"
+	h "github.com/shini4i/argo-compare/internal/helpers"
 	m "github.com/shini4i/argo-compare/internal/models"
 	"os"
 	"os/exec"
@@ -39,12 +40,14 @@ func processFiles(fileName string, fileType string, application m.Application) e
 	}
 
 	if len(app.App.Spec.Source.Chart) == 0 {
-		fmt.Println("Unsupported application configuration. Skipping...")
 		return errors.New("unsupported application configuration")
 	}
 
 	app.writeValuesYaml()
-	app.collectHelmChart()
+	if err := app.collectHelmChart(); err != nil {
+		return err
+	}
+
 	app.extractChart()
 	app.renderTemplate()
 
@@ -74,9 +77,14 @@ func main() {
 		debug = true
 	}
 
+	fmt.Printf("===> Running argo-compare version [%s%s%s]\n", h.ColorCyan, version, h.ColorReset)
+
 	repo := GitRepo{}
 
-	changedFiles := repo.getChangedFiles(exec.Command)
+	changedFiles, err := repo.getChangedFiles(exec.Command)
+	if err != nil {
+		panic(err)
+	}
 
 	if len(changedFiles) == 0 {
 		fmt.Println("No changed Application files found. Exiting...")
@@ -86,21 +94,27 @@ func main() {
 	for _, file := range changedFiles {
 		var err error
 
-		fmt.Printf("===> Processing changed application: [%s]\n", file)
+		fmt.Printf("===> Processing changed application: [%s%s%s]\n", h.ColorCyan, file, h.ColorReset)
 
 		tmpDir, err = os.MkdirTemp("/tmp", "argo-compare-*")
 		if err != nil {
 			fmt.Println(err)
 		}
 
-		err = processFiles(file, "src", m.Application{})
-		if err != nil {
+		if err = processFiles(file, "src", m.Application{}); err != nil {
+			fmt.Printf("Could not process the source Application: %s%s%s\n", h.ColorRed, err, h.ColorReset)
 			continue
 		}
 
-		app := repo.getChangedFileContent(targetBranch, file, exec.Command)
-		err = processFiles(file, "dst", app)
+		app, err := repo.getChangedFileContent(targetBranch, file, exec.Command)
 		if err != nil {
+			fmt.Printf("Could not get the target Application from branch [%s%s%s]: %s%s%s\n",
+				h.ColorCyan, targetBranch, h.ColorReset, h.ColorRed, err, h.ColorReset)
+			continue
+		}
+
+		if err = processFiles(file, "dst", app); err != nil {
+			fmt.Printf("Could not process the destination Application: %s\n", err)
 			continue
 		}
 

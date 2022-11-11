@@ -156,23 +156,23 @@ func (c *Compare) findNewOrRemovedFiles() {
 
 func (c *Compare) printCompareResults() {
 	if len(c.addedFiles) > 0 {
-		fmt.Println("The following files would be added:")
+		fmt.Printf("The following %d file/files would be added:\n", len(c.addedFiles))
 		for _, addedFile := range c.addedFiles {
-			fmt.Printf("  - %s\n", addedFile.Name)
+			fmt.Printf("- %s\n", addedFile.Name)
 		}
 	}
 
 	if len(c.removedFiles) > 0 {
-		fmt.Println("The following files would be removed:")
+		fmt.Printf("The following %d file/files would be removed:\n", len(c.removedFiles))
 		for _, removedFile := range c.removedFiles {
-			fmt.Printf("  - %s\n", removedFile.Name)
+			fmt.Printf("- %s\n", removedFile.Name)
 		}
 	}
 
 	if len(c.diffFiles) > 0 {
-		fmt.Println("The following files would be changed:")
+		fmt.Printf("The following %d file/files would be changed:\n", len(c.diffFiles))
 		for _, diffFile := range c.diffFiles {
-			fmt.Printf("  - %s\n", diffFile.Name)
+			fmt.Printf("- %s\n", diffFile.Name)
 		}
 		c.printDiffFiles()
 	}
