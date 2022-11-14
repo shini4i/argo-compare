@@ -29,10 +29,14 @@ var CLI struct {
 
 type execContext = func(name string, arg ...string) *exec.Cmd
 
-func processFiles(fileName string, fileType string, application m.Application) error {
+func printDebug(msg string) {
 	if debug {
-		fmt.Printf("Processing %s changed files\n", fileType)
+		fmt.Println(msg)
 	}
+}
+
+func processFiles(fileName string, fileType string, application m.Application) error {
+	printDebug(fmt.Sprintf("Processing [%s] file: [%s]", fileType, fileName))
 
 	app := Application{File: fileName, Type: fileType, App: application}
 	if fileType == "src" {

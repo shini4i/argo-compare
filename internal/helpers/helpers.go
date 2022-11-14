@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"errors"
 	"fmt"
 	"os"
 )
@@ -12,12 +13,13 @@ const (
 )
 
 func ReadFile(file string) []byte {
-	readFile, err := os.ReadFile(file)
-	if err != nil {
-		fmt.Println(err)
+	if readFile, err := os.ReadFile(file); errors.Is(err, os.ErrNotExist) {
+		fmt.Printf("File [%s%s%s] was removed in a source branch, skipping...\n",
+			ColorRed, file, ColorReset)
+		return nil
+	} else {
+		return readFile
 	}
-
-	return readFile
 }
 
 func Contains(slice []string, s string) bool {

@@ -28,9 +28,7 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) ([]string, error) {
 		return []string{}, err
 	}
 
-	if debug {
-		fmt.Printf("===> Found the following changed files:\n%s", out.String())
-	}
+	printDebug(fmt.Sprintf("===> Found the following changed files:\n%s", out.String()))
 
 	for _, file := range strings.Split(out.String(), "\n") {
 		if filepath.Ext(file) == ".yaml" && checkIfApp(file) {
@@ -49,9 +47,7 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) ([]string, error) {
 }
 
 func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, cmdContext execContext) (m.Application, error) {
-	if debug {
-		fmt.Printf("Getting content of %s from %s\n", targetFile, targetBranch)
-	}
+	printDebug(fmt.Sprintf("Getting content of %s from %s", targetFile, targetBranch))
 
 	cmd := cmdContext("git", "--no-pager", "show", targetBranch+":"+targetFile)
 
@@ -91,9 +87,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 }
 
 func checkIfApp(file string) bool {
-	if debug {
-		fmt.Printf("===> Checking if [%s] is an Application\n", file)
-	}
+	printDebug(fmt.Sprintf("===> Checking if [%s] is an Application", file))
 
 	app := Application{File: file}
 	app.parse()

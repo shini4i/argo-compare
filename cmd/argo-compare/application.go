@@ -22,9 +22,7 @@ type Application struct {
 func (a *Application) parse() {
 	app := m.Application{}
 
-	if debug {
-		fmt.Printf("Parsing %s...\n", a.File)
-	}
+	printDebug(fmt.Sprintf("Parsing %s...", a.File))
 
 	yamlFile := h.ReadFile(a.File)
 
@@ -56,11 +54,9 @@ func (a *Application) collectHelmChart() error {
 	}
 
 	if _, err := os.Stat(fmt.Sprintf("%s/%s-%s.tgz", a.chartLocation, a.App.Spec.Source.Chart, a.App.Spec.Source.TargetRevision)); os.IsNotExist(err) {
-		if debug {
-			fmt.Printf("Downloading version %s of %s chart...\n",
-				a.App.Spec.Source.TargetRevision,
-				a.App.Spec.Source.Chart)
-		}
+		printDebug(fmt.Sprintf("Downloading version %s of %s chart...",
+			a.App.Spec.Source.TargetRevision,
+			a.App.Spec.Source.Chart))
 
 		cmd := exec.Command(
 			"helm",
@@ -79,11 +75,9 @@ func (a *Application) collectHelmChart() error {
 			return errors.New("error downloading chart")
 		}
 	} else {
-		if debug {
-			fmt.Printf("Version %s of %s chart already downloaded...\n",
-				a.App.Spec.Source.TargetRevision,
-				a.App.Spec.Source.Chart)
-		}
+		printDebug(fmt.Sprintf("Version %s of %s chart already downloaded...",
+			a.App.Spec.Source.TargetRevision,
+			a.App.Spec.Source.Chart))
 	}
 
 	return nil
@@ -92,9 +86,7 @@ func (a *Application) collectHelmChart() error {
 func (a *Application) extractChart() {
 	// We have a separate function for this and not using helm to extract the content of the chart
 	// because we don't want to re-download the chart if the TargetRevision is the same
-	if debug {
-		fmt.Printf("Extracting %s chart to %s/charts/%s...\n", a.App.Spec.Source.Chart, tmpDir, a.Type)
-	}
+	printDebug(fmt.Sprintf("Extracting %s chart to %s/charts/%s...", a.App.Spec.Source.Chart, tmpDir, a.Type))
 
 	path := fmt.Sprintf("%s/charts/%s/%s", tmpDir, a.Type, a.App.Spec.Source.Chart)
 	if err := os.MkdirAll(path, os.ModePerm); err != nil {
@@ -119,9 +111,7 @@ func (a *Application) extractChart() {
 }
 
 func (a *Application) renderTemplate() {
-	if debug {
-		fmt.Printf("Rendering %s template...\n", a.App.Spec.Source.Chart)
-	}
+	printDebug(fmt.Sprintf("Rendering %s template...", a.App.Spec.Source.Chart))
 
 	cmd := exec.Command(
 		"helm",
