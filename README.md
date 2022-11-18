@@ -24,6 +24,17 @@ The binary can be installed using homebrew:
 brew install shini4i/tap/argo-compare
 ```
 
+### How to use
+The simplest usage scenario is to compare all changed files in the current branch with the target branch:
+```bash
+argo-compare branch <target-branch>
+```
+
+If you want to compare only specific file, you can use the `--file` flag:
+```bash
+argo-compare branch <target-branch> --file <file-path>
+```
+
 ### How it works
 - First, this tool will check which files are changed compared to the files in the target branch.
 - Then it will get the content of the changed Application files from the target branch.

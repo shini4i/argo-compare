@@ -73,7 +73,6 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 	}
 
 	if _, err = tmpFile.WriteString(out.String()); err != nil {
-		fmt.Println("Error writing to temporary file")
 		fmt.Println(err.Error())
 	}
 

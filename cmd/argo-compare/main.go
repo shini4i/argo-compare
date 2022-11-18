@@ -26,7 +26,7 @@ var CLI struct {
 	Branch struct {
 		Name string `arg:"" type:"string"`
 		File string `help:"Compare a single file" short:"f"`
-	} `cmd:"" help:"target branch to compare against" type:"string"`
+	} `cmd:"" help:"target branch to compare with" type:"string"`
 }
 
 type execContext = func(name string, arg ...string) *exec.Cmd
