@@ -11,11 +11,12 @@ import (
 )
 
 var (
-	targetBranch string
-	debug        = false
-	cacheDir     = fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME"))
-	tmpDir       string
-	version      = "local"
+	targetBranch  string
+	fileToCompare string
+	debug         = false
+	cacheDir      = fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME"))
+	tmpDir        string
+	version       = "local"
 )
 
 var CLI struct {
@@ -24,7 +25,8 @@ var CLI struct {
 
 	Branch struct {
 		Name string `arg:"" type:"string"`
-	} `cmd:"" help:"target branch to compare with" type:"string"`
+		File string `help:"Compare a single file" short:"f"`
+	} `cmd:"" help:"target branch to compare against" type:"string"`
 }
 
 type execContext = func(name string, arg ...string) *exec.Cmd
@@ -68,11 +70,15 @@ func main() {
 	ctx := kong.Parse(&CLI,
 		kong.Name("argo-compare"),
 		kong.Description("Compare ArgoCD applications between git branches"),
+		kong.UsageOnError(),
 		kong.Vars{"version": version})
 
 	switch ctx.Command() {
 	case "branch <name>":
 		targetBranch = CLI.Branch.Name
+		if len(CLI.Branch.File) > 0 {
+			fileToCompare = CLI.Branch.File
+		}
 	default:
 		panic(ctx.Command())
 	}
@@ -84,15 +90,20 @@ func main() {
 	fmt.Printf("===> Running argo-compare version [%s%s%s]\n", h.ColorCyan, version, h.ColorReset)
 
 	repo := GitRepo{}
+	var changedFiles []string
+	var err error
 
-	changedFiles, err := repo.getChangedFiles(exec.Command)
-	if err != nil {
-		panic(err)
-	}
-
-	if len(changedFiles) == 0 {
-		fmt.Println("No changed Application files found. Exiting...")
-		os.Exit(0)
+	// There are valid cases when we want to compare a single file only
+	if fileToCompare != "" {
+		changedFiles = []string{fileToCompare}
+	} else {
+		if changedFiles, err = repo.getChangedFiles(exec.Command); err != nil {
+			panic(err)
+		}
+		if len(changedFiles) == 0 {
+			fmt.Println("No changed Application files found. Exiting...")
+			os.Exit(0)
+		}
 	}
 
 	for _, file := range changedFiles {
