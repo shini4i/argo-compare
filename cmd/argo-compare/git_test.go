@@ -11,13 +11,13 @@ import (
 )
 
 const (
-	appFile = "../../test/data/test.yaml"
+	appFile = "test/data/test.yaml"
 )
 
 var (
 	git                = GitRepo{}
 	gitChangedFiles    = fmt.Sprintf("go.mod\n%s\n", appFile)
-	changedFileContent = h.ReadFile(appFile)
+	changedFileContent = h.ReadFile("../../" + appFile)
 )
 
 func TestChangedFiles(t *testing.T) {
