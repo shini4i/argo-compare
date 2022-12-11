@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 
 	h "github.com/shini4i/argo-compare/internal/helpers"
 	m "github.com/shini4i/argo-compare/internal/models"
@@ -22,9 +23,18 @@ type Application struct {
 func (a *Application) parse() {
 	app := m.Application{}
 
-	printDebug(fmt.Sprintf("Parsing %s...", a.File))
+	var file string
 
-	yamlFile := h.ReadFile(a.File)
+	// if we are working with a temporary file, we don't need to prepend the repo root path
+	if !strings.Contains(a.File, "/tmp/") {
+		file = fmt.Sprintf("%s/%s", repo.getRepoRoot(exec.Command), a.File)
+	} else {
+		file = a.File
+	}
+
+	printDebug(fmt.Sprintf("Parsing %s...", file))
+
+	yamlFile := h.ReadFile(file)
 
 	err := yaml.Unmarshal(yamlFile, &app)
 	if err != nil {

@@ -17,6 +17,7 @@ var (
 	cacheDir      = fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME"))
 	tmpDir        string
 	version       = "local"
+	repo          = GitRepo{}
 )
 
 var CLI struct {
@@ -89,7 +90,6 @@ func main() {
 
 	fmt.Printf("===> Running argo-compare version [%s%s%s]\n", h.ColorCyan, version, h.ColorReset)
 
-	repo := GitRepo{}
 	var changedFiles []string
 	var err error
 
