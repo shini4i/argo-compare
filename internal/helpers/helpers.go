@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 )
 
 const (
@@ -33,8 +34,19 @@ func Contains(slice []string, s string) bool {
 }
 
 func StripHelmLabels(file string) {
+	// list of labels to remove
+	labels := []string{
+		"app.kubernetes.io/managed-by",
+		"helm.sh/chart",
+		"chart",
+		"app.kubernetes.io/version",
+	}
+
+	regex := fmt.Sprintf(`%s`, strings.Join(labels, "|"))
+
 	// remove helm labels as they are not needed for comparison
-	re := regexp.MustCompile("(?m)[\r\n]+^.*(helm.sh/chart|chart):.*$")
+	// it might be error-prone, as those labels are not always the same
+	re := regexp.MustCompile("(?m)[\r\n]+^.*(" + regex + "):.*$")
 
 	fileData, err := os.ReadFile(file)
 	if err != nil {
