@@ -3,7 +3,6 @@ package helpers
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"regexp"
 )
@@ -37,13 +36,13 @@ func StripHelmLabels(file string) {
 	// remove helm labels as they are not needed for comparison
 	re := regexp.MustCompile("(?m)[\r\n]+^.*(helm.sh/chart|chart):.*$")
 
-	fileData, err := ioutil.ReadFile(file)
+	fileData, err := os.ReadFile(file)
 	if err != nil {
 		fmt.Println(err)
 	}
 
 	fileData = re.ReplaceAll(fileData, []byte(""))
-	err = ioutil.WriteFile(file, fileData, 0644)
+	err = os.WriteFile(file, fileData, 0644)
 	if err != nil {
 		fmt.Println(err)
 	}

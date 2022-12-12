@@ -61,9 +61,7 @@ func (c *Compare) processFiles(files []string) []File {
 
 		for _, v := range s {
 			count += len(v)
-			if v == "dst" {
-				break
-			} else if v == "src" {
+			if v == "dst" || v == "src" {
 				break
 			}
 		}
