@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 )
 
 const (
@@ -29,4 +30,20 @@ func Contains(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func StripHelmLabels(file string) {
+	// remove helm labels as they are not needed for comparison
+	re := regexp.MustCompile("(?m)[\r\n]+^.*(helm.sh/chart|chart):.*$")
+
+	fileData, err := os.ReadFile(file)
+	if err != nil {
+		panic(err)
+	}
+
+	fileData = re.ReplaceAll(fileData, []byte(""))
+	err = os.WriteFile(file, fileData, 0644)
+	if err != nil {
+		panic(err)
+	}
 }

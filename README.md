@@ -36,10 +36,11 @@ argo-compare branch <target-branch> --file <file-path>
 ```
 
 ### How it works
-- First, this tool will check which files are changed compared to the files in the target branch.
-- Then it will get the content of the changed Application files from the target branch.
-- Then it will render manifests using the helm template using source and target branch values.
-- As the last step, it will compare rendered manifest from the source and destination branches and print the difference.
+1) First, this tool will check which files are changed compared to the files in the target branch.
+2) It will get the content of the changed Application files from the target branch.
+3) It will render manifests using the helm template using source and target branch values.
+4) It will get rid of helm related labels as they are not important for the comparison.
+5) As the last step, it will compare rendered manifest from the source and destination branches and print the difference.
 
 ## Current limitations
 - Works only with Applications that are using helm repositories and helm values present in the Application yaml.

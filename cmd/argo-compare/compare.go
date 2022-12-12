@@ -51,6 +51,9 @@ func (c *Compare) processFiles(files []string) []File {
 	var strippedFiles []File
 	var file File
 
+	// we want to avoid huge output containing helm labels update only
+	c.findAndStripHelmAnnotations()
+
 	// TODO: Make this less ugly
 	for _, srcFile := range files {
 		s := strings.Split(srcFile, "/")
@@ -58,9 +61,7 @@ func (c *Compare) processFiles(files []string) []File {
 
 		for _, v := range s {
 			count += len(v)
-			if v == "dst" {
-				break
-			} else if v == "src" {
+			if v == "dst" || v == "src" {
 				break
 			}
 		}
@@ -175,5 +176,16 @@ func (c *Compare) printCompareResults() {
 			fmt.Printf("- %s\n", diffFile.Name)
 		}
 		c.printDiffFiles()
+	}
+}
+
+func (c *Compare) findAndStripHelmAnnotations() {
+	helmFiles, err := zglob.Glob(fmt.Sprintf("%s/templates/**/*.yaml", tmpDir))
+	if err != nil {
+		panic(err)
+	}
+
+	for _, helmFile := range helmFiles {
+		h.StripHelmLabels(helmFile)
 	}
 }
