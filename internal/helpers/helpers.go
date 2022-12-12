@@ -3,7 +3,9 @@ package helpers
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"regexp"
 )
 
 const (
@@ -31,6 +33,17 @@ func Contains(slice []string, s string) bool {
 	return false
 }
 
-func StripHelmAnnotations(file string) string {
-	return file
+func StripHelmLabels(file string) {
+	re := regexp.MustCompile("(?m)[\r\n]+^.*(helm.sh/chart|chart):.*$")
+
+	fileData, err := ioutil.ReadFile(file)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	fileData = re.ReplaceAll(fileData, []byte(""))
+	err = ioutil.WriteFile(file, fileData, 0644)
+	if err != nil {
+		fmt.Println(err)
+	}
 }

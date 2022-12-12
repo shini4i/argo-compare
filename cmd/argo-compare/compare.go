@@ -98,6 +98,8 @@ func getFileSha(file string) hash.Hash {
 func (c *Compare) compareFiles() {
 	var diffFiles []File
 
+	c.findAndStripHelmAnnotations()
+
 	for _, srcFile := range c.srcFiles {
 		for _, dstFile := range c.dstFiles {
 			if srcFile.Name == dstFile.Name && !reflect.DeepEqual(srcFile.Sha, dstFile.Sha) {
@@ -185,6 +187,6 @@ func (c *Compare) findAndStripHelmAnnotations() {
 	}
 
 	for _, helmFile := range helmFiles {
-		h.StripHelmAnnotations(helmFile)
+		h.StripHelmLabels(helmFile)
 	}
 }
