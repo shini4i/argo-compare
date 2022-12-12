@@ -52,7 +52,7 @@ func (c *Compare) processFiles(files []string) []File {
 	var file File
 
 	// we want to avoid huge output containing helm labels update only
-	c.findAndStripHelmAnnotations()
+	c.findAndStripHelmLabels()
 
 	// TODO: Make this less ugly
 	for _, srcFile := range files {
@@ -179,7 +179,7 @@ func (c *Compare) printCompareResults() {
 	}
 }
 
-func (c *Compare) findAndStripHelmAnnotations() {
+func (c *Compare) findAndStripHelmLabels() {
 	helmFiles, err := zglob.Glob(fmt.Sprintf("%s/templates/**/*.yaml", tmpDir))
 	if err != nil {
 		panic(err)
