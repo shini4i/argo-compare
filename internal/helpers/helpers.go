@@ -30,3 +30,7 @@ func Contains(slice []string, s string) bool {
 	}
 	return false
 }
+
+func StripHelmAnnotations(file string) string {
+	return file
+}

@@ -177,3 +177,14 @@ func (c *Compare) printCompareResults() {
 		c.printDiffFiles()
 	}
 }
+
+func (c *Compare) findAndStripHelmAnnotations() {
+	helmFiles, err := zglob.Glob(fmt.Sprintf("%s/templates/**/*.yaml", tmpDir))
+	if err != nil {
+		panic(err)
+	}
+
+	for _, helmFile := range helmFiles {
+		h.StripHelmAnnotations(helmFile)
+	}
+}
