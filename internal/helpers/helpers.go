@@ -38,12 +38,12 @@ func StripHelmLabels(file string) {
 
 	fileData, err := os.ReadFile(file)
 	if err != nil {
-		fmt.Println(err)
+		panic(err)
 	}
 
 	fileData = re.ReplaceAll(fileData, []byte(""))
 	err = os.WriteFile(file, fileData, 0644)
 	if err != nil {
-		fmt.Println(err)
+		panic(err)
 	}
 }
