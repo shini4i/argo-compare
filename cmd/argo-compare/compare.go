@@ -51,6 +51,9 @@ func (c *Compare) processFiles(files []string) []File {
 	var strippedFiles []File
 	var file File
 
+	// we want to avoid huge output containing helm labels update only
+	c.findAndStripHelmAnnotations()
+
 	// TODO: Make this less ugly
 	for _, srcFile := range files {
 		s := strings.Split(srcFile, "/")
@@ -97,8 +100,6 @@ func getFileSha(file string) hash.Hash {
 
 func (c *Compare) compareFiles() {
 	var diffFiles []File
-
-	c.findAndStripHelmAnnotations()
 
 	for _, srcFile := range c.srcFiles {
 		for _, dstFile := range c.dstFiles {

@@ -34,6 +34,7 @@ func Contains(slice []string, s string) bool {
 }
 
 func StripHelmLabels(file string) {
+	// remove helm labels as they are not needed for comparison
 	re := regexp.MustCompile("(?m)[\r\n]+^.*(helm.sh/chart|chart):.*$")
 
 	fileData, err := ioutil.ReadFile(file)
