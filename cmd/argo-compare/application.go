@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/mattn/go-zglob"
 	"gopkg.in/yaml.v3"
 	"log"
 	"os"
@@ -63,7 +64,14 @@ func (a *Application) collectHelmChart() error {
 		fmt.Println(err)
 	}
 
-	if _, err := os.Stat(fmt.Sprintf("%s/%s-%s.tgz", a.chartLocation, a.App.Spec.Source.Chart, a.App.Spec.Source.TargetRevision)); os.IsNotExist(err) {
+	// A bit hacky, but we need to support cases when helm chart tgz filename does not follow the standard naming convention
+	// For example, sonarqube-4.0.0+315.tgz
+	chartFileName, err := zglob.Glob(fmt.Sprintf("%s/%s-%s*.tgz", a.chartLocation, a.App.Spec.Source.Chart, a.App.Spec.Source.TargetRevision))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if len(chartFileName) == 0 {
 		printDebug(fmt.Sprintf("Downloading version %s of %s chart...",
 			a.App.Spec.Source.TargetRevision,
 			a.App.Spec.Source.Chart))
@@ -103,17 +111,28 @@ func (a *Application) extractChart() {
 		fmt.Println(err)
 	}
 
+	chartFileName, err := zglob.Glob(fmt.Sprintf("%s/%s-%s*.tgz", a.chartLocation, a.App.Spec.Source.Chart, a.App.Spec.Source.TargetRevision))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// It's highly unlikely that we will have more than one file matching the pattern
+	// Nevertheless we need to handle this case, please submit an issue if you encounter this
+	if len(chartFileName) > 1 {
+		log.Fatal("More than one chart file found, please check your cache directory")
+	}
+
 	cmd := exec.Command(
 		"tar",
 		"xf",
-		fmt.Sprintf("%s/%s-%s.tgz", a.chartLocation, a.App.Spec.Source.Chart, a.App.Spec.Source.TargetRevision),
+		chartFileName[0],
 		"-C", fmt.Sprintf("%s/charts/%s", tmpDir, a.Type),
 	)
 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 
 	if err != nil {
 		log.Fatal(err)
