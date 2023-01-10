@@ -18,6 +18,7 @@ var (
 	tmpDir        string
 	version       = "local"
 	repo          = GitRepo{}
+	diffCommand   = h.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
 )
 
 var CLI struct {
