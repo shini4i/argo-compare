@@ -1,6 +1,7 @@
 <div align="center">
 
 # argo-compare
+
 A tool for showing difference between Application in a different git branches
 
 ![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/shini4i/argo-compare/run-tests.yml?branch=main)
@@ -16,37 +17,53 @@ A tool for showing difference between Application in a different git branches
 
 ## General information
 
-This tool will show what would be changed in the manifests rendered by helm after changes to the specific Application are merged into the target branch.
+This tool will show what would be changed in the manifests rendered by helm after changes to the specific Application
+are merged into the target branch.
 
 ### How to install
+
 The binary can be installed using homebrew:
+
 ```bash
 brew install shini4i/tap/argo-compare
 ```
 
 ### How to use
+
 The simplest usage scenario is to compare all changed files in the current branch with the target branch:
+
 ```bash
 argo-compare branch <target-branch>
 ```
 
 If you want to compare only specific file, you can use the `--file` flag:
+
 ```bash
 argo-compare branch <target-branch> --file <file-path>
 ```
 
+If you want to use a custom diff tool, you can use the following approach:
+
+```bash
+ARGO_COMPARE_DIFF_COMMAND="/usr/bin/diff %s %s" argo-compare branch <target-branch>
+```
+
 ### How it works
+
 1) First, this tool will check which files are changed compared to the files in the target branch.
 2) It will get the content of the changed Application files from the target branch.
 3) It will render manifests using the helm template using source and target branch values.
 4) It will get rid of helm related labels as they are not important for the comparison.
-5) As the last step, it will compare rendered manifest from the source and destination branches and print the difference.
+5) As the last step, it will compare rendered manifest from the source and destination branches and print the
+   difference.
 
 ## Current limitations
+
 - Works only with Applications that are using helm repositories and helm values present in the Application yaml.
 - Does not support password protected repositories.
 
 ## Roadmap
+
 - [ ] Add support for Application using git as a source of helm chart
 - [ ] Add support for providing credentials for password protected helm repositories
 - [ ] Add support for posting diff as a comment to PR (GitHub)/MR(GitLab)

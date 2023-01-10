@@ -8,6 +8,7 @@ import (
 	"hash"
 	"io"
 	"os"
+	"os/exec"
 	"reflect"
 	"strings"
 
@@ -112,14 +113,36 @@ func (c *Compare) compareFiles() {
 
 func (c *Compare) printDiffFiles() {
 	for _, diffFile := range c.diffFiles {
-		diff := diffmatchpatch.New()
+		switch diffCommand {
+		case "built-in":
+			diff := diffmatchpatch.New()
 
-		srcFile := string(h.ReadFile(tmpDir + "/templates/src/" + diffFile.Name))
-		dstFile := string(h.ReadFile(tmpDir + "/templates/dst/" + diffFile.Name))
+			srcFile := string(h.ReadFile(tmpDir + "/templates/src/" + diffFile.Name))
+			dstFile := string(h.ReadFile(tmpDir + "/templates/dst/" + diffFile.Name))
 
-		diffs := diff.DiffMain(dstFile, srcFile, false)
+			diffs := diff.DiffMain(dstFile, srcFile, false)
 
-		fmt.Println(diff.DiffPrettyText(diffs))
+			fmt.Println(diff.DiffPrettyText(diffs))
+		default:
+			command := fmt.Sprintf(
+				diffCommand,
+				tmpDir+"/templates/dst/"+diffFile.Name,
+				tmpDir+"/templates/src/"+diffFile.Name,
+			)
+
+			printDebug("Using custom diff command: " + command)
+
+			cmd := exec.Command("bash", "-c", command)
+			cmd.Stderr = os.Stderr
+			cmd.Stdout = os.Stdout
+
+			if err := cmd.Run(); err != nil {
+				// In some cases custom diff command might return non-zero exit code which is not an error
+				// For example: diff -u file1 file2 returns 1 if files are different
+				// Hence we are not failing here
+				printDebug(err.Error())
+			}
+		}
 	}
 }
 
