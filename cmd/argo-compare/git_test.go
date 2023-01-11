@@ -62,7 +62,8 @@ func TestFileContentSuccess(t *testing.T) {
 }
 
 func TestCheckIfApp(t *testing.T) {
-	if !checkIfApp(appFile) {
+	isApp, err := checkIfApp(appFile)
+	if !isApp || err != nil {
 		t.Errorf("test.yaml should be detected as app")
 	}
 }
