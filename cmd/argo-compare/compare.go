@@ -52,8 +52,11 @@ func (c *Compare) processFiles(files []string) []File {
 	var strippedFiles []File
 	var file File
 
-	// we want to avoid huge output containing helm labels update only
-	c.findAndStripHelmLabels()
+	// Most of the time, we want to avoid huge output containing helm labels update only
+	// but we still want to be able to see the diff if needed
+	if !preserveHelmLabels {
+		c.findAndStripHelmLabels()
+	}
 
 	// TODO: Make this less ugly
 	for _, srcFile := range files {
