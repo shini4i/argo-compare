@@ -11,14 +11,15 @@ import (
 )
 
 var (
-	targetBranch  string
-	fileToCompare string
-	debug         = false
-	cacheDir      = fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME"))
-	tmpDir        string
-	version       = "local"
-	repo          = GitRepo{}
-	diffCommand   = h.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
+	targetBranch       string
+	fileToCompare      string
+	debug              = false
+	cacheDir           = fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME"))
+	tmpDir             string
+	version            = "local"
+	repo               = GitRepo{}
+	diffCommand        = h.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
+	preserveHelmLabels bool
 )
 
 var CLI struct {
@@ -26,8 +27,9 @@ var CLI struct {
 	Version kong.VersionFlag `help:"Show version" short:"v"`
 
 	Branch struct {
-		Name string `arg:"" type:"string"`
-		File string `help:"Compare a single file" short:"f"`
+		Name               string `arg:"" type:"string"`
+		File               string `help:"Compare a single file" short:"f"`
+		PreserveHelmLabels bool   `help:"Preserve Helm labels"`
 	} `cmd:"" help:"target branch to compare with" type:"string"`
 }
 
@@ -87,6 +89,10 @@ func main() {
 
 	if CLI.Debug {
 		debug = true
+	}
+
+	if CLI.Branch.PreserveHelmLabels {
+		preserveHelmLabels = true
 	}
 
 	fmt.Printf("===> Running argo-compare version [%s%s%s]\n", h.ColorCyan, version, h.ColorReset)
