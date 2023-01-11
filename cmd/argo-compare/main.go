@@ -46,7 +46,9 @@ func processFiles(fileName string, fileType string, application m.Application) e
 
 	app := Application{File: fileName, Type: fileType, App: application}
 	if fileType == "src" {
-		app.parse()
+		if err := app.parse(); err != nil {
+			return err
+		}
 	}
 
 	if len(app.App.Spec.Source.Chart) == 0 {
@@ -64,10 +66,43 @@ func processFiles(fileName string, fileType string, application m.Application) e
 	return nil
 }
 
-func compareFiles() {
-	comparer := Compare{}
-	comparer.findFiles()
-	comparer.printCompareResults()
+func compareFiles(changedFiles []string) {
+	for _, file := range changedFiles {
+		var err error
+
+		fmt.Printf("===> Processing changed application: [%s%s%s]\n", h.ColorCyan, file, h.ColorReset)
+
+		tmpDir, err = os.MkdirTemp("/tmp", "argo-compare-*")
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		if err = processFiles(file, "src", m.Application{}); err != nil {
+			fmt.Printf("Could not process the source Application: %s%s%s\n", h.ColorRed, err, h.ColorReset)
+			continue
+		}
+
+		app, err := repo.getChangedFileContent(targetBranch, file, exec.Command)
+		if err != nil {
+			fmt.Printf("Could not get the target Application from branch [%s%s%s]: %s%s%s\n",
+				h.ColorCyan, targetBranch, h.ColorReset, h.ColorRed, err, h.ColorReset)
+			continue
+		}
+
+		if err = processFiles(file, "dst", app); err != nil {
+			fmt.Printf("Could not process the destination Application: %s\n", err)
+			continue
+		}
+
+		comparer := Compare{}
+		comparer.findFiles()
+		comparer.printCompareResults()
+
+		err = os.RemoveAll(tmpDir)
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+	}
 }
 
 func main() {
@@ -113,38 +148,10 @@ func main() {
 		}
 	}
 
-	for _, file := range changedFiles {
-		var err error
+	compareFiles(changedFiles)
 
-		fmt.Printf("===> Processing changed application: [%s%s%s]\n", h.ColorCyan, file, h.ColorReset)
-
-		tmpDir, err = os.MkdirTemp("/tmp", "argo-compare-*")
-		if err != nil {
-			fmt.Println(err)
-		}
-
-		if err = processFiles(file, "src", m.Application{}); err != nil {
-			fmt.Printf("Could not process the source Application: %s%s%s\n", h.ColorRed, err, h.ColorReset)
-			continue
-		}
-
-		app, err := repo.getChangedFileContent(targetBranch, file, exec.Command)
-		if err != nil {
-			fmt.Printf("Could not get the target Application from branch [%s%s%s]: %s%s%s\n",
-				h.ColorCyan, targetBranch, h.ColorReset, h.ColorRed, err, h.ColorReset)
-			continue
-		}
-
-		if err = processFiles(file, "dst", app); err != nil {
-			fmt.Printf("Could not process the destination Application: %s\n", err)
-			continue
-		}
-
-		compareFiles()
-
-		err = os.RemoveAll(tmpDir)
-		if err != nil {
-			fmt.Println(err.Error())
-		}
+	if len(repo.invalidFiles) > 0 {
+		fmt.Printf("===> The following yaml files are invalid and were skipped: %s%s%s\n", h.ColorRed, repo.invalidFiles, h.ColorReset)
+		os.Exit(1)
 	}
 }
