@@ -21,7 +21,7 @@ type Application struct {
 	chartLocation string
 }
 
-func (a *Application) parse() {
+func (a *Application) parse() error {
 	app := m.Application{}
 
 	var file string
@@ -39,10 +39,12 @@ func (a *Application) parse() {
 
 	err := yaml.Unmarshal(yamlFile, &app)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	a.App = app
+
+	return nil
 }
 
 func (a *Application) writeValuesYaml() {

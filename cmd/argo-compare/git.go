@@ -12,6 +12,7 @@ import (
 
 type GitRepo struct {
 	changedFiles []string
+	invalidFiles []string
 }
 
 func (g *GitRepo) getRepoRoot(cmdContext execContext) string {
@@ -42,8 +43,12 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) ([]string, error) {
 	printDebug(fmt.Sprintf("===> Found the following changed files:\n%s", out.String()))
 
 	for _, file := range strings.Split(out.String(), "\n") {
-		if filepath.Ext(file) == ".yaml" && checkIfApp(file) {
-			g.changedFiles = append(g.changedFiles, file)
+		if filepath.Ext(file) == ".yaml" {
+			if isApp, err := checkIfApp(file); err != nil {
+				g.invalidFiles = append(g.invalidFiles, file)
+			} else if isApp {
+				g.changedFiles = append(g.changedFiles, file)
+			}
 		}
 	}
 
@@ -95,19 +100,24 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 	}(tmpFile.Name())
 
 	app := Application{File: tmpFile.Name()}
-	app.parse()
+	if err := app.parse(); err != nil {
+		return m.Application{}, err
+	}
 
 	return app.App, nil
 }
 
-func checkIfApp(file string) bool {
+func checkIfApp(file string) (bool, error) {
 	printDebug(fmt.Sprintf("===> Checking if [%s] is an Application", file))
 
 	app := Application{File: file}
-	app.parse()
+
+	if err := app.parse(); err != nil {
+		return false, err
+	}
 
 	if app.App.Kind != "Application" {
-		return false
+		return false, nil
 	}
-	return true
+	return true, nil
 }
