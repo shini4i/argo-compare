@@ -151,7 +151,10 @@ func main() {
 	compareFiles(changedFiles)
 
 	if len(repo.invalidFiles) > 0 {
-		fmt.Printf("===> The following yaml files are invalid and were skipped: %s%s%s\n", h.ColorRed, repo.invalidFiles, h.ColorReset)
+		fmt.Printf("===> The following yaml files are invalid and were skipped:\n")
+		for _, file := range repo.invalidFiles {
+			fmt.Printf("- %s%s%s\n", h.ColorRed, file, h.ColorReset)
+		}
 		os.Exit(1)
 	}
 }
