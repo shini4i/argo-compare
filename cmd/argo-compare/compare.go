@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"github.com/mattn/go-zglob"
+	"github.com/op/go-logging"
 	h "github.com/shini4i/argo-compare/internal/helpers"
 	"hash"
 	"io"
@@ -136,8 +137,11 @@ func (c *Compare) printDiffFiles() {
 			log.Debugf("Using custom diff command: %s", command)
 
 			cmd := exec.Command("bash", "-c", command)
-			cmd.Stderr = os.Stderr
 			cmd.Stdout = os.Stdout
+
+			if logging.GetLevel("argo-compare") == logging.DEBUG {
+				cmd.Stderr = os.Stderr
+			}
 
 			if err := cmd.Run(); err != nil {
 				// In some cases custom diff command might return non-zero exit code which is not an error
@@ -182,24 +186,29 @@ func (c *Compare) findNewOrRemovedFiles() {
 }
 
 func (c *Compare) printCompareResults() {
+	if len(c.addedFiles) == 0 && len(c.removedFiles) == 0 && len(c.diffFiles) == 0 {
+		log.Info("No diff in rendered manifests found!")
+		return
+	}
+
 	if len(c.addedFiles) > 0 {
-		log.Infof("===> The following %d file/files would be added:", len(c.addedFiles))
+		log.Infof("The following %d file/files would be added:", len(c.addedFiles))
 		for _, addedFile := range c.addedFiles {
-			log.Infof("- %s", addedFile.Name)
+			log.Infof("▶ %s", addedFile.Name)
 		}
 	}
 
 	if len(c.removedFiles) > 0 {
-		log.Infof("===> The following %d file/files would be removed:", len(c.removedFiles))
+		log.Infof("The following %d file/files would be removed:", len(c.removedFiles))
 		for _, removedFile := range c.removedFiles {
-			log.Infof("- %s", removedFile.Name)
+			log.Infof("▶ %s", removedFile.Name)
 		}
 	}
 
 	if len(c.diffFiles) > 0 {
-		log.Infof("===> The following %d file/files would be changed:", len(c.diffFiles))
+		log.Infof("The following %d file/files would be changed:", len(c.diffFiles))
 		for _, diffFile := range c.diffFiles {
-			log.Infof("- %s", diffFile.Name)
+			log.Infof("▶ %s", diffFile.Name)
 		}
 		c.printDiffFiles()
 	}

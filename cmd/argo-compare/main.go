@@ -165,7 +165,7 @@ func main() {
 	if len(repo.invalidFiles) > 0 {
 		log.Info("===> The following yaml files are invalid and were skipped")
 		for _, file := range repo.invalidFiles {
-			log.Warningf("- %s", file)
+			log.Warningf("▶ %s", file)
 		}
 		os.Exit(1)
 	}
