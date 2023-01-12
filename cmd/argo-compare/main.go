@@ -12,6 +12,8 @@ import (
 	"github.com/op/go-logging"
 )
 
+const loggerName = "argo-compare"
+
 var (
 	targetBranch       string
 	fileToCompare      string
@@ -24,7 +26,7 @@ var (
 )
 
 var (
-	log = logging.MustGetLogger("argo-compare")
+	log = logging.MustGetLogger(loggerName)
 	// A bit weird, but it seems that it's the easiest way to implement log level support in CLI tool
 	// without printing the log level and timestamp in the output
 	format = logging.MustStringFormatter(

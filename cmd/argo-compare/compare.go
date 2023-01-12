@@ -139,7 +139,7 @@ func (c *Compare) printDiffFiles() {
 			cmd := exec.Command("bash", "-c", command)
 			cmd.Stdout = os.Stdout
 
-			if logging.GetLevel("argo-compare") == logging.DEBUG {
+			if logging.GetLevel(loggerName) == logging.DEBUG {
 				cmd.Stderr = os.Stderr
 			}
 

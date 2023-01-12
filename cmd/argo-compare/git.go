@@ -32,7 +32,7 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) ([]string, error) {
 	var out bytes.Buffer
 
 	cmd.Stdout = &out
-	if logging.GetLevel("argo-compare") == logging.DEBUG {
+	if logging.GetLevel(loggerName) == logging.DEBUG {
 		cmd.Stderr = os.Stderr
 	}
 

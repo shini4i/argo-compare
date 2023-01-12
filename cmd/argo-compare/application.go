@@ -87,7 +87,7 @@ func (a *Application) collectHelmChart() error {
 			"--version", a.App.Spec.Source.TargetRevision)
 
 		cmd.Stdout = os.Stdout
-		if logging.GetLevel("argo-compare") == logging.DEBUG {
+		if logging.GetLevel(loggerName) == logging.DEBUG {
 			cmd.Stderr = os.Stderr
 		}
 
@@ -132,7 +132,7 @@ func (a *Application) extractChart() {
 	)
 
 	cmd.Stdout = os.Stdout
-	if logging.GetLevel("argo-compare") == logging.DEBUG {
+	if logging.GetLevel(loggerName) == logging.DEBUG {
 		cmd.Stderr = os.Stderr
 	}
 
@@ -155,7 +155,7 @@ func (a *Application) renderTemplate() {
 		"--values", fmt.Sprintf("%s/values-%s.yaml", tmpDir, a.Type),
 	)
 
-	if logging.GetLevel("argo-compare") == logging.DEBUG {
+	if logging.GetLevel(loggerName) == logging.DEBUG {
 		cmd.Stderr = os.Stderr
 	}
 
