@@ -13,8 +13,6 @@ A tool for showing difference between Application in a different git branches
 <img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-compare/demo.png" alt="Showcase" height="441" width="620">
 </div>
 
-> :warning: Currently, this tool is in PoC mode and is error-prone.
-
 ## General information
 
 This tool will show what would be changed in the manifests rendered by helm after changes to the specific Application

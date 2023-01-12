@@ -82,7 +82,7 @@ func getFileSha(file string) hash.Hash {
 	// We are using SHA as a way to detect if two files are identical
 	f, err := os.Open(file)
 	if err != nil {
-		fmt.Println(err.Error())
+		log.Fatal(err.Error())
 	}
 
 	defer func(f *os.File) {
@@ -94,7 +94,7 @@ func getFileSha(file string) hash.Hash {
 
 	fileHash := sha256.New()
 	if _, err := io.Copy(fileHash, f); err != nil {
-		fmt.Println(err.Error())
+		log.Fatal(err.Error())
 	}
 
 	return fileHash
@@ -125,7 +125,7 @@ func (c *Compare) printDiffFiles() {
 
 			diffs := diff.DiffMain(dstFile, srcFile, false)
 
-			fmt.Println(diff.DiffPrettyText(diffs))
+			log.Info(diff.DiffPrettyText(diffs))
 		default:
 			command := fmt.Sprintf(
 				diffCommand,
@@ -133,7 +133,7 @@ func (c *Compare) printDiffFiles() {
 				tmpDir+"/templates/src/"+diffFile.Name,
 			)
 
-			printDebug("Using custom diff command: " + command)
+			log.Debugf("Using custom diff command: %s", command)
 
 			cmd := exec.Command("bash", "-c", command)
 			cmd.Stderr = os.Stderr
@@ -143,7 +143,7 @@ func (c *Compare) printDiffFiles() {
 				// In some cases custom diff command might return non-zero exit code which is not an error
 				// For example: diff -u file1 file2 returns 1 if files are different
 				// Hence we are not failing here
-				printDebug(err.Error())
+				log.Debug(err.Error())
 			}
 		}
 	}
@@ -183,23 +183,23 @@ func (c *Compare) findNewOrRemovedFiles() {
 
 func (c *Compare) printCompareResults() {
 	if len(c.addedFiles) > 0 {
-		fmt.Printf("The following %d file/files would be added:\n", len(c.addedFiles))
+		log.Infof("===> The following %d file/files would be added:", len(c.addedFiles))
 		for _, addedFile := range c.addedFiles {
-			fmt.Printf("- %s\n", addedFile.Name)
+			log.Infof("- %s", addedFile.Name)
 		}
 	}
 
 	if len(c.removedFiles) > 0 {
-		fmt.Printf("The following %d file/files would be removed:\n", len(c.removedFiles))
+		log.Infof("===> The following %d file/files would be removed:", len(c.removedFiles))
 		for _, removedFile := range c.removedFiles {
-			fmt.Printf("- %s\n", removedFile.Name)
+			log.Infof("- %s", removedFile.Name)
 		}
 	}
 
 	if len(c.diffFiles) > 0 {
-		fmt.Printf("The following %d file/files would be changed:\n", len(c.diffFiles))
+		log.Infof("===> The following %d file/files would be changed:", len(c.diffFiles))
 		for _, diffFile := range c.diffFiles {
-			fmt.Printf("- %s\n", diffFile.Name)
+			log.Infof("- %s", diffFile.Name)
 		}
 		c.printDiffFiles()
 	}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/mattn/go-zglob"
 	"gopkg.in/yaml.v3"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -33,7 +32,7 @@ func (a *Application) parse() error {
 		file = a.File
 	}
 
-	printDebug(fmt.Sprintf("Parsing %s...", file))
+	log.Debugf("Parsing %s...", file)
 
 	yamlFile := h.ReadFile(file)
 
@@ -63,7 +62,7 @@ func (a *Application) collectHelmChart() error {
 	a.chartLocation = fmt.Sprintf("%s/%s", cacheDir, a.App.Spec.Source.RepoURL)
 
 	if err := os.MkdirAll(a.chartLocation, os.ModePerm); err != nil {
-		fmt.Println(err)
+		log.Fatal(err)
 	}
 
 	// A bit hacky, but we need to support cases when helm chart tgz filename does not follow the standard naming convention
@@ -74,9 +73,9 @@ func (a *Application) collectHelmChart() error {
 	}
 
 	if len(chartFileName) == 0 {
-		printDebug(fmt.Sprintf("Downloading version %s of %s chart...",
+		log.Debugf("Downloading version %s of %s chart...",
 			a.App.Spec.Source.TargetRevision,
-			a.App.Spec.Source.Chart))
+			a.App.Spec.Source.Chart)
 
 		cmd := exec.Command(
 			"helm",
@@ -87,17 +86,15 @@ func (a *Application) collectHelmChart() error {
 			"--version", a.App.Spec.Source.TargetRevision)
 
 		cmd.Stdout = os.Stdout
-		if debug {
-			cmd.Stderr = os.Stderr
-		}
+		cmd.Stderr = os.Stderr
 
 		if err := cmd.Run(); err != nil {
 			return errors.New("error downloading chart")
 		}
 	} else {
-		printDebug(fmt.Sprintf("Version %s of %s chart already downloaded...",
+		log.Debugf("Version %s of %s chart already downloaded...",
 			a.App.Spec.Source.TargetRevision,
-			a.App.Spec.Source.Chart))
+			a.App.Spec.Source.Chart)
 	}
 
 	return nil
@@ -106,11 +103,11 @@ func (a *Application) collectHelmChart() error {
 func (a *Application) extractChart() {
 	// We have a separate function for this and not using helm to extract the content of the chart
 	// because we don't want to re-download the chart if the TargetRevision is the same
-	printDebug(fmt.Sprintf("Extracting %s chart to %s/charts/%s...", a.App.Spec.Source.Chart, tmpDir, a.Type))
+	log.Debugf("Extracting %s chart to %s/charts/%s...", a.App.Spec.Source.Chart, tmpDir, a.Type)
 
 	path := fmt.Sprintf("%s/charts/%s/%s", tmpDir, a.Type, a.App.Spec.Source.Chart)
 	if err := os.MkdirAll(path, os.ModePerm); err != nil {
-		fmt.Println(err)
+		log.Fatal(err)
 	}
 
 	chartFileName, err := zglob.Glob(fmt.Sprintf("%s/%s-%s*.tgz", a.chartLocation, a.App.Spec.Source.Chart, a.App.Spec.Source.TargetRevision))
@@ -142,7 +139,7 @@ func (a *Application) extractChart() {
 }
 
 func (a *Application) renderTemplate() {
-	printDebug(fmt.Sprintf("Rendering %s template...", a.App.Spec.Source.Chart))
+	log.Debugf("Rendering %s template...", a.App.Spec.Source.Chart)
 
 	cmd := exec.Command(
 		"helm",
@@ -158,6 +155,6 @@ func (a *Application) renderTemplate() {
 	err := cmd.Run()
 
 	if err != nil {
-		fmt.Println(err)
+		log.Fatal(err)
 	}
 }

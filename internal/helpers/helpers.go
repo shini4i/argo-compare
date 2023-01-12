@@ -8,12 +8,6 @@ import (
 	"strings"
 )
 
-const (
-	ColorRed   = "\033[0;31m"
-	ColorCyan  = "\033[0;36m"
-	ColorReset = "\033[0m"
-)
-
 func GetEnv(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
@@ -23,8 +17,7 @@ func GetEnv(key, fallback string) string {
 
 func ReadFile(file string) []byte {
 	if readFile, err := os.ReadFile(file); errors.Is(err, os.ErrNotExist) {
-		fmt.Printf("File [%s%s%s] was removed in a source branch, skipping...\n",
-			ColorRed, file, ColorReset)
+		fmt.Printf("File [%s] was removed in a source branch, skipping...\n", file)
 		return nil
 	} else {
 		return readFile
