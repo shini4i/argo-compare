@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,15 +31,18 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) ([]string, error) {
 	var out bytes.Buffer
 
 	cmd.Stdout = &out
-	if debug {
-		cmd.Stderr = os.Stderr
-	}
+	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
 		return []string{}, err
 	}
 
-	printDebug(fmt.Sprintf("===> Found the following changed files:\n%s", out.String()))
+	log.Debug("===> Found the following changed files:")
+	for _, file := range strings.Split(out.String(), "\n") {
+		if file != "" {
+			log.Debugf("- %s", file)
+		}
+	}
 
 	for _, file := range strings.Split(out.String(), "\n") {
 		if filepath.Ext(file) == ".yaml" {
@@ -53,9 +55,9 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) ([]string, error) {
 	}
 
 	if len(g.changedFiles) > 0 {
-		fmt.Println("===> Found the following changed Application files")
+		log.Info("===> Found the following changed Application files")
 		for _, file := range g.changedFiles {
-			fmt.Printf("- %s\n", file)
+			log.Infof("- %s", file)
 		}
 	}
 
@@ -66,36 +68,39 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 	var (
 		err     error
 		out     bytes.Buffer
+		errOut  bytes.Buffer
 		tmpFile *os.File
 	)
 
-	printDebug(fmt.Sprintf("Getting content of %s from %s", targetFile, targetBranch))
+	log.Debugf("Getting content of %s from %s", targetFile, targetBranch)
 
 	cmd := cmdContext("git", "--no-pager", "show", targetBranch+":"+targetFile)
 
 	cmd.Stdout = &out
-	if debug {
-		cmd.Stderr = os.Stderr
-	}
+	cmd.Stderr = &errOut
 
 	if err = cmd.Run(); err != nil {
+		if strings.Contains(errOut.String(), "exists on disk, but not in") {
+			log.Warning("The requested file does not exist in target branch, assuming it is a new Application")
+		} else {
+			log.Error(errOut.String())
+		}
 		return m.Application{}, err
 	}
 
 	// writing the content to a temporary file to be able to pass it to the parser
 	if tmpFile, err = os.CreateTemp("/tmp", "compare-*.yaml"); err != nil {
-		fmt.Println("Error creating temporary file")
-		return m.Application{}, err
+		log.Fatal("Error creating temporary file")
 	}
 
 	if _, err = tmpFile.WriteString(out.String()); err != nil {
-		fmt.Println(err.Error())
+		log.Fatal(err.Error())
 	}
 
 	defer func(name string) {
 		err := os.Remove(name)
 		if err != nil {
-			fmt.Println(err.Error())
+			log.Fatal(err.Error())
 		}
 	}(tmpFile.Name())
 
@@ -108,7 +113,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 }
 
 func checkIfApp(file string) (bool, error) {
-	printDebug(fmt.Sprintf("===> Checking if [%s] is an Application", file))
+	log.Debugf("===> Checking if [%s] is an Application", file)
 
 	app := Application{File: file}
 
