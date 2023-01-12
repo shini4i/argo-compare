@@ -68,6 +68,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 	var (
 		err     error
 		out     bytes.Buffer
+		errOut  bytes.Buffer
 		tmpFile *os.File
 	)
 
@@ -76,9 +77,14 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 	cmd := cmdContext("git", "--no-pager", "show", targetBranch+":"+targetFile)
 
 	cmd.Stdout = &out
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = &errOut
 
 	if err = cmd.Run(); err != nil {
+		if strings.Contains(errOut.String(), "exists on disk, but not in") {
+			log.Warning("The requested file does not exist in target branch, assuming it is a new Application")
+		} else {
+			log.Error(errOut.String())
+		}
 		return m.Application{}, err
 	}
 
