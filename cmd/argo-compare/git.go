@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"github.com/op/go-logging"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,7 +32,9 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) ([]string, error) {
 	var out bytes.Buffer
 
 	cmd.Stdout = &out
-	cmd.Stderr = os.Stderr
+	if logging.GetLevel(loggerName) == logging.DEBUG {
+		cmd.Stderr = os.Stderr
+	}
 
 	if err := cmd.Run(); err != nil {
 		return []string{}, err
@@ -40,7 +43,7 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) ([]string, error) {
 	log.Debug("===> Found the following changed files:")
 	for _, file := range strings.Split(out.String(), "\n") {
 		if file != "" {
-			log.Debugf("- %s", file)
+			log.Debugf("▶ %s", file)
 		}
 	}
 
@@ -57,7 +60,7 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) ([]string, error) {
 	if len(g.changedFiles) > 0 {
 		log.Info("===> Found the following changed Application files")
 		for _, file := range g.changedFiles {
-			log.Infof("- %s", file)
+			log.Infof("▶ %s", file)
 		}
 	}
 

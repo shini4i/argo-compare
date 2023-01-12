@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/mattn/go-zglob"
+	"github.com/op/go-logging"
 	"gopkg.in/yaml.v3"
 	"os"
 	"os/exec"
@@ -86,7 +87,9 @@ func (a *Application) collectHelmChart() error {
 			"--version", a.App.Spec.Source.TargetRevision)
 
 		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		if logging.GetLevel(loggerName) == logging.DEBUG {
+			cmd.Stderr = os.Stderr
+		}
 
 		if err := cmd.Run(); err != nil {
 			return errors.New("error downloading chart")
@@ -129,7 +132,9 @@ func (a *Application) extractChart() {
 	)
 
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	if logging.GetLevel(loggerName) == logging.DEBUG {
+		cmd.Stderr = os.Stderr
+	}
 
 	err = cmd.Run()
 
@@ -150,7 +155,9 @@ func (a *Application) renderTemplate() {
 		"--values", fmt.Sprintf("%s/values-%s.yaml", tmpDir, a.Type),
 	)
 
-	cmd.Stderr = os.Stderr
+	if logging.GetLevel(loggerName) == logging.DEBUG {
+		cmd.Stderr = os.Stderr
+	}
 
 	err := cmd.Run()
 
