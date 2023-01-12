@@ -46,6 +46,10 @@ If you want to use a custom diff tool, you can use the following approach:
 ARGO_COMPARE_DIFF_COMMAND="/usr/bin/diff %s %s" argo-compare branch <target-branch>
 ```
 
+Additionally, you can try it with docker:
+```bash
+docker run -it --mount type=bind,source="$(pwd)",target=/apps ghcr.io/shini4i/argo-compare:<version> branch <branch_name>
+```
 ### How it works
 
 1) First, this tool will check which files are changed compared to the files in the target branch.
