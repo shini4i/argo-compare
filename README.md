@@ -48,7 +48,7 @@ ARGO_COMPARE_DIFF_COMMAND="/usr/bin/diff %s %s" argo-compare branch <target-bran
 
 Additionally, you can try it with docker:
 ```bash
-docker run -it --mount type=bind,source="$(pwd)",target=/apps ghcr.io/shini4i/argo-compare:<version> branch <branch_name>
+docker run -it --mount type=bind,source="$(pwd)",target=/apps ghcr.io/shini4i/argo-compare:<version> branch <target-branch>
 ```
 ### How it works
 
