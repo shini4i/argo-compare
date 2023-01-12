@@ -32,3 +32,15 @@ brews:
     homepage: https://github.com/shini4i/argo-compare
     description: "A tool for showing difference between Application in a different git branches"
     license: "MIT"
+
+dockers:
+  - image_templates: ["ghcr.io/shini4i/{{ .ProjectName }}:{{ .Version }}"]
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.licenses=MIT"
