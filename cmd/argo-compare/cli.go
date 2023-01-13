@@ -1,13 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"github.com/alecthomas/kong"
 	"os"
 )
 
 var CLI struct {
 	Debug     bool             `help:"Enable debug mode" short:"d"`
-	DropCache Cache            `help:"Drop cache directory"`
+	DropCache DropCache        `help:"Drop cache directory"`
 	Version   kong.VersionFlag `help:"Show version" short:"v"`
 
 	Branch struct {
@@ -17,9 +18,10 @@ var CLI struct {
 	} `cmd:"" help:"target branch to compare with" type:"string"`
 }
 
-type Cache bool
+type DropCache bool
 
-func (c *Cache) BeforeApply(app *kong.Kong) error {
+func (d *DropCache) BeforeApply(app *kong.Kong) error {
+	fmt.Printf("===> Purging cache directory: %s\n", cacheDir)
 	err := os.RemoveAll(cacheDir)
 	if err != nil {
 		app.Exit(1)
