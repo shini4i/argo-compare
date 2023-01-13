@@ -37,8 +37,7 @@ func (a *Application) parse() error {
 
 	yamlFile := h.ReadFile(file)
 
-	err := yaml.Unmarshal(yamlFile, &app)
-	if err != nil {
+	if err := yaml.Unmarshal(yamlFile, &app); err != nil {
 		return err
 	}
 
@@ -53,9 +52,8 @@ func (a *Application) writeValuesYaml() {
 		panic(err)
 	}
 
-	_, err = yamlFile.WriteString(a.App.Spec.Source.Helm.Values)
-	if err != nil {
-		panic(err)
+	if _, err := yamlFile.WriteString(a.App.Spec.Source.Helm.Values); err != nil {
+		log.Fatal(err.Error())
 	}
 }
 
@@ -113,7 +111,12 @@ func (a *Application) extractChart() {
 		log.Fatal(err)
 	}
 
-	chartFileName, err := zglob.Glob(fmt.Sprintf("%s/%s-%s*.tgz", a.chartLocation, a.App.Spec.Source.Chart, a.App.Spec.Source.TargetRevision))
+	searchPattern := fmt.Sprintf("%s/%s-%s*.tgz",
+		a.chartLocation,
+		a.App.Spec.Source.Chart,
+		a.App.Spec.Source.TargetRevision)
+
+	chartFileName, err := zglob.Glob(searchPattern)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -136,9 +139,7 @@ func (a *Application) extractChart() {
 		cmd.Stderr = os.Stderr
 	}
 
-	err = cmd.Run()
-
-	if err != nil {
+	if err = cmd.Run(); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -159,9 +160,7 @@ func (a *Application) renderTemplate() {
 		cmd.Stderr = os.Stderr
 	}
 
-	err := cmd.Run()
-
-	if err != nil {
+	if err := cmd.Run(); err != nil {
 		log.Fatal(err)
 	}
 }

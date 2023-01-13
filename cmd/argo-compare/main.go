@@ -34,17 +34,6 @@ var (
 	)
 )
 
-var CLI struct {
-	Debug   bool             `help:"Enable debug mode" short:"d"`
-	Version kong.VersionFlag `help:"Show version" short:"v"`
-
-	Branch struct {
-		Name               string `arg:"" type:"string"`
-		File               string `help:"Compare a single file" short:"f"`
-		PreserveHelmLabels bool   `help:"Preserve Helm labels"`
-	} `cmd:"" help:"target branch to compare with" type:"string"`
-}
-
 type execContext = func(name string, arg ...string) *exec.Cmd
 
 func loggingInit(level logging.Level) {
