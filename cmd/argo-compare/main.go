@@ -17,7 +17,7 @@ const loggerName = "argo-compare"
 var (
 	targetBranch       string
 	fileToCompare      string
-	cacheDir           = fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME"))
+	cacheDir           = h.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
 	tmpDir             string
 	version            = "local"
 	repo               = GitRepo{}
