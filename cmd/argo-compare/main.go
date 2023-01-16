@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/alecthomas/kong"
@@ -13,6 +14,7 @@ import (
 )
 
 const loggerName = "argo-compare"
+const repoCredsPrefix = "REPO_CREDS_"
 
 var (
 	targetBranch       string
@@ -38,9 +40,9 @@ var (
 type execContext = func(name string, arg ...string) *exec.Cmd
 
 type RepoCredentials struct {
-	Url      string
-	Username string
-	Password string
+	Url      string `json:"url"`
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 func loggingInit(level logging.Level) {
@@ -114,11 +116,15 @@ func compareFiles(changedFiles []string) {
 }
 
 func collectRepoCredentials() {
+	log.Debug("===> Collecting repo credentials")
 	for _, e := range os.Environ() {
-		if strings.HasPrefix(e, "REPO_CREDS_") {
-			repo := strings.Split(e, "=")
-			creds := strings.SplitN(repo[1], ":", 2)
-			repoCredentials = append(repoCredentials, RepoCredentials{Url: repo[0], Username: creds[0], Password: creds[1]})
+		if strings.HasPrefix(e, repoCredsPrefix) {
+			var repoCreds RepoCredentials
+			err := json.Unmarshal([]byte(strings.SplitN(e, "=", 2)[1]), &repoCreds)
+			if err != nil {
+				panic(err)
+			}
+			repoCredentials = append(repoCredentials, repoCreds)
 		}
 	}
 }
@@ -152,7 +158,7 @@ func main() {
 
 	collectRepoCredentials()
 	for _, repo := range repoCredentials {
-		log.Infof("Found repo credentials for [%s]", repo.Url)
+		log.Debugf("▶ Found repo credentials for [%s]", repo.Url)
 	}
 
 	log.Infof("===> Running argo-compare version [%s]", version)
