@@ -72,6 +72,16 @@ func (a *Application) collectHelmChart() error {
 	}
 
 	if len(chartFileName) == 0 {
+		var username, password string
+
+		for _, repoCred := range repoCredentials {
+			if repoCred.Url == a.App.Spec.Source.RepoURL {
+				username = repoCred.Username
+				password = repoCred.Password
+				break
+			}
+		}
+
 		log.Debugf("Downloading version %s of %s chart...",
 			a.App.Spec.Source.TargetRevision,
 			a.App.Spec.Source.Chart)
@@ -80,6 +90,8 @@ func (a *Application) collectHelmChart() error {
 			"helm",
 			"pull",
 			"--destination", a.chartLocation,
+			"--username", username,
+			"--password", password,
 			"--repo", a.App.Spec.Source.RepoURL,
 			a.App.Spec.Source.Chart,
 			"--version", a.App.Spec.Source.TargetRevision)

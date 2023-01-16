@@ -127,6 +127,10 @@ func collectRepoCredentials() {
 			repoCredentials = append(repoCredentials, repoCreds)
 		}
 	}
+
+	for _, repo := range repoCredentials {
+		log.Debugf("▶ Found repo credentials for [%s]", repo.Url)
+	}
 }
 
 func main() {
@@ -156,12 +160,9 @@ func main() {
 		preserveHelmLabels = true
 	}
 
-	collectRepoCredentials()
-	for _, repo := range repoCredentials {
-		log.Debugf("▶ Found repo credentials for [%s]", repo.Url)
-	}
-
 	log.Infof("===> Running argo-compare version [%s]", version)
+
+	collectRepoCredentials()
 
 	var changedFiles []string
 	var err error
