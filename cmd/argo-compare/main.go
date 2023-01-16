@@ -1,18 +1,20 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/alecthomas/kong"
+	"github.com/op/go-logging"
 	h "github.com/shini4i/argo-compare/internal/helpers"
 	m "github.com/shini4i/argo-compare/internal/models"
 	"os"
 	"os/exec"
-
-	"github.com/op/go-logging"
+	"strings"
 )
 
 const loggerName = "argo-compare"
+const repoCredsPrefix = "REPO_CREDS_"
 
 var (
 	targetBranch       string
@@ -21,6 +23,7 @@ var (
 	tmpDir             string
 	version            = "local"
 	repo               = GitRepo{}
+	repoCredentials    []RepoCredentials
 	diffCommand        = h.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
 	preserveHelmLabels bool
 )
@@ -35,6 +38,12 @@ var (
 )
 
 type execContext = func(name string, arg ...string) *exec.Cmd
+
+type RepoCredentials struct {
+	Url      string `json:"url"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
 
 func loggingInit(level logging.Level) {
 	backend := logging.NewLogBackend(os.Stdout, "", 0)
@@ -106,6 +115,24 @@ func compareFiles(changedFiles []string) {
 	}
 }
 
+func collectRepoCredentials() {
+	log.Debug("===> Collecting repo credentials")
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, repoCredsPrefix) {
+			var repoCreds RepoCredentials
+			err := json.Unmarshal([]byte(strings.SplitN(e, "=", 2)[1]), &repoCreds)
+			if err != nil {
+				panic(err)
+			}
+			repoCredentials = append(repoCredentials, repoCreds)
+		}
+	}
+
+	for _, repo := range repoCredentials {
+		log.Debugf("▶ Found repo credentials for [%s]", repo.Url)
+	}
+}
+
 func main() {
 	ctx := kong.Parse(&CLI,
 		kong.Name("argo-compare"),
@@ -134,6 +161,8 @@ func main() {
 	}
 
 	log.Infof("===> Running argo-compare version [%s]", version)
+
+	collectRepoCredentials()
 
 	var changedFiles []string
 	var err error

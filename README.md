@@ -1,6 +1,6 @@
 <div align="center">
 
-# argo-compare
+# Argo Compare
 
 A tool for showing difference between Application in a different git branches
 
@@ -50,22 +50,46 @@ Additionally, you can try it with docker:
 ```bash
 docker run -it --mount type=bind,source="$(pwd)",target=/apps ghcr.io/shini4i/argo-compare:<version> branch <target-branch>
 ```
-### How it works
+
+#### Password Protected Repositories
+Using password protected repositories is a bit more challenging. To make it work, we need to expose JSON as an environment variable.
+The JSON should contain the following fields:
+
+```json
+{
+  "url": "https://charts.example.com",
+  "username": "username",
+  "password": "password"
+}
+```
+How to properly expose it depends on the specific use case.
+
+A bash example:
+```bash
+export REPO_CREDS_EXAMPLE={\"url\":\"https://charts.example.com\",\"username\":\"username\",\"password\":\"password\"}
+```
+
+Where `EXAMPLE` is an identifier that is not used by the application.
+
+Argo Compare will look for all `REPO_CREDS_*` environment variables and use them if `url` will match the `repoURL` from Application manifest.
+
+
+## How it works
 
 1) First, this tool will check which files are changed compared to the files in the target branch.
 2) It will get the content of the changed Application files from the target branch.
 3) It will render manifests using the helm template using source and target branch values.
-4) It will get rid of helm related labels as they are not important for the comparison.
+4) It will get rid of helm related labels as they are not important for the comparison. (It can be skipped by providing `--preserve-helm-labels` flag)
 5) As the last step, it will compare rendered manifest from the source and destination branches and print the
    difference.
 
 ## Current limitations
 
 - Works only with Applications that are using helm repositories and helm values present in the Application yaml.
-- Does not support password protected repositories.
+- <s>Does not support password protected repositories.</s>
 
 ## Roadmap
 
 - [ ] Add support for Application using git as a source of helm chart
-- [ ] Add support for providing credentials for password protected helm repositories
+- [x] Add support for providing credentials for password protected helm repositories
 - [ ] Add support for posting diff as a comment to PR (GitHub)/MR(GitLab)
