@@ -74,7 +74,7 @@ Where `EXAMPLE` is an identifier that is not used by the application.
 Argo Compare will look for all `REPO_CREDS_*` environment variables and use them if `url` will match the `repoURL` from Application manifest.
 
 
-### How it works
+## How it works
 
 1) First, this tool will check which files are changed compared to the files in the target branch.
 2) It will get the content of the changed Application files from the target branch.
