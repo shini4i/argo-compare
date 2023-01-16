@@ -86,7 +86,7 @@ Argo Compare will look for all `REPO_CREDS_*` environment variables and use them
 ## Current limitations
 
 - Works only with Applications that are using helm repositories and helm values present in the Application yaml.
-- Does not support password protected repositories.
+- <s>Does not support password protected repositories.</s>
 
 ## Roadmap
 
