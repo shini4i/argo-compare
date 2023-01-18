@@ -43,7 +43,7 @@ argo-compare branch <target-branch> --file <file-path>
 If you want to use a custom diff tool, you can use the following approach:
 
 ```bash
-ARGO_COMPARE_DIFF_COMMAND="/usr/bin/diff %s %s" argo-compare branch <target-branch>
+ARGO_COMPARE_DIFF_COMMAND="/usr/bin/diff -u %s %s | diff-so-fancy" argo-compare branch <target-branch>
 ```
 
 Additionally, you can try it with docker:
