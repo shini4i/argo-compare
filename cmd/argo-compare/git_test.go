@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/op/go-logging"
 	"os"
 	"os/exec"
 	"reflect"
@@ -20,6 +21,11 @@ var (
 	changedFileContent = h.ReadFile("../../" + appFile)
 )
 
+func init() {
+	// We don't want to see any logs in tests
+	loggingInit(logging.CRITICAL)
+}
+
 func TestChangedFiles(t *testing.T) {
 	stdout, _ := git.getChangedFiles(fakeChangedFile)
 
@@ -32,7 +38,9 @@ func TestGetChangedFileContent(t *testing.T) {
 	content, _ := git.getChangedFileContent("main", appFile, fakeFileContent)
 
 	app := Application{File: appFile}
-	app.parse()
+	if err := app.parse(); err != nil {
+		t.Errorf("test.yaml should be parsed")
+	}
 
 	if !reflect.DeepEqual(content, app.App) {
 		t.Errorf("content should be equal to app.App")
