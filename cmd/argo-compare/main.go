@@ -37,6 +37,10 @@ var (
 	)
 )
 
+var (
+	unsupportedAppConfiguration = errors.New("unsupported application configuration")
+)
+
 type execContext = func(name string, arg ...string) *exec.Cmd
 
 type RepoCredentials struct {
@@ -63,7 +67,7 @@ func processFiles(fileName string, fileType string, application m.Application) e
 	}
 
 	if len(app.App.Spec.Source.Chart) == 0 {
-		return errors.New("unsupported application configuration")
+		return unsupportedAppConfiguration
 	}
 
 	app.writeValuesYaml()
@@ -89,7 +93,12 @@ func compareFiles(changedFiles []string) {
 		}
 
 		if err = processFiles(file, "src", m.Application{}); err != nil {
-			log.Fatalf("Could not process the source Application: %s", err)
+			switch err {
+			case unsupportedAppConfiguration:
+				log.Warning("Skipping unsupported application configuration")
+			default:
+				log.Fatalf("Could not process the source Application: %s", err)
+			}
 			continue
 		}
 
@@ -133,6 +142,16 @@ func collectRepoCredentials() {
 	}
 }
 
+func printInvalidFilesList() {
+	if len(repo.invalidFiles) > 0 {
+		log.Info("===> The following yaml files are invalid and were skipped")
+		for _, file := range repo.invalidFiles {
+			log.Warningf("▶ %s", file)
+		}
+		os.Exit(1)
+	}
+}
+
 func main() {
 	ctx := kong.Parse(&CLI,
 		kong.Name("argo-compare"),
@@ -172,21 +191,15 @@ func main() {
 		changedFiles = []string{fileToCompare}
 	} else {
 		if changedFiles, err = repo.getChangedFiles(exec.Command); err != nil {
-			panic(err)
-		}
-		if len(changedFiles) == 0 {
-			log.Info("No changed Application files found. Exiting...")
-			os.Exit(0)
+			log.Fatal(err)
 		}
 	}
 
-	compareFiles(changedFiles)
-
-	if len(repo.invalidFiles) > 0 {
-		log.Info("===> The following yaml files are invalid and were skipped")
-		for _, file := range repo.invalidFiles {
-			log.Warningf("▶ %s", file)
-		}
-		os.Exit(1)
+	if len(changedFiles) == 0 {
+		log.Info("No changed Application files found. Exiting...")
+	} else {
+		compareFiles(changedFiles)
 	}
+
+	printInvalidFilesList()
 }

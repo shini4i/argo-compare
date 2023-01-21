@@ -187,7 +187,7 @@ func (c *Compare) findNewOrRemovedFiles() {
 
 func (c *Compare) printCompareResults() {
 	if len(c.addedFiles) == 0 && len(c.removedFiles) == 0 && len(c.diffFiles) == 0 {
-		log.Info("No diff in rendered manifests found!")
+		log.Info("No diff was found in rendered manifests!")
 		return
 	}
 
