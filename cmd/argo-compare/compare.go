@@ -30,17 +30,17 @@ type Compare struct {
 }
 
 func (c *Compare) findFiles() {
-	srcFiles, err := zglob.Glob(fmt.Sprintf("%s/templates/src/**/*.yaml", tmpDir))
-	if err != nil {
-		panic(err)
+	if srcFiles, err := zglob.Glob(fmt.Sprintf("%s/templates/src/**/*.yaml", tmpDir)); err != nil {
+		log.Fatal(err)
+	} else {
+		c.srcFiles = c.processFiles(srcFiles)
 	}
-	c.srcFiles = c.processFiles(srcFiles)
 
-	dstFiles, err := zglob.Glob(fmt.Sprintf("%s/templates/dst/**/*.yaml", tmpDir))
-	if err != nil {
-		panic(err)
+	if dstFiles, err := zglob.Glob(fmt.Sprintf("%s/templates/dst/**/*.yaml", tmpDir)); err != nil {
+		log.Fatal(err)
+	} else {
+		c.dstFiles = c.processFiles(dstFiles)
 	}
-	c.dstFiles = c.processFiles(dstFiles)
 
 	if !reflect.DeepEqual(c.srcFiles, c.dstFiles) {
 		c.compareFiles()
@@ -51,31 +51,25 @@ func (c *Compare) findFiles() {
 
 func (c *Compare) processFiles(files []string) []File {
 	var strippedFiles []File
-	var file File
 
-	// Most of the time, we want to avoid huge output containing helm labels update only
+	// Most of the time, we want to avoid huge output containing helm labels update only,
 	// but we still want to be able to see the diff if needed
 	if !preserveHelmLabels {
 		c.findAndStripHelmLabels()
 	}
 
-	// TODO: Make this less ugly
 	for _, srcFile := range files {
-		s := strings.Split(srcFile, "/")
-		var count int
+		var idx int
 
-		for _, v := range s {
-			count += len(v)
-			if v == "dst" || v == "src" {
-				break
-			}
+		if strings.Contains(srcFile, "/src/") {
+			idx = strings.Index(srcFile, "/src/") + 5 // add 5 for the length of /src/
+		} else {
+			idx = strings.Index(srcFile, "/dst/") + 5 // add 5 for the length of /dst/
 		}
 
-		count += 5 // add 5 for the length of /dst/ and /src/
-
-		file = File{Name: srcFile[count:], Sha: getFileSha(srcFile)}
-		strippedFiles = append(strippedFiles, file)
+		strippedFiles = append(strippedFiles, File{Name: srcFile[idx:], Sha: getFileSha(srcFile)})
 	}
+
 	return strippedFiles
 }
 
