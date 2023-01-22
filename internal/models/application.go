@@ -13,8 +13,9 @@ type Application struct {
 			TargetRevision string `yaml:"targetRevision"`
 			Path           string `yaml:"path,omitempty"`
 			Helm           struct {
-				Values     string   `yaml:"values,omitempty"`
-				ValueFiles []string `yaml:"valueFiles,omitempty"`
+				ReleaseName string   `yaml:"releaseName,omitempty"`
+				Values      string   `yaml:"values,omitempty"`
+				ValueFiles  []string `yaml:"valueFiles,omitempty"`
 			} `yaml:"helm"`
 		} `yaml:"source"`
 	} `yaml:"spec"`
