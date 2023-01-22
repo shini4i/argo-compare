@@ -154,8 +154,6 @@ func (t *Target) extractChart() {
 func (t *Target) renderTemplate() {
 	var releaseName string
 
-	log.Debugf("Rendering %s template...", t.App.Spec.Source.Chart)
-
 	// We are providing release name to the helm template command to cover some corner cases
 	// when the chart is using the release name in the templates
 	if t.App.Spec.Source.Helm.ReleaseName != "" {
@@ -164,7 +162,7 @@ func (t *Target) renderTemplate() {
 		releaseName = t.App.Metadata.Name
 	}
 
-	log.Debugf("Rendering templates with release name: %s", releaseName)
+	log.Debugf("Rendering [%s] templates using release name [%s]", t.App.Spec.Source.Chart, releaseName)
 
 	cmd := exec.Command(
 		"helm",
