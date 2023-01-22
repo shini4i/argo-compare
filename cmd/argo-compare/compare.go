@@ -33,13 +33,13 @@ func (c *Compare) findFiles() {
 	if srcFiles, err := zglob.Glob(fmt.Sprintf("%s/templates/src/**/*.yaml", tmpDir)); err != nil {
 		log.Fatal(err)
 	} else {
-		c.srcFiles = c.processFiles(srcFiles)
+		c.srcFiles = c.processFiles(srcFiles, "src")
 	}
 
 	if dstFiles, err := zglob.Glob(fmt.Sprintf("%s/templates/dst/**/*.yaml", tmpDir)); err != nil {
 		log.Fatal(err)
 	} else {
-		c.dstFiles = c.processFiles(dstFiles)
+		c.dstFiles = c.processFiles(dstFiles, "dst")
 	}
 
 	if !reflect.DeepEqual(c.srcFiles, c.dstFiles) {
@@ -49,7 +49,7 @@ func (c *Compare) findFiles() {
 	c.findNewOrRemovedFiles()
 }
 
-func (c *Compare) processFiles(files []string) []File {
+func (c *Compare) processFiles(files []string, filesType string) []File {
 	var strippedFiles []File
 
 	// Most of the time, we want to avoid huge output containing helm labels update only,
@@ -58,15 +58,10 @@ func (c *Compare) processFiles(files []string) []File {
 		c.findAndStripHelmLabels()
 	}
 
+	substring := fmt.Sprintf("/%s/", filesType)
+
 	for _, srcFile := range files {
-		var idx int
-
-		if strings.Contains(srcFile, "/src/") {
-			idx = strings.Index(srcFile, "/src/") + 5 // add 5 for the length of /src/
-		} else {
-			idx = strings.Index(srcFile, "/dst/") + 5 // add 5 for the length of /dst/
-		}
-
+		idx := strings.Index(srcFile, substring) + len(substring)
 		strippedFiles = append(strippedFiles, File{Name: srcFile[idx:], Sha: getFileSha(srcFile)})
 	}
 
