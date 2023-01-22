@@ -44,3 +44,5 @@ dockers:
       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
       - "--label=org.opencontainers.image.version={{.Version}}"
       - "--label=org.opencontainers.image.licenses=MIT"
+    extra_files:
+      - patch/diff-so-fancy.patch
