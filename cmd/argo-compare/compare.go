@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
+	"github.com/codingsince1985/checksum"
 	"github.com/mattn/go-zglob"
 	"github.com/op/go-logging"
 	h "github.com/shini4i/argo-compare/internal/helpers"
-	"hash"
 	"os"
 	"os/exec"
 	"reflect"
@@ -16,7 +16,7 @@ import (
 
 type File struct {
 	Name string
-	Sha  hash.Hash
+	Sha  string
 }
 
 type Compare struct {
@@ -59,7 +59,11 @@ func (c *Compare) processFiles(files []string, filesType string) []File {
 	substring := fmt.Sprintf("/%s/", filesType)
 
 	for _, file := range files {
-		processedFiles = append(processedFiles, File{Name: strings.Split(file, substring)[1], Sha: h.GetFileSha(file)})
+		if sha256sum, err := checksum.SHA256sum(file); err != nil {
+			log.Fatal(err)
+		} else {
+			processedFiles = append(processedFiles, File{Name: strings.Split(file, substring)[1], Sha: sha256sum})
+		}
 	}
 
 	return processedFiles
