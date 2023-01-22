@@ -1,13 +1,11 @@
 package main
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"github.com/mattn/go-zglob"
 	"github.com/op/go-logging"
 	h "github.com/shini4i/argo-compare/internal/helpers"
 	"hash"
-	"io"
 	"os"
 	"os/exec"
 	"reflect"
@@ -61,32 +59,10 @@ func (c *Compare) processFiles(files []string, filesType string) []File {
 	substring := fmt.Sprintf("/%s/", filesType)
 
 	for _, file := range files {
-		processedFiles = append(processedFiles, File{Name: strings.Split(file, substring)[1], Sha: getFileSha(file)})
+		processedFiles = append(processedFiles, File{Name: strings.Split(file, substring)[1], Sha: h.GetFileSha(file)})
 	}
 
 	return processedFiles
-}
-
-func getFileSha(file string) hash.Hash {
-	// We are using SHA as a way to detect if two files are identical
-	f, err := os.Open(file)
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-
-	defer func(f *os.File) {
-		err := f.Close()
-		if err != nil {
-			panic(err)
-		}
-	}(f)
-
-	fileHash := sha256.New()
-	if _, err := io.Copy(fileHash, f); err != nil {
-		log.Fatal(err.Error())
-	}
-
-	return fileHash
 }
 
 func (c *Compare) compareFiles() {
