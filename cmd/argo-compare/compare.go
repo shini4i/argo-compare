@@ -50,7 +50,7 @@ func (c *Compare) findFiles() {
 }
 
 func (c *Compare) processFiles(files []string, filesType string) []File {
-	var strippedFiles []File
+	var processedFiles []File
 
 	// Most of the time, we want to avoid huge output containing helm labels update only,
 	// but we still want to be able to see the diff if needed
@@ -60,12 +60,11 @@ func (c *Compare) processFiles(files []string, filesType string) []File {
 
 	substring := fmt.Sprintf("/%s/", filesType)
 
-	for _, srcFile := range files {
-		idx := strings.Index(srcFile, substring) + len(substring)
-		strippedFiles = append(strippedFiles, File{Name: srcFile[idx:], Sha: getFileSha(srcFile)})
+	for _, file := range files {
+		processedFiles = append(processedFiles, File{Name: strings.Split(file, substring)[1], Sha: getFileSha(file)})
 	}
 
-	return strippedFiles
+	return processedFiles
 }
 
 func getFileSha(file string) hash.Hash {
