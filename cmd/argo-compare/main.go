@@ -59,24 +59,24 @@ func loggingInit(level logging.Level) {
 func processFiles(fileName string, fileType string, application m.Application) error {
 	log.Debugf("Processing [%s] file: [%s]", fileType, fileName)
 
-	app := Application{File: fileName, Type: fileType, App: application}
+	target := Target{File: fileName, Type: fileType, App: application}
 	if fileType == "src" {
-		if err := app.parse(); err != nil {
+		if err := target.parse(); err != nil {
 			return err
 		}
 	}
 
-	if len(app.App.Spec.Source.Chart) == 0 {
+	if len(target.App.Spec.Source.Chart) == 0 {
 		return unsupportedAppConfiguration
 	}
 
-	app.writeValuesYaml()
-	if err := app.collectHelmChart(); err != nil {
+	target.writeValuesYaml()
+	if err := target.collectHelmChart(); err != nil {
 		return err
 	}
 
-	app.extractChart()
-	app.renderTemplate()
+	target.extractChart()
+	target.renderTemplate()
 
 	return nil
 }

@@ -37,12 +37,12 @@ func TestChangedFiles(t *testing.T) {
 func TestGetChangedFileContent(t *testing.T) {
 	content, _ := git.getChangedFileContent("main", appFile, fakeFileContent)
 
-	app := Application{File: appFile}
-	if err := app.parse(); err != nil {
+	target := Target{File: appFile}
+	if err := target.parse(); err != nil {
 		t.Errorf("test.yaml should be parsed")
 	}
 
-	if !reflect.DeepEqual(content, app.App) {
+	if !reflect.DeepEqual(content, target.App) {
 		t.Errorf("content should be equal to app.App")
 	}
 }

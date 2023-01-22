@@ -107,24 +107,24 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 		}
 	}(tmpFile.Name())
 
-	app := Application{File: tmpFile.Name()}
-	if err := app.parse(); err != nil {
+	target := Target{File: tmpFile.Name()}
+	if err := target.parse(); err != nil {
 		return m.Application{}, err
 	}
 
-	return app.App, nil
+	return target.App, nil
 }
 
 func checkIfApp(file string) (bool, error) {
 	log.Debugf("===> Checking if [%s] is an Application", file)
 
-	app := Application{File: file}
+	target := Target{File: file}
 
-	if err := app.parse(); err != nil {
+	if err := target.parse(); err != nil {
 		return false, err
 	}
 
-	if app.App.Kind != "Application" {
+	if target.App.Kind != "Application" {
 		return false, nil
 	}
 	return true, nil
