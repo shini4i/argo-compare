@@ -111,7 +111,7 @@ func (t *Target) collectHelmChart() error {
 }
 
 func (t *Target) extractChart() {
-	// We have t separate function for this and not using helm to extract the content of the chart
+	// We have a separate function for this and not using helm to extract the content of the chart
 	// because we don't want to re-download the chart if the TargetRevision is the same
 	log.Debugf("Extracting %s chart to %s/charts/%s...", t.App.Spec.Source.Chart, tmpDir, t.Type)
 
