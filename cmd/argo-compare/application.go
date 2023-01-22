@@ -48,11 +48,11 @@ func (t *Target) parse() error {
 func (t *Target) writeValuesYaml() {
 	yamlFile, err := os.Create(fmt.Sprintf("%s/values-%s.yaml", tmpDir, t.Type))
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	if _, err := yamlFile.WriteString(t.App.Spec.Source.Helm.Values); err != nil {
-		log.Fatal(err.Error())
+		log.Fatal(err)
 	}
 }
 
@@ -102,7 +102,7 @@ func (t *Target) collectHelmChart() error {
 			return errors.New("error downloading chart")
 		}
 	} else {
-		log.Debugf("Version %s of %s chart already downloaded...",
+		log.Debugf("Version %s of %s chart is present in the cache...",
 			t.App.Spec.Source.TargetRevision,
 			t.App.Spec.Source.Chart)
 	}
