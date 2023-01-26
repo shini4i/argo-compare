@@ -5,6 +5,7 @@ import (
 	"github.com/codingsince1985/checksum"
 	"github.com/mattn/go-zglob"
 	"github.com/op/go-logging"
+	"github.com/r3labs/diff/v3"
 	h "github.com/shini4i/argo-compare/internal/helpers"
 	"os"
 	"os/exec"
@@ -16,7 +17,7 @@ import (
 
 type File struct {
 	Name string
-	Sha  string
+	Sha  string `diff:"-"`
 }
 
 type Compare struct {
@@ -122,35 +123,19 @@ func (c *Compare) printDiffFiles() {
 }
 
 func (c *Compare) findNewOrRemovedFiles() {
-	var newFiles []File
-	var removedFiles []File
-
-	for _, srcFile := range c.srcFiles {
-		var found bool
-		for _, dstFile := range c.dstFiles {
-			if srcFile.Name == dstFile.Name {
-				found = true
-			}
-		}
-		if !found {
-			newFiles = append(newFiles, srcFile)
-		}
+	changes, err := diff.Diff(c.dstFiles, c.srcFiles)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	for _, dstFile := range c.dstFiles {
-		var found bool
-		for _, srcFile := range c.srcFiles {
-			if dstFile.Name == srcFile.Name {
-				found = true
-			}
-		}
-		if !found {
-			removedFiles = append(removedFiles, dstFile)
+	for _, change := range changes {
+		switch change.Type {
+		case "create":
+			c.addedFiles = append(c.addedFiles, File{Name: fmt.Sprintf("%v", change.To)})
+		case "delete":
+			c.removedFiles = append(c.removedFiles, File{Name: fmt.Sprintf("%v", change.From)})
 		}
 	}
-
-	c.addedFiles = newFiles
-	c.removedFiles = removedFiles
 }
 
 func (c *Compare) printCompareResults() {
