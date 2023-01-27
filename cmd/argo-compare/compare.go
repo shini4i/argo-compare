@@ -16,8 +16,8 @@ import (
 )
 
 type File struct {
-	Name string
-	Sha  string
+	Name string `diff:"name"`
+	Sha  string `diff:"sha"`
 }
 
 type Compare struct {
@@ -77,16 +77,16 @@ func (c *Compare) generateFilesStatus() {
 	for _, fileStatus := range filesStatus {
 		switch fileStatus.Type {
 		case "create":
-			if fileStatus.Path[1] == "Name" {
-				c.addedFiles = append(c.addedFiles, File{Name: fmt.Sprintf("%v", fileStatus.To)})
+			if fileStatus.Path[1] == "name" {
+				c.addedFiles = append(c.addedFiles, File{Name: fileStatus.To.(string)})
 			}
 		case "delete":
-			if fileStatus.Path[1] == "Name" {
-				c.removedFiles = append(c.removedFiles, File{Name: fmt.Sprintf("%v", fileStatus.From)})
+			if fileStatus.Path[1] == "name" {
+				c.removedFiles = append(c.removedFiles, File{Name: fileStatus.From.(string)})
 			}
 		case "update":
 			for _, diffFile := range c.dstFiles {
-				if diffFile.Sha == fmt.Sprintf("%v", fileStatus.From) {
+				if diffFile.Sha == fileStatus.From.(string) {
 					c.diffFiles = append(c.diffFiles, diffFile)
 				}
 			}
