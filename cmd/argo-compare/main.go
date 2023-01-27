@@ -13,8 +13,10 @@ import (
 	"strings"
 )
 
-const loggerName = "argo-compare"
-const repoCredsPrefix = "REPO_CREDS_"
+const (
+	loggerName      = "argo-compare"
+	repoCredsPrefix = "REPO_CREDS_"
+)
 
 var (
 	targetBranch       string
@@ -115,7 +117,7 @@ func compareFiles(changedFiles []string) {
 
 		comparer := Compare{}
 		comparer.findFiles()
-		comparer.printCompareResults()
+		comparer.printFilesStatus()
 
 		err = os.RemoveAll(tmpDir)
 		if err != nil {

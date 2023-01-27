@@ -5,6 +5,7 @@ import (
 	"github.com/codingsince1985/checksum"
 	"github.com/mattn/go-zglob"
 	"github.com/op/go-logging"
+	"github.com/r3labs/diff/v3"
 	h "github.com/shini4i/argo-compare/internal/helpers"
 	"os"
 	"os/exec"
@@ -41,10 +42,8 @@ func (c *Compare) findFiles() {
 	}
 
 	if !reflect.DeepEqual(c.srcFiles, c.dstFiles) {
-		c.compareFiles()
+		c.generateFilesStatus()
 	}
-
-	c.findNewOrRemovedFiles()
 }
 
 func (c *Compare) processFiles(files []string, filesType string) []File {
@@ -69,91 +68,33 @@ func (c *Compare) processFiles(files []string, filesType string) []File {
 	return processedFiles
 }
 
-func (c *Compare) compareFiles() {
-	var diffFiles []File
-
-	for _, srcFile := range c.srcFiles {
-		for _, dstFile := range c.dstFiles {
-			if srcFile.Name == dstFile.Name && !reflect.DeepEqual(srcFile.Sha, dstFile.Sha) {
-				diffFiles = append(diffFiles, srcFile)
-			}
-		}
+func (c *Compare) generateFilesStatus() {
+	filesStatus, err := diff.Diff(c.dstFiles, c.srcFiles)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	c.diffFiles = diffFiles
-}
-
-func (c *Compare) printDiffFiles() {
-	for _, diffFile := range c.diffFiles {
-		switch diffCommand {
-		case "built-in":
-			diff := diffmatchpatch.New()
-
-			srcFile := string(h.ReadFile(tmpDir + "/templates/src/" + diffFile.Name))
-			dstFile := string(h.ReadFile(tmpDir + "/templates/dst/" + diffFile.Name))
-
-			diffs := diff.DiffMain(dstFile, srcFile, false)
-
-			log.Info(diff.DiffPrettyText(diffs))
-		default:
-			command := fmt.Sprintf(
-				diffCommand,
-				tmpDir+"/templates/dst/"+diffFile.Name,
-				tmpDir+"/templates/src/"+diffFile.Name,
-			)
-
-			log.Debugf("Using custom diff command: %s", command)
-
-			cmd := exec.Command("bash", "-c", command)
-			cmd.Stdout = os.Stdout
-
-			if logging.GetLevel(loggerName) == logging.DEBUG {
-				cmd.Stderr = os.Stderr
+	for _, fileStatus := range filesStatus {
+		switch fileStatus.Type {
+		case "create":
+			if fileStatus.Path[1] == "Name" {
+				c.addedFiles = append(c.addedFiles, File{Name: fmt.Sprintf("%v", fileStatus.To)})
 			}
-
-			if err := cmd.Run(); err != nil {
-				// In some cases custom diff command might return non-zero exit code which is not an error
-				// For example: diff -u file1 file2 returns 1 if files are different
-				// Hence we are not failing here
-				log.Debug(err.Error())
+		case "delete":
+			if fileStatus.Path[1] == "Name" {
+				c.removedFiles = append(c.removedFiles, File{Name: fmt.Sprintf("%v", fileStatus.From)})
+			}
+		case "update":
+			for _, diffFile := range c.dstFiles {
+				if diffFile.Sha == fmt.Sprintf("%v", fileStatus.From) {
+					c.diffFiles = append(c.diffFiles, diffFile)
+				}
 			}
 		}
 	}
 }
 
-func (c *Compare) findNewOrRemovedFiles() {
-	var newFiles []File
-	var removedFiles []File
-
-	for _, srcFile := range c.srcFiles {
-		var found bool
-		for _, dstFile := range c.dstFiles {
-			if srcFile.Name == dstFile.Name {
-				found = true
-			}
-		}
-		if !found {
-			newFiles = append(newFiles, srcFile)
-		}
-	}
-
-	for _, dstFile := range c.dstFiles {
-		var found bool
-		for _, srcFile := range c.srcFiles {
-			if dstFile.Name == srcFile.Name {
-				found = true
-			}
-		}
-		if !found {
-			removedFiles = append(removedFiles, dstFile)
-		}
-	}
-
-	c.addedFiles = newFiles
-	c.removedFiles = removedFiles
-}
-
-func (c *Compare) printCompareResults() {
+func (c *Compare) printFilesStatus() {
 	if len(c.addedFiles) == 0 && len(c.removedFiles) == 0 && len(c.diffFiles) == 0 {
 		log.Info("No diff was found in rendered manifests!")
 		return
@@ -179,6 +120,44 @@ func (c *Compare) printCompareResults() {
 			log.Infof("▶ %s", diffFile.Name)
 		}
 		c.printDiffFiles()
+	}
+}
+
+func (c *Compare) printDiffFiles() {
+	for _, diffFile := range c.diffFiles {
+		switch diffCommand {
+		case "built-in":
+			differ := diffmatchpatch.New()
+
+			srcFile := string(h.ReadFile(tmpDir + "/templates/src/" + diffFile.Name))
+			dstFile := string(h.ReadFile(tmpDir + "/templates/dst/" + diffFile.Name))
+
+			diffs := differ.DiffMain(dstFile, srcFile, false)
+
+			log.Info(differ.DiffPrettyText(diffs))
+		default:
+			command := fmt.Sprintf(
+				diffCommand,
+				tmpDir+"/templates/dst/"+diffFile.Name,
+				tmpDir+"/templates/src/"+diffFile.Name,
+			)
+
+			log.Debugf("Using custom diff command: %s", command)
+
+			cmd := exec.Command("sh", "-c", command)
+			cmd.Stdout = os.Stdout
+
+			if logging.GetLevel(loggerName) == logging.DEBUG {
+				cmd.Stderr = os.Stderr
+			}
+
+			if err := cmd.Run(); err != nil {
+				// In some cases custom diff command might return non-zero exit code which is not an error
+				// For example: diff -u file1 file2 returns 1 if files are different
+				// Hence we are not failing here
+				log.Debug(err.Error())
+			}
+		}
 	}
 }
 
