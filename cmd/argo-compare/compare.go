@@ -69,24 +69,24 @@ func (c *Compare) processFiles(files []string, filesType string) []File {
 }
 
 func (c *Compare) generateFilesStatus() {
-	changes, err := diff.Diff(c.dstFiles, c.srcFiles)
+	filesStatus, err := diff.Diff(c.dstFiles, c.srcFiles)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	for _, change := range changes {
-		switch change.Type {
+	for _, fileStatus := range filesStatus {
+		switch fileStatus.Type {
 		case "create":
-			if change.Path[1] == "Name" {
-				c.addedFiles = append(c.addedFiles, File{Name: fmt.Sprintf("%v", change.To)})
+			if fileStatus.Path[1] == "Name" {
+				c.addedFiles = append(c.addedFiles, File{Name: fmt.Sprintf("%v", fileStatus.To)})
 			}
 		case "delete":
-			if change.Path[1] == "Name" {
-				c.removedFiles = append(c.removedFiles, File{Name: fmt.Sprintf("%v", change.From)})
+			if fileStatus.Path[1] == "Name" {
+				c.removedFiles = append(c.removedFiles, File{Name: fmt.Sprintf("%v", fileStatus.From)})
 			}
 		case "update":
 			for _, diffFile := range c.dstFiles {
-				if diffFile.Sha == fmt.Sprintf("%v", change.From) {
+				if diffFile.Sha == fmt.Sprintf("%v", fileStatus.From) {
 					c.diffFiles = append(c.diffFiles, diffFile)
 				}
 			}
