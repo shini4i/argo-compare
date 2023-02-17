@@ -1,9 +1,7 @@
 package helpers
 
 import (
-	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -31,7 +29,7 @@ func TestGetEnv(t *testing.T) {
 
 func TestReadFile(t *testing.T) {
 	// Set up test environment
-	testFile := filepath.Join(getGitRepoRoot(), "test/data/test.yaml")
+	testFile := filepath.Join(GetGitRepoRoot(), "test/data/test.yaml")
 	expectedContents := "apiVersion: argoproj.io/v1alpha1"
 
 	// Test case 1: Check if a file is read successfully
@@ -41,7 +39,7 @@ func TestReadFile(t *testing.T) {
 	}
 
 	// Test case 2: Check if a missing file is handled properly
-	missingFile := filepath.Join(getGitRepoRoot(), "test/data/missing.yaml")
+	missingFile := filepath.Join(GetGitRepoRoot(), "test/data/missing.yaml")
 	actualContents = ReadFile(missingFile)
 	if actualContents != nil {
 		t.Errorf("expected file contents to be nil, but got [%s]", string(actualContents))
@@ -64,7 +62,7 @@ func TestContains(t *testing.T) {
 
 func TestFindYamlFiles(t *testing.T) {
 	testDir := "test/data"
-	repoRoot := getGitRepoRoot()
+	repoRoot := GetGitRepoRoot()
 
 	yamlFiles, err := FindYamlFiles(filepath.Join(repoRoot, testDir))
 	if err != nil {
@@ -74,13 +72,4 @@ func TestFindYamlFiles(t *testing.T) {
 	if len(yamlFiles) == 0 {
 		t.Errorf("expected to find at least one YAML file in test directory [%s], but none were found", testDir)
 	}
-}
-
-func getGitRepoRoot() string {
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	out, err := cmd.Output()
-	if err != nil {
-		panic(fmt.Sprintf("failed to get git repository root: %v", err))
-	}
-	return strings.TrimSpace(string(out))
 }
