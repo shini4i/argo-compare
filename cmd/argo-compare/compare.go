@@ -9,6 +9,7 @@ import (
 	h "github.com/shini4i/argo-compare/internal/helpers"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 
@@ -55,13 +56,13 @@ func (c *Compare) processFiles(files []string, filesType string) []File {
 		c.findAndStripHelmLabels()
 	}
 
-	substring := fmt.Sprintf("/%s/", filesType)
+	path := filepath.Join(tmpDir, "templates", filesType)
 
 	for _, file := range files {
 		if sha256sum, err := checksum.SHA256sum(file); err != nil {
 			log.Fatal(err)
 		} else {
-			processedFiles = append(processedFiles, File{Name: strings.Split(file, substring)[1], Sha: sha256sum})
+			processedFiles = append(processedFiles, File{Name: strings.TrimPrefix(file, path), Sha: sha256sum})
 		}
 	}
 
