@@ -63,19 +63,14 @@ func TestContains(t *testing.T) {
 }
 
 func TestFindYamlFiles(t *testing.T) {
-	// Set up test environment
 	testDir := "test/data"
-
-	// Determine the root of the Git repository
 	repoRoot := getGitRepoRoot()
 
-	// Run the function being tested
 	yamlFiles, err := FindYamlFiles(filepath.Join(repoRoot, testDir))
 	if err != nil {
 		t.Fatalf("error finding YAML files: %v", err)
 	}
 
-	// Check the result
 	if len(yamlFiles) == 0 {
 		t.Errorf("expected to find at least one YAML file in test directory [%s], but none were found", testDir)
 	}
