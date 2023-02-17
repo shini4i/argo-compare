@@ -3,17 +3,15 @@ package main
 import (
 	"fmt"
 	"github.com/codingsince1985/checksum"
-	"github.com/mattn/go-zglob"
 	"github.com/op/go-logging"
 	"github.com/r3labs/diff/v3"
+	"github.com/sergi/go-diff/diffmatchpatch"
 	h "github.com/shini4i/argo-compare/internal/helpers"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
-
-	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
 type File struct {
@@ -30,23 +28,22 @@ type Compare struct {
 }
 
 func (c *Compare) findFiles() {
-	if srcFiles, err := zglob.Glob(fmt.Sprintf("%s/templates/src/**/*.yaml", tmpDir)); err != nil {
-		log.Fatal(err)
-	} else {
+	if srcFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/src")); err == nil {
 		c.srcFiles = c.processFiles(srcFiles, "src")
+	} else {
+		log.Fatal(err)
 	}
 
-	if dstFiles, err := zglob.Glob(fmt.Sprintf("%s/templates/dst/**/*.yaml", tmpDir)); err != nil {
-		log.Fatal(err)
-	} else {
+	if dstFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/dst")); err == nil {
 		c.dstFiles = c.processFiles(dstFiles, "dst")
+	} else {
+		log.Fatal(err)
 	}
 
 	if !reflect.DeepEqual(c.srcFiles, c.dstFiles) {
 		c.generateFilesStatus()
 	}
 }
-
 func (c *Compare) processFiles(files []string, filesType string) []File {
 	var processedFiles []File
 
@@ -130,17 +127,16 @@ func (c *Compare) printDiffFiles() {
 		case "built-in":
 			differ := diffmatchpatch.New()
 
-			srcFile := string(h.ReadFile(tmpDir + "/templates/src/" + diffFile.Name))
-			dstFile := string(h.ReadFile(tmpDir + "/templates/dst/" + diffFile.Name))
+			srcFile := string(h.ReadFile(fmt.Sprintf("%s/templates/src/%s", tmpDir, diffFile.Name)))
+			dstFile := string(h.ReadFile(fmt.Sprintf("%s/templates/dst/%s", tmpDir, diffFile.Name)))
 
 			diffs := differ.DiffMain(dstFile, srcFile, false)
 
 			log.Info(differ.DiffPrettyText(diffs))
 		default:
-			command := fmt.Sprintf(
-				diffCommand,
-				tmpDir+"/templates/dst/"+diffFile.Name,
-				tmpDir+"/templates/src/"+diffFile.Name,
+			command := fmt.Sprintf(diffCommand,
+				fmt.Sprintf("%s/templates/dst/%s", tmpDir, diffFile.Name),
+				fmt.Sprintf("%s/templates/src/%s", tmpDir, diffFile.Name),
 			)
 
 			log.Debugf("Using custom diff command: %s", command)
@@ -163,12 +159,14 @@ func (c *Compare) printDiffFiles() {
 }
 
 func (c *Compare) findAndStripHelmLabels() {
-	helmFiles, err := zglob.Glob(fmt.Sprintf("%s/templates/**/*.yaml", tmpDir))
+	helmFiles, err := h.FindYamlFiles(tmpDir)
 	if err != nil {
 		panic(err)
 	}
 
 	for _, helmFile := range helmFiles {
-		h.StripHelmLabels(helmFile)
+		if err := h.StripHelmLabels(helmFile); err != nil {
+			panic(err)
+		}
 	}
 }
