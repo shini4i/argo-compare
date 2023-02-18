@@ -44,6 +44,7 @@ func (c *Compare) findFiles() {
 		c.generateFilesStatus()
 	}
 }
+
 func (c *Compare) processFiles(files []string, filesType string) []File {
 	var processedFiles []File
 
@@ -75,19 +76,37 @@ func (c *Compare) generateFilesStatus() {
 	for _, fileStatus := range filesStatus {
 		switch fileStatus.Type {
 		case "create":
-			if fileStatus.Path[1] == "name" {
-				c.addedFiles = append(c.addedFiles, File{Name: fileStatus.To.(string)})
-			}
+			c.handleCreate(fileStatus)
 		case "delete":
-			if fileStatus.Path[1] == "name" {
-				c.removedFiles = append(c.removedFiles, File{Name: fileStatus.From.(string)})
-			}
+			c.handleDelete(fileStatus)
 		case "update":
-			for _, diffFile := range c.dstFiles {
-				if diffFile.Sha == fileStatus.From.(string) {
-					c.diffFiles = append(c.diffFiles, diffFile)
-				}
-			}
+			c.handleUpdate(fileStatus)
+		}
+	}
+}
+
+func (c *Compare) handleCreate(fileStatus diff.Change) {
+	if fileStatus.Path[1] != "name" {
+		return
+	}
+	c.addedFiles = append(c.addedFiles, File{Name: fileStatus.To.(string)})
+}
+
+func (c *Compare) handleDelete(fileStatus diff.Change) {
+	if fileStatus.Path[1] != "name" {
+		return
+	}
+	c.removedFiles = append(c.removedFiles, File{Name: fileStatus.From.(string)})
+}
+
+// handleUpdate adds a file to the `diffFiles` slice if it has changed between the
+// `c.srcFiles` and `c.dstFiles` slices, based on the `Change` object returned by the `Diff` function.
+func (c *Compare) handleUpdate(fileStatus diff.Change) {
+	for i := range c.dstFiles {
+		if c.dstFiles[i].Sha == fileStatus.From.(string) {
+			// If the SHA value of the file matches the target SHA value, add the file to the `diffFiles` slice
+			c.diffFiles = append(c.diffFiles, c.dstFiles[i])
+			break
 		}
 	}
 }
