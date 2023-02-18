@@ -9,6 +9,14 @@ help: ## Print this help
 test: ## Run tests
 	@go test -v ./... -count=1
 
+.PHONY: test-coverage
+test-coverage: ## Run tests with coverage
+	@go test -coverprofile=coverage.out ./... -count=1
+
+.PHONY: test-coverage-html
+test-coverage-html: test-coverage ## Run tests with coverage and open HTML report
+	@go tool cover -html=coverage.out -o coverage.html
+
 .PHONY: ensure-dir
 ensure-dir:
 	@mkdir -p bin
