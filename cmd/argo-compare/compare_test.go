@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"github.com/op/go-logging"
 	"github.com/r3labs/diff/v3"
 	"reflect"
 	"testing"
@@ -17,7 +19,6 @@ func TestHandleCreate(t *testing.T) {
 		log.Fatal(err)
 	}
 
-	// Call the handleCreate function
 	c.handleCreate(filesStatus[0])
 
 	// Check that the created file was added to the `addedFiles` slice
@@ -30,8 +31,8 @@ func TestHandleCreate(t *testing.T) {
 
 func TestHandleDelete(t *testing.T) {
 	c := Compare{
-		srcFiles: []File{{Name: "file1.txt", Sha: "1234"}, {Name: "file2.txt", Sha: "5678"}},
-		dstFiles: []File{{Name: "file2.txt", Sha: "5678"}},
+		srcFiles: []File{{Name: "file1.txt", Sha: "1234"}},
+		dstFiles: []File{},
 	}
 
 	filesStatus, err := diff.Diff(c.srcFiles, c.dstFiles)
@@ -67,5 +68,30 @@ func TestHandleUpdate(t *testing.T) {
 
 	if !reflect.DeepEqual(c.diffFiles, expectedDiffFiles) {
 		t.Errorf("handleUpdate did not add updated file to diffFiles slice")
+	}
+}
+
+func TestPrintFilesStatus(t *testing.T) {
+	// Capture log output
+	var logOutput bytes.Buffer
+	logBackend := logging.NewLogBackend(&logOutput, "", 0)
+	logging.SetBackend(logBackend)
+
+	// Create Compare object
+	c := Compare{
+		addedFiles:   []File{{Name: "file1.txt"}},
+		removedFiles: []File{{Name: "file2.txt"}, {Name: "file4.txt"}},
+		diffFiles:    []File{{Name: "file3.txt"}},
+	}
+
+	c.printFilesStatus()
+
+	expectedOutput := "The following 1 file/files would be added:\n▶ file1.txt\n" +
+		"The following 2 file/files would be removed:\n▶ file2.txt\n▶ file4.txt\n" +
+		"The following 1 file/files would be changed:\n▶ file3.txt\n\n"
+
+	if logOutput.String() != expectedOutput {
+		t.Errorf("printFilesStatus output is incorrect. Expected:\n%s\nGot:\n%s",
+			expectedOutput, logOutput.String())
 	}
 }
