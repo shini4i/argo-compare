@@ -67,6 +67,9 @@ func (c *Compare) processFiles(files []string, filesType string) []File {
 	return processedFiles
 }
 
+// generateFilesStatus generates the `addedFiles`, `removedFiles`, and `diffFiles` slices
+// by comparing the `srcFiles` and `dstFiles` slices. For each element in the `Diff` output,
+// the function calls `handleCreate`, `handleDelete`, or `handleUpdate` based on the type of change.
 func (c *Compare) generateFilesStatus() {
 	filesStatus, err := diff.Diff(c.dstFiles, c.srcFiles)
 	if err != nil {
@@ -85,6 +88,10 @@ func (c *Compare) generateFilesStatus() {
 	}
 }
 
+// handleCreate adds a file to the `addedFiles` slice if it has been created in the
+// `dstFiles` slice. The function checks the `Path` field of the `Change` object to ensure
+// that the created element is a file name. If the element is not a file name, the function
+// returns without adding the file to the `addedFiles` slice.
 func (c *Compare) handleCreate(fileStatus diff.Change) {
 	if fileStatus.Path[1] != "name" {
 		return
@@ -92,6 +99,10 @@ func (c *Compare) handleCreate(fileStatus diff.Change) {
 	c.addedFiles = append(c.addedFiles, File{Name: fileStatus.To.(string)})
 }
 
+// handleDelete checks the `Path` field of the `Change` object to ensure
+// that the deleted element is a file name in the `File` struct. If the element
+// is not a file name, the function returns without adding the file to the
+// `removedFiles` slice.
 func (c *Compare) handleDelete(fileStatus diff.Change) {
 	if fileStatus.Path[1] != "name" {
 		return
