@@ -3,7 +3,10 @@ package helpers
 import (
 	"errors"
 	"fmt"
+	"github.com/mattn/go-zglob"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -33,7 +36,7 @@ func Contains(slice []string, s string) bool {
 	return false
 }
 
-func StripHelmLabels(file string) {
+func StripHelmLabels(file string) error {
 	// list of labels to remove
 	labels := []string{
 		"app.kubernetes.io/managed-by",
@@ -50,12 +53,27 @@ func StripHelmLabels(file string) {
 
 	fileData, err := os.ReadFile(file)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	fileData = re.ReplaceAll(fileData, []byte(""))
 	err = os.WriteFile(file, fileData, 0644)
 	if err != nil {
-		panic(err)
+		return err
 	}
+
+	return nil
+}
+
+func FindYamlFiles(dirPath string) ([]string, error) {
+	return zglob.Glob(filepath.Join(dirPath, "**", "*.yaml"))
+}
+
+func GetGitRepoRoot() string {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		panic(fmt.Sprintf("failed to get git repository root: %v", err))
+	}
+	return strings.TrimSpace(string(out))
 }

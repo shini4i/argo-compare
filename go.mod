@@ -1,6 +1,6 @@
 module github.com/shini4i/argo-compare
 
-go 1.19
+go 1.20
 
 require (
 	github.com/alecthomas/kong v0.7.1

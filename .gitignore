@@ -1,6 +1,13 @@
+# IDE files
 .idea
-tmp
-.env
+
+# build artifacts
 bin/
-dist/
+
+# local env files
+.env
 .envrc
+
+# coverage files
+coverage.out
+coverage.html

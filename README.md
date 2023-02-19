@@ -2,7 +2,7 @@
 
 # Argo Compare
 
-A tool for showing difference between Application in a different git branches
+A comparison tool for displaying the differences between applications in different Git branches
 
 ![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/shini4i/argo-compare/run-tests.yml?branch=main)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/argo-compare)

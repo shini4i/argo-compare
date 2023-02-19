@@ -15,17 +15,6 @@ type GitRepo struct {
 	invalidFiles []string
 }
 
-func (g *GitRepo) getRepoRoot(cmdContext execContext) string {
-	cmd := cmdContext("git", "rev-parse", "--show-toplevel")
-
-	out, err := cmd.Output()
-	if err != nil {
-		panic(err)
-	}
-
-	return strings.TrimSpace(string(out))
-}
-
 func (g *GitRepo) getChangedFiles(cmdContext execContext) ([]string, error) {
 	cmd := cmdContext("git", "--no-pager", "diff", "--name-only", targetBranch)
 
