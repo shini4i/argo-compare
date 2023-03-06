@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/codingsince1985/checksum"
+	"github.com/fatih/color"
 	"github.com/op/go-logging"
 	"github.com/r3labs/diff/v3"
 	"github.com/sergi/go-diff/diffmatchpatch"
@@ -135,7 +136,7 @@ func (c *Compare) printFilesStatus() {
 		for _, addedFile := range c.addedFiles {
 			log.Infof("▶ %s", addedFile.Name)
 			if printAddedManifests {
-				c.printSingleManifest(addedFile.Name)
+				c.printAddedManifest(addedFile.Name)
 			}
 		}
 	}
@@ -193,11 +194,10 @@ func (c *Compare) printDiffFiles() {
 	}
 }
 
-// printSingleManifest is a function to cover edge case and don't really fall under the "compare" definition
+// printAddedManifest is a function to cover edge case and don't really fall under the "compare" definition
 // It will not print diff, but instead it will print a single (added) rendered manifest
-func (c *Compare) printSingleManifest(file string) {
-	manifestContent := h.ReadFile(fmt.Sprintf("%s/templates/src/%s", tmpDir, file))
-	log.Info(string(manifestContent))
+func (c *Compare) printAddedManifest(file string) {
+	color.Green(string(h.ReadFile(fmt.Sprintf("%s/templates/src/%s", tmpDir, file))))
 }
 
 func (c *Compare) findAndStripHelmLabels() {
