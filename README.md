@@ -12,7 +12,7 @@ A comparison tool for displaying the differences between applications in differe
 
 <img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-compare/demo.png" alt="Showcase" height="441" width="620">
 
-Example output of argo-compare with diff-so-fancy
+Example output of `argo-compare` with `diff-so-fancy`
 </div>
 
 ## General information
