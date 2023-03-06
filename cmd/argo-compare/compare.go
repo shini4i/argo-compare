@@ -37,10 +37,10 @@ func (c *Compare) findFiles() {
 
 	if dstFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/dst")); err == nil {
 		c.dstFiles = c.processFiles(dstFiles, "dst")
-	} else if err != nil && !preserveHelmLabels {
-		log.Debugf("Error while finding files in %s: %s", filepath.Join(tmpDir, "templates/dst"), err)
 	} else {
-		log.Fatal(err)
+		// we are no longer failing here, because we need to support the case where the destination
+		// branch does not have the Application yet
+		log.Debugf("Error while finding files in %s: %s", filepath.Join(tmpDir, "templates/dst"), err)
 	}
 
 	if !reflect.DeepEqual(c.srcFiles, c.dstFiles) {
