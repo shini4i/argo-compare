@@ -77,7 +77,10 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 		} else {
 			log.Error(errOut.String())
 		}
-		return m.Application{}, err
+
+		if !printAddedManifests {
+			return m.Application{}, err
+		}
 	}
 
 	// writing the content to a temporary file to be able to pass it to the parser

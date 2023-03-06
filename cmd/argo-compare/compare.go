@@ -36,6 +36,8 @@ func (c *Compare) findFiles() {
 
 	if dstFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/dst")); err == nil {
 		c.dstFiles = c.processFiles(dstFiles, "dst")
+	} else if err != nil && !preserveHelmLabels {
+		log.Debugf("Error while finding files in %s: %s", filepath.Join(tmpDir, "templates/dst"), err)
 	} else {
 		log.Fatal(err)
 	}
@@ -132,6 +134,9 @@ func (c *Compare) printFilesStatus() {
 		log.Infof("The following %d file/files would be added:", len(c.addedFiles))
 		for _, addedFile := range c.addedFiles {
 			log.Infof("▶ %s", addedFile.Name)
+			if printAddedManifests {
+				c.printSingleManifest(addedFile.Name)
+			}
 		}
 	}
 
@@ -186,6 +191,13 @@ func (c *Compare) printDiffFiles() {
 			}
 		}
 	}
+}
+
+// printSingleManifest is a function to cover edge case and don't really fall under the "compare" definition
+// It will not print diff, but instead it will print a single (added) rendered manifest
+func (c *Compare) printSingleManifest(file string) {
+	manifestContent := h.ReadFile(fmt.Sprintf("%s/templates/src/%s", tmpDir, file))
+	log.Info(string(manifestContent))
 }
 
 func (c *Compare) findAndStripHelmLabels() {

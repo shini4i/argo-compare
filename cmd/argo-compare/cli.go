@@ -12,9 +12,10 @@ var CLI struct {
 	Version   kong.VersionFlag `help:"Show version" short:"v"`
 
 	Branch struct {
-		Name               string `arg:"" type:"string"`
-		File               string `help:"Compare a single file" short:"f"`
-		PreserveHelmLabels bool   `help:"Preserve Helm labels during comparison"`
+		Name                string `arg:"" type:"string"`
+		File                string `help:"Compare a single file" short:"f"`
+		PreserveHelmLabels  bool   `help:"Preserve Helm labels during comparison"`
+		PrintAddedManifests bool   `help:"Render added manifests"`
 	} `cmd:"" help:"target branch to compare with" type:"string"`
 }
 

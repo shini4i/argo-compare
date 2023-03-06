@@ -19,15 +19,16 @@ const (
 )
 
 var (
-	targetBranch       string
-	fileToCompare      string
-	cacheDir           = h.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
-	tmpDir             string
-	version            = "local"
-	repo               = GitRepo{}
-	repoCredentials    []RepoCredentials
-	diffCommand        = h.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
-	preserveHelmLabels bool
+	targetBranch        string
+	fileToCompare       string
+	cacheDir            = h.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
+	tmpDir              string
+	version             = "local"
+	repo                = GitRepo{}
+	repoCredentials     []RepoCredentials
+	diffCommand         = h.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
+	preserveHelmLabels  bool
+	printAddedManifests bool
 )
 
 var (
@@ -110,7 +111,7 @@ func compareFiles(changedFiles []string) {
 			continue
 		}
 
-		if err = processFiles(file, "dst", app); err != nil {
+		if err = processFiles(file, "dst", app); err != nil && !printAddedManifests {
 			log.Fatalf("Could not process the destination Application: %s", err)
 			continue
 		}
@@ -179,6 +180,12 @@ func main() {
 
 	if CLI.Branch.PreserveHelmLabels {
 		preserveHelmLabels = true
+	}
+
+	// Cover the edge case when we need to render all manifests for a new Application
+	// It will produce a big output and does not fit into "compare" definition hence it's disabled by default
+	if CLI.Branch.PrintAddedManifests {
+		printAddedManifests = true
 	}
 
 	log.Infof("===> Running argo-compare version [%s]", version)
