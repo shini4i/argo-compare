@@ -134,9 +134,11 @@ func (c *Compare) printFilesStatus() {
 	if len(c.addedFiles) > 0 {
 		log.Infof("The following %d file/files would be added:", len(c.addedFiles))
 		for _, addedFile := range c.addedFiles {
-			log.Infof("▶ %s", addedFile.Name)
+			log.Infof("\n▶ %s", addedFile.Name)
 			if printAddedManifests {
-				c.printAddedManifest(addedFile.Name)
+				color.Green(string(
+					h.ReadFile(fmt.Sprintf("%s/templates/src/%s", tmpDir, addedFile.Name))),
+				)
 			}
 		}
 	}
@@ -144,14 +146,14 @@ func (c *Compare) printFilesStatus() {
 	if len(c.removedFiles) > 0 {
 		log.Infof("The following %d file/files would be removed:", len(c.removedFiles))
 		for _, removedFile := range c.removedFiles {
-			log.Infof("▶ %s", removedFile.Name)
+			log.Infof("\n▶ %s", removedFile.Name)
 		}
 	}
 
 	if len(c.diffFiles) > 0 {
 		log.Infof("The following %d file/files would be changed:", len(c.diffFiles))
 		for _, diffFile := range c.diffFiles {
-			log.Infof("▶ %s", diffFile.Name)
+			log.Infof("\n▶ %s", diffFile.Name)
 			c.printDiffFile(diffFile)
 		}
 
@@ -191,12 +193,6 @@ func (c *Compare) printDiffFile(diffFile File) {
 			log.Debug(err.Error())
 		}
 	}
-}
-
-// printAddedManifest is a function to cover edge case and don't really fall under the "compare" definition
-// It will not print diff, but instead it will print a single (added) rendered manifest
-func (c *Compare) printAddedManifest(file string) {
-	color.Green(string(h.ReadFile(fmt.Sprintf("%s/templates/src/%s", tmpDir, file))))
 }
 
 func (c *Compare) findAndStripHelmLabels() {
