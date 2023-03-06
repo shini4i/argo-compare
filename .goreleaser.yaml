@@ -30,7 +30,10 @@ brews:
       name: homebrew-tap
     folder: Formula
     homepage: https://github.com/shini4i/argo-compare
-    description: "A tool for showing difference between Application in a different git branches"
+    dependencies:
+      - name: kubernetes-cli
+      - name: helm
+    description: "A comparison tool for displaying the differences between ArgoCD Applications in different Git branches"
     license: "MIT"
 
 dockers:
