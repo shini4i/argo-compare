@@ -152,44 +152,43 @@ func (c *Compare) printFilesStatus() {
 		log.Infof("The following %d file/files would be changed:", len(c.diffFiles))
 		for _, diffFile := range c.diffFiles {
 			log.Infof("▶ %s", diffFile.Name)
+			c.printDiffFile(diffFile)
 		}
-		c.printDiffFiles()
+
 	}
 }
 
-func (c *Compare) printDiffFiles() {
-	for _, diffFile := range c.diffFiles {
-		switch diffCommand {
-		case "built-in":
-			differ := diffmatchpatch.New()
+func (c *Compare) printDiffFile(diffFile File) {
+	switch diffCommand {
+	case "built-in":
+		differ := diffmatchpatch.New()
 
-			srcFile := string(h.ReadFile(fmt.Sprintf("%s/templates/src/%s", tmpDir, diffFile.Name)))
-			dstFile := string(h.ReadFile(fmt.Sprintf("%s/templates/dst/%s", tmpDir, diffFile.Name)))
+		srcFile := string(h.ReadFile(fmt.Sprintf("%s/templates/src/%s", tmpDir, diffFile.Name)))
+		dstFile := string(h.ReadFile(fmt.Sprintf("%s/templates/dst/%s", tmpDir, diffFile.Name)))
 
-			diffs := differ.DiffMain(dstFile, srcFile, false)
+		diffs := differ.DiffMain(dstFile, srcFile, false)
 
-			log.Info(differ.DiffPrettyText(diffs))
-		default:
-			command := fmt.Sprintf(diffCommand,
-				fmt.Sprintf("%s/templates/dst/%s", tmpDir, diffFile.Name),
-				fmt.Sprintf("%s/templates/src/%s", tmpDir, diffFile.Name),
-			)
+		log.Info(differ.DiffPrettyText(diffs))
+	default:
+		command := fmt.Sprintf(diffCommand,
+			fmt.Sprintf("%s/templates/dst/%s", tmpDir, diffFile.Name),
+			fmt.Sprintf("%s/templates/src/%s", tmpDir, diffFile.Name),
+		)
 
-			log.Debugf("Using custom diff command: %s", command)
+		log.Debugf("Using custom diff command: %s", command)
 
-			cmd := exec.Command("sh", "-c", command)
-			cmd.Stdout = os.Stdout
+		cmd := exec.Command("sh", "-c", command)
+		cmd.Stdout = os.Stdout
 
-			if logging.GetLevel(loggerName) == logging.DEBUG {
-				cmd.Stderr = os.Stderr
-			}
+		if logging.GetLevel(loggerName) == logging.DEBUG {
+			cmd.Stderr = os.Stderr
+		}
 
-			if err := cmd.Run(); err != nil {
-				// In some cases custom diff command might return non-zero exit code which is not an error
-				// For example: diff -u file1 file2 returns 1 if files are different
-				// Hence we are not failing here
-				log.Debug(err.Error())
-			}
+		if err := cmd.Run(); err != nil {
+			// In some cases custom diff command might return non-zero exit code which is not an error
+			// For example: diff -u file1 file2 returns 1 if files are different
+			// Hence we are not failing here
+			log.Debug(err.Error())
 		}
 	}
 }
