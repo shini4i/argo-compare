@@ -15,7 +15,7 @@
 -		return "renamed: $old$meta_color to $new"
 +
 +		my @fullFilePath = split("/", $new);
-+		my $filePath = join("/", @fullFilePath[5..$#fullFilePath]);
++		my $filePath = join("/", @fullFilePath[9..$#fullFilePath]);
 +
 +		return "Found changes in: $filePath"
  	# Something we haven't thought of yet
