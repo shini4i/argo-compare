@@ -28,6 +28,12 @@ type Compare struct {
 	removedFiles []File
 }
 
+const (
+	srcPathPattern          = "%s/templates/src/%s"
+	dstPathPattern          = "%s/templates/dst/%s"
+	currentFilePrintPattern = "▶ %s"
+)
+
 func (c *Compare) findFiles() {
 	if srcFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/src")); err == nil {
 		c.srcFiles = c.processFiles(srcFiles, "src")
@@ -134,29 +140,44 @@ func (c *Compare) printFilesStatus() {
 	if len(c.addedFiles) > 0 {
 		log.Infof("The following %d file/files would be added:", len(c.addedFiles))
 		for _, addedFile := range c.addedFiles {
-			log.Infof("\n▶ %s", addedFile.Name)
-			if printAddedManifests {
-				color.Green(string(
-					h.ReadFile(fmt.Sprintf("%s/templates/src/%s", tmpDir, addedFile.Name))),
-				)
-			}
+			c.processManifest(addedFile, "added")
 		}
 	}
 
 	if len(c.removedFiles) > 0 {
 		log.Infof("The following %d file/files would be removed:", len(c.removedFiles))
 		for _, removedFile := range c.removedFiles {
-			log.Infof("\n▶ %s", removedFile.Name)
+			c.processManifest(removedFile, "removed")
 		}
 	}
 
 	if len(c.diffFiles) > 0 {
 		log.Infof("The following %d file/files would be changed:", len(c.diffFiles))
 		for _, diffFile := range c.diffFiles {
-			log.Infof("\n▶ %s", diffFile.Name)
-			c.printDiffFile(diffFile)
+			c.processManifest(diffFile, "changed")
 		}
 
+	}
+}
+
+func (c *Compare) processManifest(file File, fileType string) {
+	log.Infof(currentFilePrintPattern, file.Name)
+
+	switch fileType {
+	case "added":
+		if printAddedManifests {
+			color.Green(string(
+				h.ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, file.Name))),
+			)
+		}
+	case "removed":
+		if printRemovedManifests {
+			color.Red(string(
+				h.ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, file.Name))),
+			)
+		}
+	case "changed":
+		c.printDiffFile(file)
 	}
 }
 
@@ -165,16 +186,16 @@ func (c *Compare) printDiffFile(diffFile File) {
 	case "built-in":
 		differ := diffmatchpatch.New()
 
-		srcFile := string(h.ReadFile(fmt.Sprintf("%s/templates/src/%s", tmpDir, diffFile.Name)))
-		dstFile := string(h.ReadFile(fmt.Sprintf("%s/templates/dst/%s", tmpDir, diffFile.Name)))
+		srcFile := string(h.ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name)))
+		dstFile := string(h.ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name)))
 
 		diffs := differ.DiffMain(dstFile, srcFile, false)
 
 		log.Info(differ.DiffPrettyText(diffs))
 	default:
 		command := fmt.Sprintf(diffCommand,
-			fmt.Sprintf("%s/templates/dst/%s", tmpDir, diffFile.Name),
-			fmt.Sprintf("%s/templates/src/%s", tmpDir, diffFile.Name),
+			fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name),
+			fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name),
 		)
 
 		log.Debugf("Using custom diff command: %s", command)

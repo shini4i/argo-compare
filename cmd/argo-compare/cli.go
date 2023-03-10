@@ -12,12 +12,22 @@ var CLI struct {
 	Version   kong.VersionFlag `help:"Show version" short:"v"`
 
 	Branch struct {
-		Name                string `arg:"" type:"string"`
-		File                string `help:"Compare a single file" short:"f"`
-		PreserveHelmLabels  bool   `help:"Preserve Helm labels during comparison"`
-		PrintAddedManifests bool   `help:"Render added manifests"`
+		Name                  string `arg:"" type:"string"`
+		File                  string `help:"Compare a single file" short:"f"`
+		PreserveHelmLabels    bool   `help:"Preserve Helm labels during comparison"`
+		PrintAddedManifests   bool   `help:"Print added manifests"`
+		PrintRemovedManifests bool   `help:"Print removed manifests"`
+		FullOutput            bool   `help:"Print full output"`
 	} `cmd:"" help:"target branch to compare with" type:"string"`
 }
+
+var (
+	targetBranch          string
+	fileToCompare         string
+	preserveHelmLabels    bool
+	printAddedManifests   bool
+	printRemovedManifests bool
+)
 
 type DropCache bool
 
