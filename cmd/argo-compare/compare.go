@@ -134,7 +134,7 @@ func (c *Compare) printFilesStatus() {
 	if len(c.addedFiles) > 0 {
 		log.Infof("The following %d file/files would be added:", len(c.addedFiles))
 		for _, addedFile := range c.addedFiles {
-			log.Infof("\n▶ %s", addedFile.Name)
+			log.Infof("▶ %s", addedFile.Name)
 			if printAddedManifests {
 				color.Green(string(
 					h.ReadFile(fmt.Sprintf("%s/templates/src/%s", tmpDir, addedFile.Name))),
@@ -146,14 +146,19 @@ func (c *Compare) printFilesStatus() {
 	if len(c.removedFiles) > 0 {
 		log.Infof("The following %d file/files would be removed:", len(c.removedFiles))
 		for _, removedFile := range c.removedFiles {
-			log.Infof("\n▶ %s", removedFile.Name)
+			log.Infof("▶ %s", removedFile.Name)
+			if printRemovedManifests {
+				color.Red(string(
+					h.ReadFile(fmt.Sprintf("%s/templates/dst/%s", tmpDir, removedFile.Name))),
+				)
+			}
 		}
 	}
 
 	if len(c.diffFiles) > 0 {
 		log.Infof("The following %d file/files would be changed:", len(c.diffFiles))
 		for _, diffFile := range c.diffFiles {
-			log.Infof("\n▶ %s", diffFile.Name)
+			log.Infof("▶ %s", diffFile.Name)
 			c.printDiffFile(diffFile)
 		}
 

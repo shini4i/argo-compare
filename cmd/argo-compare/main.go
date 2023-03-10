@@ -19,16 +19,17 @@ const (
 )
 
 var (
-	targetBranch        string
-	fileToCompare       string
-	cacheDir            = h.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
-	tmpDir              string
-	version             = "local"
-	repo                = GitRepo{}
-	repoCredentials     []RepoCredentials
-	diffCommand         = h.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
-	preserveHelmLabels  bool
-	printAddedManifests bool
+	targetBranch          string
+	fileToCompare         string
+	cacheDir              = h.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
+	tmpDir                string
+	version               = "local"
+	repo                  = GitRepo{}
+	repoCredentials       []RepoCredentials
+	diffCommand           = h.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
+	preserveHelmLabels    bool
+	printAddedManifests   bool
+	printRemovedManifests bool
 )
 
 var (
@@ -186,6 +187,17 @@ func main() {
 	// It will produce a big output and does not fit into "compare" definition hence it's disabled by default
 	if CLI.Branch.PrintAddedManifests {
 		printAddedManifests = true
+	}
+
+	// Cover cases when we need to print out all removed manifests
+	if CLI.Branch.PrintRemovedManifests {
+		printRemovedManifests = true
+	}
+
+	// Cover cases when we need to print out all manifests. It will produce the biggest output.
+	if CLI.Branch.FullOutput {
+		printAddedManifests = true
+		printRemovedManifests = true
 	}
 
 	log.Infof("===> Running argo-compare version [%s]", version)

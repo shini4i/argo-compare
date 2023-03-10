@@ -42,9 +42,14 @@ If you want to compare only specific file, you can use the `--file` flag:
 argo-compare branch <target-branch> --file <file-path>
 ```
 
-By default, argo-compare will not print added files content, but if this behavior is not desired, you can use the following approach:
+By default, argo-compare will print only changed files content, but if this behavior is not desired, you can use one of the following flags:
 ```bash
+# In addition to the changed files, it will print all added manifests
 argo-compare branch <target-branch> --print-added-manifests
+# In addition to the changed files, it will print all removed manifests
+argo-compare branch <target-branch> --print-removed-manifests
+# Print all changed, added and removed manifests
+argo-compare branch <target-branch> --full-output
 ```
 
 If you want to use a custom diff tool, you can use the following approach:
