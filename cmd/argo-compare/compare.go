@@ -29,8 +29,9 @@ type Compare struct {
 }
 
 const (
-	srcPathPattern = "%s/templates/src/%s"
-	dstPathPattern = "%s/templates/dst/%s"
+	srcPathPattern          = "%s/templates/src/%s"
+	dstPathPattern          = "%s/templates/dst/%s"
+	currentFilePrintPattern = "▶ %s"
 )
 
 func (c *Compare) findFiles() {
@@ -139,7 +140,7 @@ func (c *Compare) printFilesStatus() {
 	if len(c.addedFiles) > 0 {
 		log.Infof("The following %d file/files would be added:", len(c.addedFiles))
 		for _, addedFile := range c.addedFiles {
-			log.Infof("▶ %s", addedFile.Name)
+			log.Infof(currentFilePrintPattern, addedFile.Name)
 			if printAddedManifests {
 				color.Green(string(
 					h.ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, addedFile.Name))),
@@ -151,7 +152,7 @@ func (c *Compare) printFilesStatus() {
 	if len(c.removedFiles) > 0 {
 		log.Infof("The following %d file/files would be removed:", len(c.removedFiles))
 		for _, removedFile := range c.removedFiles {
-			log.Infof("▶ %s", removedFile.Name)
+			log.Infof(currentFilePrintPattern, removedFile.Name)
 			if printRemovedManifests {
 				color.Red(string(
 					h.ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, removedFile.Name))),
@@ -163,7 +164,7 @@ func (c *Compare) printFilesStatus() {
 	if len(c.diffFiles) > 0 {
 		log.Infof("The following %d file/files would be changed:", len(c.diffFiles))
 		for _, diffFile := range c.diffFiles {
-			log.Infof("▶ %s", diffFile.Name)
+			log.Infof(currentFilePrintPattern, diffFile.Name)
 			c.printDiffFile(diffFile)
 		}
 
