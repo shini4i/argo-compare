@@ -31,7 +31,6 @@ brews:
     folder: Formula
     homepage: https://github.com/shini4i/argo-compare
     dependencies:
-      - name: kubernetes-cli
       - name: helm
     description: "A comparison tool for displaying the differences between ArgoCD Applications in different Git branches"
     license: "MIT"
