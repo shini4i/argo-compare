@@ -19,17 +19,12 @@ const (
 )
 
 var (
-	targetBranch          string
-	fileToCompare         string
-	cacheDir              = h.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
-	tmpDir                string
-	version               = "local"
-	repo                  = GitRepo{}
-	repoCredentials       []RepoCredentials
-	diffCommand           = h.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
-	preserveHelmLabels    bool
-	printAddedManifests   bool
-	printRemovedManifests bool
+	cacheDir        = h.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
+	tmpDir          string
+	version         = "local"
+	repo            = GitRepo{}
+	repoCredentials []RepoCredentials
+	diffCommand     = h.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
 )
 
 var (

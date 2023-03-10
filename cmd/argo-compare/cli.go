@@ -21,6 +21,14 @@ var CLI struct {
 	} `cmd:"" help:"target branch to compare with" type:"string"`
 }
 
+var (
+	targetBranch          string
+	fileToCompare         string
+	preserveHelmLabels    bool
+	printAddedManifests   bool
+	printRemovedManifests bool
+)
+
 type DropCache bool
 
 func (d *DropCache) BeforeApply(app *kong.Kong) error {
