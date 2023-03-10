@@ -140,34 +140,44 @@ func (c *Compare) printFilesStatus() {
 	if len(c.addedFiles) > 0 {
 		log.Infof("The following %d file/files would be added:", len(c.addedFiles))
 		for _, addedFile := range c.addedFiles {
-			log.Infof(currentFilePrintPattern, addedFile.Name)
-			if printAddedManifests {
-				color.Green(string(
-					h.ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, addedFile.Name))),
-				)
-			}
+			c.processManifest(addedFile, "added")
 		}
 	}
 
 	if len(c.removedFiles) > 0 {
 		log.Infof("The following %d file/files would be removed:", len(c.removedFiles))
 		for _, removedFile := range c.removedFiles {
-			log.Infof(currentFilePrintPattern, removedFile.Name)
-			if printRemovedManifests {
-				color.Red(string(
-					h.ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, removedFile.Name))),
-				)
-			}
+			c.processManifest(removedFile, "removed")
 		}
 	}
 
 	if len(c.diffFiles) > 0 {
 		log.Infof("The following %d file/files would be changed:", len(c.diffFiles))
 		for _, diffFile := range c.diffFiles {
-			log.Infof(currentFilePrintPattern, diffFile.Name)
-			c.printDiffFile(diffFile)
+			c.processManifest(diffFile, "changed")
 		}
 
+	}
+}
+
+func (c *Compare) processManifest(file File, fileType string) {
+	log.Infof(currentFilePrintPattern, file.Name)
+
+	switch fileType {
+	case "added":
+		if printAddedManifests {
+			color.Green(string(
+				h.ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, file.Name))),
+			)
+		}
+	case "removed":
+		if printRemovedManifests {
+			color.Red(string(
+				h.ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, file.Name))),
+			)
+		}
+	case "changed":
+		c.printDiffFile(file)
 	}
 }
 
