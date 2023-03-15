@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -30,21 +31,24 @@ func TestGenerateFilesStatus(t *testing.T) {
 		dstFiles: dstFiles,
 	}
 
-	expectedAddedFiles := []File{{Name: file4}}
-	expectedRemovedFiles := []File{{Name: file2}}
-	expectedDiffFiles := []File{{Name: file1, Sha: "5678"}}
+	expectedAddedFiles := []File{{Name: file4, Sha: "7890"}}
+	expectedRemovedFiles := []File{{Name: file2, Sha: "9012"}}
+	expectedDiffFiles := []File{{Name: file1, Sha: "1234"}}
 
 	c.generateFilesStatus()
 
 	if !reflect.DeepEqual(c.addedFiles, expectedAddedFiles) {
+		fmt.Println(c.addedFiles)
 		t.Errorf("generateFilesStatus() did not generate expected addedFiles")
 	}
 
 	if !reflect.DeepEqual(c.removedFiles, expectedRemovedFiles) {
+		fmt.Println(c.removedFiles)
 		t.Errorf("generateFilesStatus() did not generate expected removedFiles")
 	}
 
 	if !reflect.DeepEqual(c.diffFiles, expectedDiffFiles) {
+		fmt.Println(c.diffFiles)
 		t.Errorf("generateFilesStatus() did not generate expected diffFiles")
 	}
 }
