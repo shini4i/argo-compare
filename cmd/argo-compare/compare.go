@@ -205,7 +205,7 @@ func (c *Compare) printDiffFile(diffFile File) {
 			fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name),
 		)
 
-		log.Debugf("Using custom diff command: %s", command)
+		log.Debugf("Using custom diff command: %s", cyan(command))
 
 		cmd := exec.Command("sh", "-c", command)
 		cmd.Stdout = os.Stdout

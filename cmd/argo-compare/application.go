@@ -162,7 +162,10 @@ func (t *Target) renderTemplate() {
 		releaseName = t.App.Metadata.Name
 	}
 
-	log.Debugf("Rendering [%s] templates using release name [%s]", cyan(t.App.Spec.Source.Chart), cyan(releaseName))
+	log.Debugf("Rendering [%s] chart's version [%s] templates using release name [%s]",
+		cyan(t.App.Spec.Source.Chart),
+		cyan(t.App.Spec.Source.TargetRevision),
+		cyan(releaseName))
 
 	cmd := exec.Command(
 		"helm",

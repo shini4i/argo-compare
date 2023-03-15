@@ -43,7 +43,7 @@ var (
 )
 
 var (
-	cyan = color.New(color.FgCyan).SprintFunc()
+	cyan = color.New(color.FgCyan, color.Bold).SprintFunc()
 )
 
 type execContext = func(name string, arg ...string) *exec.Cmd
