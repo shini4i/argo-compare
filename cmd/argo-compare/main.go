@@ -86,8 +86,7 @@ func compareFiles(changedFiles []string) {
 
 		log.Infof("===> Processing changed application: [%s]", file)
 
-		tmpDir, err = os.MkdirTemp("/tmp", "argo-compare-*")
-		if err != nil {
+		if tmpDir, err = os.MkdirTemp("/tmp", "argo-compare-*"); err != nil {
 			log.Fatal(err)
 		}
 
@@ -98,18 +97,15 @@ func compareFiles(changedFiles []string) {
 			default:
 				log.Fatalf("Could not process the source Application: %s", err)
 			}
-			continue
 		}
 
 		app, err := repo.getChangedFileContent(targetBranch, file, exec.Command)
 		if err != nil {
 			log.Debugf("Could not get the target Application from branch [%s]: %s", targetBranch, err)
-			continue
 		}
 
 		if err = processFiles(file, "dst", app); err != nil && !printAddedManifests {
 			log.Fatalf("Could not process the destination Application: %s", err)
-			continue
 		}
 
 		comparer := Compare{}
@@ -118,19 +114,18 @@ func compareFiles(changedFiles []string) {
 
 		err = os.RemoveAll(tmpDir)
 		if err != nil {
-			log.Fatal(err.Error())
+			log.Fatal(err)
 		}
 	}
 }
 
 func collectRepoCredentials() {
 	log.Debug("===> Collecting repo credentials")
-	for _, e := range os.Environ() {
-		if strings.HasPrefix(e, repoCredsPrefix) {
+	for _, env := range os.Environ() {
+		if strings.HasPrefix(env, repoCredsPrefix) {
 			var repoCreds RepoCredentials
-			err := json.Unmarshal([]byte(strings.SplitN(e, "=", 2)[1]), &repoCreds)
-			if err != nil {
-				panic(err)
+			if err := json.Unmarshal([]byte(strings.SplitN(env, "=", 2)[1]), &repoCreds); err != nil {
+				log.Fatal(err)
 			}
 			repoCredentials = append(repoCredentials, repoCreds)
 		}

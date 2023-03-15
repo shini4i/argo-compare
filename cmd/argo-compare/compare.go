@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 )
 
 type File struct {
@@ -34,19 +35,30 @@ const (
 )
 
 func (c *Compare) findFiles() {
-	if srcFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/src")); err == nil {
-		c.srcFiles = c.processFiles(srcFiles, "src")
-	} else {
-		log.Fatal(err)
-	}
+	wg := new(sync.WaitGroup)
+	wg.Add(2)
 
-	if dstFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/dst")); err == nil {
-		c.dstFiles = c.processFiles(dstFiles, "dst")
-	} else {
-		// we are no longer failing here, because we need to support the case where the destination
-		// branch does not have the Application yet
-		log.Debugf("Error while finding files in %s: %s", filepath.Join(tmpDir, "templates/dst"), err)
-	}
+	go func() {
+		if srcFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/src")); err == nil {
+			c.srcFiles = c.processFiles(srcFiles, "src")
+		} else {
+			log.Fatal(err)
+		}
+		wg.Done()
+	}()
+
+	go func() {
+		if dstFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/dst")); err == nil {
+			c.dstFiles = c.processFiles(dstFiles, "dst")
+		} else {
+			// we are no longer failing here, because we need to support the case where the destination
+			// branch does not have the Application yet
+			log.Debugf("Error while finding files in %s: %s", filepath.Join(tmpDir, "templates/dst"), err)
+		}
+		wg.Done()
+	}()
+
+	wg.Wait()
 
 	if !reflect.DeepEqual(c.srcFiles, c.dstFiles) {
 		c.generateFilesStatus()
