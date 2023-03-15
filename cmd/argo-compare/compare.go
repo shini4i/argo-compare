@@ -5,7 +5,6 @@ import (
 	"github.com/codingsince1985/checksum"
 	"github.com/fatih/color"
 	"github.com/op/go-logging"
-	"github.com/r3labs/diff/v3"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	h "github.com/shini4i/argo-compare/internal/helpers"
 	"os"
@@ -76,59 +75,55 @@ func (c *Compare) processFiles(files []string, filesType string) []File {
 	return processedFiles
 }
 
-// generateFilesStatus generates the `addedFiles`, `removedFiles`, and `diffFiles` slices
-// by comparing the `srcFiles` and `dstFiles` slices. For each element in the `Diff` output,
-// the function calls `handleCreate`, `handleDelete`, or `handleUpdate` based on the type of change.
 func (c *Compare) generateFilesStatus() {
-	filesStatus, err := diff.Diff(c.dstFiles, c.srcFiles)
-	if err != nil {
-		log.Fatal(err)
-	}
+	c.findNewOrRemovedFiles()
+	c.compareFiles()
+}
 
-	for _, fileStatus := range filesStatus {
-		switch fileStatus.Type {
-		case "create":
-			c.handleCreate(fileStatus)
-		case "delete":
-			c.handleDelete(fileStatus)
-		case "update":
-			c.handleUpdate(fileStatus)
+func (c *Compare) compareFiles() {
+	var diffFiles []File
+
+	for _, srcFile := range c.srcFiles {
+		for _, dstFile := range c.dstFiles {
+			if srcFile.Name == dstFile.Name && srcFile.Sha != dstFile.Sha {
+				diffFiles = append(diffFiles, srcFile)
+			}
 		}
 	}
+
+	c.diffFiles = diffFiles
 }
 
-// handleCreate adds a file to the `addedFiles` slice if it has been created in the
-// `dstFiles` slice. The function checks the `Path` field of the `Change` object to ensure
-// that the created element is a file name. If the element is not a file name, the function
-// returns without adding the file to the `addedFiles` slice.
-func (c *Compare) handleCreate(fileStatus diff.Change) {
-	if fileStatus.Path[1] != "name" {
-		return
-	}
-	c.addedFiles = append(c.addedFiles, File{Name: fileStatus.To.(string)})
-}
+func (c *Compare) findNewOrRemovedFiles() {
+	var newFiles []File
+	var removedFiles []File
 
-// handleDelete checks the `Path` field of the `Change` object to ensure
-// that the deleted element is a file name in the `File` struct. If the element
-// is not a file name, the function returns without adding the file to the
-// `removedFiles` slice.
-func (c *Compare) handleDelete(fileStatus diff.Change) {
-	if fileStatus.Path[1] != "name" {
-		return
-	}
-	c.removedFiles = append(c.removedFiles, File{Name: fileStatus.From.(string)})
-}
-
-// handleUpdate adds a file to the `diffFiles` slice if it has changed between the
-// `c.srcFiles` and `c.dstFiles` slices, based on the `Change` object returned by the `Diff` function.
-func (c *Compare) handleUpdate(fileStatus diff.Change) {
-	for i := range c.dstFiles {
-		if c.dstFiles[i].Sha == fileStatus.From.(string) {
-			// If the SHA value of the file matches the target SHA value, add the file to the `diffFiles` slice
-			c.diffFiles = append(c.diffFiles, c.dstFiles[i])
-			break
+	for _, srcFile := range c.srcFiles {
+		var found bool
+		for _, dstFile := range c.dstFiles {
+			if srcFile.Name == dstFile.Name {
+				found = true
+			}
+		}
+		if !found {
+			newFiles = append(newFiles, srcFile)
 		}
 	}
+
+	for _, dstFile := range c.dstFiles {
+		var found bool
+		for _, srcFile := range c.srcFiles {
+			if dstFile.Name == srcFile.Name {
+				found = true
+			}
+		}
+		if !found {
+			removedFiles = append(removedFiles, dstFile)
+		}
+	}
+
+	c.addedFiles = newFiles
+	c.removedFiles = removedFiles
 }
 
 func (c *Compare) printFilesStatus() {
