@@ -35,6 +35,12 @@ const (
 )
 
 func (c *Compare) findFiles() {
+	// Most of the time, we want to avoid huge output containing helm labels update only,
+	// but we still want to be able to see the diff if needed
+	if !preserveHelmLabels {
+		c.findAndStripHelmLabels()
+	}
+
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
 
@@ -67,12 +73,6 @@ func (c *Compare) findFiles() {
 
 func (c *Compare) processFiles(files []string, filesType string) []File {
 	var processedFiles []File
-
-	// Most of the time, we want to avoid huge output containing helm labels update only,
-	// but we still want to be able to see the diff if needed
-	if !preserveHelmLabels {
-		c.findAndStripHelmLabels()
-	}
 
 	path := filepath.Join(tmpDir, "templates", filesType)
 

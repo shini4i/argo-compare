@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 )
 
 const (
@@ -90,23 +91,34 @@ func compareFiles(changedFiles []string) {
 			log.Fatal(err)
 		}
 
-		if err = processFiles(file, "src", m.Application{}); err != nil {
-			switch err {
-			case unsupportedAppConfiguration:
-				log.Warning("Skipping unsupported application configuration")
-			default:
-				log.Fatalf("Could not process the source Application: %s", err)
+		wg := new(sync.WaitGroup)
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			if err = processFiles(file, "src", m.Application{}); err != nil {
+				switch err {
+				case unsupportedAppConfiguration:
+					log.Warning("Skipping unsupported application configuration")
+				default:
+					log.Fatalf("Could not process the source Application: %s", err)
+				}
 			}
-		}
+		}()
 
-		app, err := repo.getChangedFileContent(targetBranch, file, exec.Command)
-		if err != nil {
-			log.Debugf("Could not get the target Application from branch [%s]: %s", targetBranch, err)
-		}
+		go func() {
+			defer wg.Done()
+			app, err := repo.getChangedFileContent(targetBranch, file, exec.Command)
+			if err != nil {
+				log.Debugf("Could not get the target Application from branch [%s]: %s", targetBranch, err)
+			}
 
-		if err = processFiles(file, "dst", app); err != nil && !printAddedManifests {
-			log.Fatalf("Could not process the destination Application: %s", err)
-		}
+			if err = processFiles(file, "dst", app); err != nil && !printAddedManifests {
+				log.Fatalf("Could not process the destination Application: %s", err)
+			}
+		}()
+
+		wg.Wait()
 
 		comparer := Compare{}
 		comparer.findFiles()
