@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/alecthomas/kong"
+	"github.com/fatih/color"
 	"github.com/op/go-logging"
 	h "github.com/shini4i/argo-compare/internal/helpers"
 	m "github.com/shini4i/argo-compare/internal/models"
@@ -33,12 +34,16 @@ var (
 	// A bit weird, but it seems that it's the easiest way to implement log level support in CLI tool
 	// without printing the log level and timestamp in the output
 	format = logging.MustStringFormatter(
-		`%{color}%{message}%{color:reset}`,
+		`%{message}`,
 	)
 )
 
 var (
 	unsupportedAppConfiguration = errors.New("unsupported application configuration")
+)
+
+var (
+	cyan = color.New(color.FgCyan).SprintFunc()
 )
 
 type execContext = func(name string, arg ...string) *exec.Cmd
@@ -57,7 +62,7 @@ func loggingInit(level logging.Level) {
 }
 
 func processFiles(fileName string, fileType string, application m.Application) error {
-	log.Debugf("Processing [%s] file: [%s]", fileType, fileName)
+	log.Debugf("Processing [%s] file: [%s]", cyan(fileType), cyan(fileName))
 
 	target := Target{File: fileName, Type: fileType, App: application}
 	if fileType == "src" {
@@ -85,7 +90,7 @@ func compareFiles(changedFiles []string) {
 	for _, file := range changedFiles {
 		var err error
 
-		log.Infof("===> Processing changed application: [%s]", file)
+		log.Infof("===> Processing changed application: [%s]", cyan(file))
 
 		if tmpDir, err = os.MkdirTemp("/tmp", "argo-compare-*"); err != nil {
 			log.Fatal(err)
@@ -144,7 +149,7 @@ func collectRepoCredentials() {
 	}
 
 	for _, repo := range repoCredentials {
-		log.Debugf("▶ Found repo credentials for [%s]", repo.Url)
+		log.Debugf("▶ Found repo credentials for [%s]", cyan(repo.Url))
 	}
 }
 
@@ -202,7 +207,7 @@ func main() {
 		printRemovedManifests = true
 	}
 
-	log.Infof("===> Running argo-compare version [%s]", version)
+	log.Infof("===> Running argo-compare version [%s]", cyan(version))
 
 	collectRepoCredentials()
 

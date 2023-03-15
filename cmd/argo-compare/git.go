@@ -108,7 +108,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 }
 
 func checkIfApp(file string) (bool, error) {
-	log.Debugf("===> Checking if [%s] is an Application", file)
+	log.Debugf("===> Checking if [%s] is an Application", cyan(file))
 
 	target := Target{File: file}
 

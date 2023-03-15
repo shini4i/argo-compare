@@ -81,9 +81,9 @@ func (t *Target) collectHelmChart() error {
 			}
 		}
 
-		log.Debugf("Downloading version %s of %s chart...",
-			t.App.Spec.Source.TargetRevision,
-			t.App.Spec.Source.Chart)
+		log.Debugf("Downloading version [%s] of [%s] chart...",
+			cyan(t.App.Spec.Source.TargetRevision),
+			cyan(t.App.Spec.Source.Chart))
 
 		cmd := exec.Command(
 			"helm",
@@ -102,9 +102,9 @@ func (t *Target) collectHelmChart() error {
 			return errors.New("error downloading chart")
 		}
 	} else {
-		log.Debugf("Version %s of %s chart is present in the cache...",
-			t.App.Spec.Source.TargetRevision,
-			t.App.Spec.Source.Chart)
+		log.Debugf("Version [%s] of [%s] chart is present in the cache...",
+			cyan(t.App.Spec.Source.TargetRevision),
+			cyan(t.App.Spec.Source.Chart))
 	}
 
 	return nil
@@ -113,7 +113,7 @@ func (t *Target) collectHelmChart() error {
 func (t *Target) extractChart() {
 	// We have a separate function for this and not using helm to extract the content of the chart
 	// because we don't want to re-download the chart if the TargetRevision is the same
-	log.Debugf("Extracting %s chart to %s/charts/%s...", t.App.Spec.Source.Chart, tmpDir, t.Type)
+	log.Debugf("Extracting [%s] chart to %s/charts/%s...", cyan(t.App.Spec.Source.Chart), tmpDir, t.Type)
 
 	path := fmt.Sprintf("%s/charts/%s/%s", tmpDir, t.Type, t.App.Spec.Source.Chart)
 	if err := os.MkdirAll(path, os.ModePerm); err != nil {
@@ -162,7 +162,7 @@ func (t *Target) renderTemplate() {
 		releaseName = t.App.Metadata.Name
 	}
 
-	log.Debugf("Rendering [%s] templates using release name [%s]", t.App.Spec.Source.Chart, releaseName)
+	log.Debugf("Rendering [%s] templates using release name [%s]", cyan(t.App.Spec.Source.Chart), cyan(releaseName))
 
 	cmd := exec.Command(
 		"helm",
