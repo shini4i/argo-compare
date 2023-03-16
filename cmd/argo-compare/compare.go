@@ -45,15 +45,16 @@ func (c *Compare) findFiles() {
 	wg.Add(2)
 
 	go func() {
+		defer wg.Done()
 		if srcFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/src")); err == nil {
 			c.srcFiles = c.processFiles(srcFiles, "src")
 		} else {
 			log.Fatal(err)
 		}
-		wg.Done()
 	}()
 
 	go func() {
+		defer wg.Done()
 		if dstFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/dst")); err == nil {
 			c.dstFiles = c.processFiles(dstFiles, "dst")
 		} else {
@@ -61,7 +62,6 @@ func (c *Compare) findFiles() {
 			// branch does not have the Application yet
 			log.Debugf("Error while finding files in %s: %s", filepath.Join(tmpDir, "templates/dst"), err)
 		}
-		wg.Done()
 	}()
 
 	wg.Wait()

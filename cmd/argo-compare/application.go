@@ -113,7 +113,10 @@ func (t *Target) collectHelmChart() error {
 func (t *Target) extractChart() {
 	// We have a separate function for this and not using helm to extract the content of the chart
 	// because we don't want to re-download the chart if the TargetRevision is the same
-	log.Debugf("Extracting [%s] chart to %s/charts/%s...", cyan(t.App.Spec.Source.Chart), tmpDir, t.Type)
+	log.Debugf("Extracting [%s] chart version [%s] to %s/charts/%s...",
+		cyan(t.App.Spec.Source.Chart),
+		cyan(t.App.Spec.Source.TargetRevision),
+		tmpDir, t.Type)
 
 	path := fmt.Sprintf("%s/charts/%s/%s", tmpDir, t.Type, t.App.Spec.Source.Chart)
 	if err := os.MkdirAll(path, os.ModePerm); err != nil {
