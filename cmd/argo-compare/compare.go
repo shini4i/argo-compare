@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 )
 
 type File struct {
@@ -34,19 +35,36 @@ const (
 )
 
 func (c *Compare) findFiles() {
-	if srcFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/src")); err == nil {
-		c.srcFiles = c.processFiles(srcFiles, "src")
-	} else {
-		log.Fatal(err)
+	// Most of the time, we want to avoid huge output containing helm labels update only,
+	// but we still want to be able to see the diff if needed
+	if !preserveHelmLabels {
+		c.findAndStripHelmLabels()
 	}
 
-	if dstFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/dst")); err == nil {
-		c.dstFiles = c.processFiles(dstFiles, "dst")
-	} else {
-		// we are no longer failing here, because we need to support the case where the destination
-		// branch does not have the Application yet
-		log.Debugf("Error while finding files in %s: %s", filepath.Join(tmpDir, "templates/dst"), err)
-	}
+	wg := new(sync.WaitGroup)
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		if srcFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/src")); err == nil {
+			c.srcFiles = c.processFiles(srcFiles, "src")
+		} else {
+			log.Fatal(err)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		if dstFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/dst")); err == nil {
+			c.dstFiles = c.processFiles(dstFiles, "dst")
+		} else {
+			// we are no longer failing here, because we need to support the case where the destination
+			// branch does not have the Application yet
+			log.Debugf("Error while finding files in %s: %s", filepath.Join(tmpDir, "templates/dst"), err)
+		}
+	}()
+
+	wg.Wait()
 
 	if !reflect.DeepEqual(c.srcFiles, c.dstFiles) {
 		c.generateFilesStatus()
@@ -55,12 +73,6 @@ func (c *Compare) findFiles() {
 
 func (c *Compare) processFiles(files []string, filesType string) []File {
 	var processedFiles []File
-
-	// Most of the time, we want to avoid huge output containing helm labels update only,
-	// but we still want to be able to see the diff if needed
-	if !preserveHelmLabels {
-		c.findAndStripHelmLabels()
-	}
 
 	path := filepath.Join(tmpDir, "templates", filesType)
 
@@ -193,7 +205,7 @@ func (c *Compare) printDiffFile(diffFile File) {
 			fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name),
 		)
 
-		log.Debugf("Using custom diff command: %s", command)
+		log.Debugf("Using custom diff command: %s", cyan(command))
 
 		cmd := exec.Command("sh", "-c", command)
 		cmd.Stdout = os.Stdout
