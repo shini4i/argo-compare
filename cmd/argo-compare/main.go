@@ -88,39 +88,46 @@ func processFiles(fileName string, fileType string, application m.Application) e
 
 func compareFiles(changedFiles []string) {
 	for _, file := range changedFiles {
-		var err error
+		// We want to make sure that the temporary directory is removed after each iteration
+		// whatever the result is, and not after the whole loop is finished, hence the anonymous function
+		func() {
+			var err error
 
-		log.Infof("===> Processing changed application: [%s]", cyan(file))
+			log.Infof("===> Processing changed application: [%s]", cyan(file))
 
-		if tmpDir, err = os.MkdirTemp("/tmp", "argo-compare-*"); err != nil {
-			log.Fatal(err)
-		}
+			if tmpDir, err = os.MkdirTemp("/tmp", "argo-compare-*"); err != nil {
+				log.Panic(err)
+			}
 
-		if err = processFiles(file, "src", m.Application{}); err == unsupportedAppConfiguration {
-			color.Yellow("Skipping unsupported application configuration")
-			continue
-		} else if err != nil {
-			log.Fatalf("Could not process the source Application: %s", err)
-		}
+			defer func(path string) {
+				err := os.RemoveAll(path)
+				if err != nil {
+					log.Panic(err)
+				}
+			}(tmpDir)
 
-		app, err := repo.getChangedFileContent(targetBranch, file, exec.Command)
-		if err == gitFileDoesNotExist && !printAddedManifests {
-			continue
-		} else if err != nil {
-			log.Fatalf("Could not get the target Application from branch [%s]: %s", targetBranch, err)
-		}
+			if err = processFiles(file, "src", m.Application{}); err == unsupportedAppConfiguration {
+				color.Yellow("Skipping unsupported application configuration")
+				return
+			} else if err != nil {
+				log.Panicf("Could not process the source Application: %s", err)
+			}
 
-		if err = processFiles(file, "dst", app); err != nil && !printAddedManifests {
-			log.Fatalf("Could not process the destination Application: %s", err)
-		}
+			app, err := repo.getChangedFileContent(targetBranch, file, exec.Command)
+			if err == gitFileDoesNotExist && !printAddedManifests {
+				return
+			} else if err != nil {
+				log.Panicf("Could not get the target Application from branch [%s]: %s", targetBranch, err)
+			}
 
-		comparer := Compare{}
-		comparer.findFiles()
-		comparer.printFilesStatus()
+			if err = processFiles(file, "dst", app); err != nil && !printAddedManifests {
+				log.Panicf("Could not process the destination Application: %s", err)
+			}
 
-		if err = os.RemoveAll(tmpDir); err != nil {
-			log.Fatal(err)
-		}
+			comparer := Compare{}
+			comparer.findFiles()
+			comparer.printFilesStatus()
+		}()
 	}
 }
 
