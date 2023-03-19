@@ -83,11 +83,11 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 		} else {
 			return m.Application{}, err
 		}
-	}
 
-	// unless we want to print the added manifests, we stop here
-	if !printAddedManifests {
-		return m.Application{}, gitFileDoesNotExist
+		// unless we want to print the added manifests, we stop here
+		if !printAddedManifests {
+			return m.Application{}, gitFileDoesNotExist
+		}
 	}
 
 	// writing the content to a temporary file to be able to pass it to the parser
