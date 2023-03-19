@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"github.com/fatih/color"
 	"github.com/op/go-logging"
 	"os"
 	"path/filepath"
@@ -73,7 +74,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 
 	if err = cmd.Run(); err != nil {
 		if strings.Contains(errOut.String(), "exists on disk, but not in") {
-			log.Warning("The requested file does not exist in target branch, assuming it is a new Application")
+			color.Yellow("The requested file does not exist in target branch, assuming it is a new Application")
 		} else {
 			log.Error(errOut.String())
 		}
