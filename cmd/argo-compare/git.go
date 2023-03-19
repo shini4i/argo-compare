@@ -80,12 +80,14 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 	if err = cmd.Run(); err != nil {
 		if strings.Contains(errOut.String(), "exists on disk, but not in") {
 			color.Yellow("The requested file does not exist in target branch, assuming it is a new Application")
-			if !printAddedManifests {
-				return m.Application{}, gitFileDoesNotExist
-			}
 		} else {
 			return m.Application{}, err
 		}
+	}
+
+	// unless we want to print the added manifests, we stop here
+	if !printAddedManifests {
+		return m.Application{}, gitFileDoesNotExist
 	}
 
 	// writing the content to a temporary file to be able to pass it to the parser

@@ -157,7 +157,6 @@ func (c *Compare) printFilesStatus() {
 		for _, diffFile := range c.diffFiles {
 			c.processManifest(diffFile, "changed")
 		}
-
 	}
 }
 
@@ -218,13 +217,16 @@ func (c *Compare) printDiffFile(diffFile File) {
 }
 
 func (c *Compare) findAndStripHelmLabels() {
-	if helmFiles, err := h.FindYamlFiles(tmpDir); err != nil {
+	var helmFiles []string
+	var err error
+
+	if helmFiles, err = h.FindYamlFiles(tmpDir); err != nil {
 		log.Fatal(err)
-	} else {
-		for _, helmFile := range helmFiles {
-			if err := h.StripHelmLabels(helmFile); err != nil {
-				log.Fatal(err)
-			}
+	}
+
+	for _, helmFile := range helmFiles {
+		if err := h.StripHelmLabels(helmFile); err != nil {
+			log.Fatal(err)
 		}
 	}
 }
