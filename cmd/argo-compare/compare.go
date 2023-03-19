@@ -166,15 +166,11 @@ func (c *Compare) processManifest(file File, fileType string) {
 	switch fileType {
 	case "added":
 		if printAddedManifests {
-			color.Green(string(
-				h.ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, file.Name))),
-			)
+			color.Green(string(h.ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, file.Name))))
 		}
 	case "removed":
 		if printRemovedManifests {
-			color.Red(string(
-				h.ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, file.Name))),
-			)
+			color.Red(string(h.ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, file.Name))))
 		}
 	case "changed":
 		c.printDiffFile(file)

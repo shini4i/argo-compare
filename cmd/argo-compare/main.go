@@ -97,7 +97,7 @@ func compareFiles(changedFiles []string) {
 		}
 
 		if err = processFiles(file, "src", m.Application{}); err == unsupportedAppConfiguration {
-			log.Warning("Skipping unsupported application configuration")
+			color.Yellow("Skipping unsupported application configuration")
 			continue
 		} else if err != nil {
 			log.Fatalf("Could not process the source Application: %s", err)
