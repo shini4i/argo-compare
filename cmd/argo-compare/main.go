@@ -104,9 +104,10 @@ func compareFiles(changedFiles []string) {
 		}
 
 		app, err := repo.getChangedFileContent(targetBranch, file, exec.Command)
-		if err != nil && !printAddedManifests {
-			log.Debugf("Could not get the target Application from branch [%s]: %s", targetBranch, err)
+		if err == gitFileDoesNotExist && !printAddedManifests {
 			continue
+		} else if err != nil {
+			log.Fatalf("Could not get the target Application from branch [%s]: %s", targetBranch, err)
 		}
 
 		if err = processFiles(file, "dst", app); err != nil && !printAddedManifests {
