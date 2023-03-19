@@ -51,15 +51,12 @@ func StripHelmLabels(file string) error {
 	// it might be error-prone, as those labels are not always the same
 	re := regexp.MustCompile("(?m)[\r\n]+^.*(" + regex + "):.*$")
 
-	fileData, err := os.ReadFile(file)
-	if err != nil {
+	if fileData, err := os.ReadFile(file); err != nil {
 		return err
-	}
-
-	fileData = re.ReplaceAll(fileData, []byte(""))
-	err = os.WriteFile(file, fileData, 0644)
-	if err != nil {
-		return err
+	} else {
+		if err = os.WriteFile(file, re.ReplaceAll(fileData, []byte("")), 0644); err != nil {
+			return err
+		}
 	}
 
 	return nil

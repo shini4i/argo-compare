@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"github.com/fatih/color"
 	"github.com/op/go-logging"
 	"os"
 	"path/filepath"
@@ -14,6 +16,10 @@ type GitRepo struct {
 	changedFiles []string
 	invalidFiles []string
 }
+
+var (
+	gitFileDoesNotExist = errors.New("file does not exist in target branch")
+)
 
 func (g *GitRepo) getChangedFiles(cmdContext execContext) ([]string, error) {
 	cmd := cmdContext("git", "--no-pager", "diff", "--name-only", targetBranch)
@@ -73,13 +79,14 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 
 	if err = cmd.Run(); err != nil {
 		if strings.Contains(errOut.String(), "exists on disk, but not in") {
-			log.Warning("The requested file does not exist in target branch, assuming it is a new Application")
+			color.Yellow("The requested file does not exist in target branch, assuming it is a new Application")
 		} else {
-			log.Error(errOut.String())
+			return m.Application{}, err
 		}
 
+		// unless we want to print the added manifests, we stop here
 		if !printAddedManifests {
-			return m.Application{}, err
+			return m.Application{}, gitFileDoesNotExist
 		}
 	}
 

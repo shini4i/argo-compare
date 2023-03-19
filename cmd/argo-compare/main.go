@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 )
 
 const (
@@ -40,6 +39,7 @@ var (
 
 var (
 	unsupportedAppConfiguration = errors.New("unsupported application configuration")
+	failedToDownloadChart       = errors.New("failed to download chart")
 )
 
 var (
@@ -96,41 +96,29 @@ func compareFiles(changedFiles []string) {
 			log.Fatal(err)
 		}
 
-		wg := new(sync.WaitGroup)
-		wg.Add(2)
+		if err = processFiles(file, "src", m.Application{}); err == unsupportedAppConfiguration {
+			color.Yellow("Skipping unsupported application configuration")
+			continue
+		} else if err != nil {
+			log.Fatalf("Could not process the source Application: %s", err)
+		}
 
-		go func() {
-			defer wg.Done()
-			if err = processFiles(file, "src", m.Application{}); err != nil {
-				switch err {
-				case unsupportedAppConfiguration:
-					log.Warning("Skipping unsupported application configuration")
-				default:
-					log.Fatalf("Could not process the source Application: %s", err)
-				}
-			}
-		}()
+		app, err := repo.getChangedFileContent(targetBranch, file, exec.Command)
+		if err == gitFileDoesNotExist && !printAddedManifests {
+			continue
+		} else if err != nil {
+			log.Fatalf("Could not get the target Application from branch [%s]: %s", targetBranch, err)
+		}
 
-		go func() {
-			defer wg.Done()
-			app, err := repo.getChangedFileContent(targetBranch, file, exec.Command)
-			if err != nil {
-				log.Debugf("Could not get the target Application from branch [%s]: %s", targetBranch, err)
-			}
-
-			if err = processFiles(file, "dst", app); err != nil && !printAddedManifests {
-				log.Fatalf("Could not process the destination Application: %s", err)
-			}
-		}()
-
-		wg.Wait()
+		if err = processFiles(file, "dst", app); err != nil && !printAddedManifests {
+			log.Fatalf("Could not process the destination Application: %s", err)
+		}
 
 		comparer := Compare{}
 		comparer.findFiles()
 		comparer.printFilesStatus()
 
-		err = os.RemoveAll(tmpDir)
-		if err != nil {
+		if err = os.RemoveAll(tmpDir); err != nil {
 			log.Fatal(err)
 		}
 	}

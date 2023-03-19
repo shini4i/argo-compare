@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"github.com/mattn/go-zglob"
 	"gopkg.in/yaml.v3"
@@ -34,9 +33,7 @@ func (t *Target) parse() error {
 
 	log.Debugf("Parsing %s...", file)
 
-	yamlFile := h.ReadFile(file)
-
-	if err := yaml.Unmarshal(yamlFile, &app); err != nil {
+	if err := yaml.Unmarshal(h.ReadFile(file), &app); err != nil {
 		return err
 	}
 
@@ -99,7 +96,7 @@ func (t *Target) collectHelmChart() error {
 		cmd.Stderr = os.Stderr
 
 		if err := cmd.Run(); err != nil {
-			return errors.New("error downloading chart")
+			return failedToDownloadChart
 		}
 	} else {
 		log.Debugf("Version [%s] of [%s] chart is present in the cache...",
