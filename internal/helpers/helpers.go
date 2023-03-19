@@ -57,8 +57,7 @@ func StripHelmLabels(file string) error {
 	}
 
 	fileData = re.ReplaceAll(fileData, []byte(""))
-	err = os.WriteFile(file, fileData, 0644)
-	if err != nil {
+	if err = os.WriteFile(file, fileData, 0644); err != nil {
 		return err
 	}
 

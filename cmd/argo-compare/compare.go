@@ -107,9 +107,6 @@ func (c *Compare) compareFiles() {
 }
 
 func (c *Compare) findNewOrRemovedFiles() {
-	var newFiles []File
-	var removedFiles []File
-
 	for _, srcFile := range c.srcFiles {
 		var found bool
 		for _, dstFile := range c.dstFiles {
@@ -118,7 +115,7 @@ func (c *Compare) findNewOrRemovedFiles() {
 			}
 		}
 		if !found {
-			newFiles = append(newFiles, srcFile)
+			c.addedFiles = append(c.addedFiles, srcFile)
 		}
 	}
 
@@ -130,12 +127,9 @@ func (c *Compare) findNewOrRemovedFiles() {
 			}
 		}
 		if !found {
-			removedFiles = append(removedFiles, dstFile)
+			c.removedFiles = append(c.removedFiles, dstFile)
 		}
 	}
-
-	c.addedFiles = newFiles
-	c.removedFiles = removedFiles
 }
 
 func (c *Compare) printFilesStatus() {
@@ -224,14 +218,13 @@ func (c *Compare) printDiffFile(diffFile File) {
 }
 
 func (c *Compare) findAndStripHelmLabels() {
-	helmFiles, err := h.FindYamlFiles(tmpDir)
-	if err != nil {
-		panic(err)
-	}
-
-	for _, helmFile := range helmFiles {
-		if err := h.StripHelmLabels(helmFile); err != nil {
-			panic(err)
+	if helmFiles, err := h.FindYamlFiles(tmpDir); err != nil {
+		log.Fatal(err)
+	} else {
+		for _, helmFile := range helmFiles {
+			if err := h.StripHelmLabels(helmFile); err != nil {
+				log.Fatal(err)
+			}
 		}
 	}
 }

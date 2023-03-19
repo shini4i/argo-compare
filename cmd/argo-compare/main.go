@@ -129,8 +129,7 @@ func compareFiles(changedFiles []string) {
 		comparer.findFiles()
 		comparer.printFilesStatus()
 
-		err = os.RemoveAll(tmpDir)
-		if err != nil {
+		if err = os.RemoveAll(tmpDir); err != nil {
 			log.Fatal(err)
 		}
 	}
