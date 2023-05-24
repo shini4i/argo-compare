@@ -16,8 +16,8 @@ import (
 )
 
 type File struct {
-	Name string `diff:"name"`
-	Sha  string `diff:"sha"`
+	Name string
+	Sha  string
 }
 
 type Compare struct {

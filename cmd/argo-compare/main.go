@@ -71,17 +71,13 @@ func processFiles(fileName string, fileType string, application m.Application) e
 		}
 	}
 
-	if len(target.App.Spec.Source.Chart) == 0 {
-		return unsupportedAppConfiguration
-	}
-
-	target.writeValuesYaml()
+	target.generateValuesFiles()
 	if err := target.collectHelmChart(); err != nil {
 		return err
 	}
 
 	target.extractChart()
-	target.renderTemplate()
+	target.renderAppSources()
 
 	return nil
 }

@@ -37,19 +37,22 @@ func (t *Target) parse() error {
 		return err
 	}
 
+	if err := app.Validate(); err != nil {
+		return err
+	}
+
 	t.App = app
 
 	return nil
 }
 
-func (t *Target) writeValuesYaml() {
-	yamlFile, err := os.Create(fmt.Sprintf("%s/values-%s.yaml", tmpDir, t.Type))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if _, err := yamlFile.WriteString(t.App.Spec.Source.Helm.Values); err != nil {
-		log.Fatal(err)
+func (t *Target) generateValuesFiles() {
+	if t.App.Spec.MultiSource {
+		for _, source := range t.App.Spec.Sources {
+			generateValuesFile(source.Chart, tmpDir, t.Type, source.Helm.Values)
+		}
+	} else {
+		generateValuesFile(t.App.Spec.Source.Chart, tmpDir, t.Type, t.App.Spec.Source.Helm.Values)
 	}
 }
 
@@ -151,7 +154,7 @@ func (t *Target) extractChart() {
 	}
 }
 
-func (t *Target) renderTemplate() {
+func (t *Target) renderAppSources() {
 	var releaseName string
 
 	// We are providing release name to the helm template command to cover some corner cases
@@ -162,24 +165,51 @@ func (t *Target) renderTemplate() {
 		releaseName = t.App.Metadata.Name
 	}
 
+	if t.App.Spec.MultiSource {
+		for _, source := range t.App.Spec.Sources {
+			if err := renderAppSource(releaseName, source.Chart, source.TargetRevision, tmpDir, t.Type); err != nil {
+				log.Fatal(err)
+			}
+		}
+		return
+	}
+
+	if err := renderAppSource(releaseName, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision, tmpDir, t.Type); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func renderAppSource(releaseName, chartName, chartVersion, tmpDir, targetType string) error {
 	log.Debugf("Rendering [%s] chart's version [%s] templates using release name [%s]",
-		cyan(t.App.Spec.Source.Chart),
-		cyan(t.App.Spec.Source.TargetRevision),
+		cyan(chartName),
+		cyan(chartVersion),
 		cyan(releaseName))
 
 	cmd := exec.Command(
 		"helm",
 		"template",
 		"--release-name", releaseName,
-		fmt.Sprintf("%s/charts/%s/%s", tmpDir, t.Type, t.App.Spec.Source.Chart),
-		"--output-dir", fmt.Sprintf("%s/templates/%s", tmpDir, t.Type),
-		"--values", fmt.Sprintf("%s/charts/%s/%s/values.yaml", tmpDir, t.Type, t.App.Spec.Source.Chart),
-		"--values", fmt.Sprintf("%s/values-%s.yaml", tmpDir, t.Type),
+		fmt.Sprintf("%s/charts/%s/%s", tmpDir, targetType, chartName),
+		"--output-dir", fmt.Sprintf("%s/templates/%s", tmpDir, targetType),
+		"--values", fmt.Sprintf("%s/charts/%s/%s/values.yaml", tmpDir, targetType, chartName),
+		"--values", fmt.Sprintf("%s/%s-values-%s.yaml", chartName, tmpDir, targetType),
 	)
 
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func generateValuesFile(chartName, tmpDir, targetType, values string) {
+	yamlFile, err := os.Create(fmt.Sprintf("%s/%s-values-%s.yaml", tmpDir, chartName, targetType))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if _, err := yamlFile.WriteString(values); err != nil {
 		log.Fatal(err)
 	}
 }
