@@ -37,32 +37,130 @@ func (t *Target) parse() error {
 		return err
 	}
 
+	if err := app.Validate(); err != nil {
+		return err
+	}
+
 	t.App = app
 
 	return nil
 }
 
-func (t *Target) writeValuesYaml() {
-	yamlFile, err := os.Create(fmt.Sprintf("%s/values-%s.yaml", tmpDir, t.Type))
-	if err != nil {
-		log.Fatal(err)
+func (t *Target) generateValuesFiles() {
+	if t.App.Spec.MultiSource {
+		for _, source := range t.App.Spec.Sources {
+			generateValuesFile(source.Chart, tmpDir, t.Type, source.Helm.Values)
+		}
+	} else {
+		generateValuesFile(t.App.Spec.Source.Chart, tmpDir, t.Type, t.App.Spec.Source.Helm.Values)
+	}
+}
+
+func (t *Target) ensureHelmCharts() error {
+	if t.App.Spec.MultiSource {
+		for _, source := range t.App.Spec.Sources {
+			if err := downloadHelmChart(cacheDir, source.RepoURL, source.Chart, source.TargetRevision); err != nil {
+				return err
+			}
+		}
+	} else {
+		if err := downloadHelmChart(cacheDir, t.App.Spec.Source.RepoURL, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision); err != nil {
+			return err
+		}
 	}
 
-	if _, err := yamlFile.WriteString(t.App.Spec.Source.Helm.Values); err != nil {
+	return nil
+}
+
+func (t *Target) extractCharts() {
+	// We have a separate function for this and not using helm to extract the content of the chart
+	// because we don't want to re-download the chart if the TargetRevision is the same
+	if t.App.Spec.MultiSource {
+		for _, source := range t.App.Spec.Sources {
+			extractHelmChart(source.Chart, source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, source.RepoURL), tmpDir, t.Type)
+		}
+	} else {
+		extractHelmChart(t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, t.App.Spec.Source.RepoURL), tmpDir, t.Type)
+	}
+}
+
+func (t *Target) renderAppSources() {
+	var releaseName string
+
+	// We are providing release name to the helm template command to cover some corner cases
+	// when the chart is using the release name in the templates
+	if !t.App.Spec.MultiSource {
+		if t.App.Spec.Source.Helm.ReleaseName != "" {
+			releaseName = t.App.Spec.Source.Helm.ReleaseName
+		} else {
+			releaseName = t.App.Metadata.Name
+		}
+	}
+
+	if t.App.Spec.MultiSource {
+		for _, source := range t.App.Spec.Sources {
+			if source.Helm.ReleaseName != "" {
+				releaseName = source.Helm.ReleaseName
+			} else {
+				releaseName = t.App.Metadata.Name
+			}
+			if err := renderAppSource(releaseName, source.Chart, source.TargetRevision, tmpDir, t.Type); err != nil {
+				log.Fatal(err)
+			}
+		}
+		return
+	}
+
+	if err := renderAppSource(releaseName, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision, tmpDir, t.Type); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func (t *Target) collectHelmChart() error {
-	t.chartLocation = fmt.Sprintf("%s/%s", cacheDir, t.App.Spec.Source.RepoURL)
+func renderAppSource(releaseName, chartName, chartVersion, tmpDir, targetType string) error {
+	log.Debugf("Rendering [%s] chart's version [%s] templates using release name [%s]",
+		cyan(chartName),
+		cyan(chartVersion),
+		cyan(releaseName))
 
-	if err := os.MkdirAll(t.chartLocation, os.ModePerm); err != nil {
+	cmd := exec.Command(
+		"helm",
+		"template",
+		"--release-name", releaseName,
+		fmt.Sprintf("%s/charts/%s/%s", tmpDir, targetType, chartName),
+		"--output-dir", fmt.Sprintf("%s/templates/%s", tmpDir, targetType),
+		"--values", fmt.Sprintf("%s/charts/%s/%s/values.yaml", tmpDir, targetType, chartName),
+		"--values", fmt.Sprintf("%s/%s-values-%s.yaml", tmpDir, chartName, targetType),
+	)
+
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func generateValuesFile(chartName, tmpDir, targetType, values string) {
+	yamlFile, err := os.Create(fmt.Sprintf("%s/%s-values-%s.yaml", tmpDir, chartName, targetType))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if _, err := yamlFile.WriteString(values); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func downloadHelmChart(cacheDir, repoUrl, chartName, targetRevision string) error {
+	chartLocation := fmt.Sprintf("%s/%s", cacheDir, repoUrl)
+
+	if err := os.MkdirAll(chartLocation, os.ModePerm); err != nil {
 		log.Fatal(err)
 	}
 
 	// A bit hacky, but we need to support cases when helm chart tgz filename does not follow the standard naming convention
 	// For example, sonarqube-4.0.0+315.tgz
-	chartFileName, err := zglob.Glob(fmt.Sprintf("%s/%s-%s*.tgz", t.chartLocation, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision))
+	chartFileName, err := zglob.Glob(fmt.Sprintf("%s/%s-%s*.tgz", chartLocation, chartName, targetRevision))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -71,7 +169,7 @@ func (t *Target) collectHelmChart() error {
 		var username, password string
 
 		for _, repoCred := range repoCredentials {
-			if repoCred.Url == t.App.Spec.Source.RepoURL {
+			if repoCred.Url == repoUrl {
 				username = repoCred.Username
 				password = repoCred.Password
 				break
@@ -79,18 +177,18 @@ func (t *Target) collectHelmChart() error {
 		}
 
 		log.Debugf("Downloading version [%s] of [%s] chart...",
-			cyan(t.App.Spec.Source.TargetRevision),
-			cyan(t.App.Spec.Source.Chart))
+			cyan(targetRevision),
+			cyan(chartName))
 
 		cmd := exec.Command(
 			"helm",
 			"pull",
-			"--destination", t.chartLocation,
+			"--destination", chartLocation,
 			"--username", username,
 			"--password", password,
-			"--repo", t.App.Spec.Source.RepoURL,
-			t.App.Spec.Source.Chart,
-			"--version", t.App.Spec.Source.TargetRevision)
+			"--repo", repoUrl,
+			chartName,
+			"--version", targetRevision)
 
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -100,30 +198,28 @@ func (t *Target) collectHelmChart() error {
 		}
 	} else {
 		log.Debugf("Version [%s] of [%s] chart is present in the cache...",
-			cyan(t.App.Spec.Source.TargetRevision),
-			cyan(t.App.Spec.Source.Chart))
+			cyan(targetRevision),
+			cyan(chartName))
 	}
 
 	return nil
 }
 
-func (t *Target) extractChart() {
-	// We have a separate function for this and not using helm to extract the content of the chart
-	// because we don't want to re-download the chart if the TargetRevision is the same
+func extractHelmChart(chartName, chartVersion, chartLocation, tmpDir, targetType string) {
 	log.Debugf("Extracting [%s] chart version [%s] to %s/charts/%s...",
-		cyan(t.App.Spec.Source.Chart),
-		cyan(t.App.Spec.Source.TargetRevision),
-		tmpDir, t.Type)
+		cyan(chartName),
+		cyan(chartVersion),
+		tmpDir, targetType)
 
-	path := fmt.Sprintf("%s/charts/%s/%s", tmpDir, t.Type, t.App.Spec.Source.Chart)
+	path := fmt.Sprintf("%s/charts/%s/%s", tmpDir, targetType, chartName)
 	if err := os.MkdirAll(path, os.ModePerm); err != nil {
 		log.Fatal(err)
 	}
 
 	searchPattern := fmt.Sprintf("%s/%s-%s*.tgz",
-		t.chartLocation,
-		t.App.Spec.Source.Chart,
-		t.App.Spec.Source.TargetRevision)
+		chartLocation,
+		chartName,
+		chartVersion)
 
 	chartFileName, err := zglob.Glob(searchPattern)
 	if err != nil {
@@ -140,46 +236,13 @@ func (t *Target) extractChart() {
 		"tar",
 		"xf",
 		chartFileName[0],
-		"-C", fmt.Sprintf("%s/charts/%s", tmpDir, t.Type),
+		"-C", fmt.Sprintf("%s/charts/%s", tmpDir, targetType),
 	)
 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	if err = cmd.Run(); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func (t *Target) renderTemplate() {
-	var releaseName string
-
-	// We are providing release name to the helm template command to cover some corner cases
-	// when the chart is using the release name in the templates
-	if t.App.Spec.Source.Helm.ReleaseName != "" {
-		releaseName = t.App.Spec.Source.Helm.ReleaseName
-	} else {
-		releaseName = t.App.Metadata.Name
-	}
-
-	log.Debugf("Rendering [%s] chart's version [%s] templates using release name [%s]",
-		cyan(t.App.Spec.Source.Chart),
-		cyan(t.App.Spec.Source.TargetRevision),
-		cyan(releaseName))
-
-	cmd := exec.Command(
-		"helm",
-		"template",
-		"--release-name", releaseName,
-		fmt.Sprintf("%s/charts/%s/%s", tmpDir, t.Type, t.App.Spec.Source.Chart),
-		"--output-dir", fmt.Sprintf("%s/templates/%s", tmpDir, t.Type),
-		"--values", fmt.Sprintf("%s/charts/%s/%s/values.yaml", tmpDir, t.Type, t.App.Spec.Source.Chart),
-		"--values", fmt.Sprintf("%s/values-%s.yaml", tmpDir, t.Type),
-	)
-
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -33,10 +33,11 @@ type DropCache bool
 
 func (d *DropCache) BeforeApply(app *kong.Kong) error {
 	fmt.Printf("===> Purging cache directory: %s\n", cacheDir)
-	err := os.RemoveAll(cacheDir)
-	if err != nil {
+
+	if err := os.RemoveAll(cacheDir); err != nil {
 		return err
 	}
+
 	app.Exit(0)
 	return nil
 }

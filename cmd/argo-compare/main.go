@@ -71,17 +71,13 @@ func processFiles(fileName string, fileType string, application m.Application) e
 		}
 	}
 
-	if len(target.App.Spec.Source.Chart) == 0 {
-		return unsupportedAppConfiguration
-	}
-
-	target.writeValuesYaml()
-	if err := target.collectHelmChart(); err != nil {
+	target.generateValuesFiles()
+	if err := target.ensureHelmCharts(); err != nil {
 		return err
 	}
 
-	target.extractChart()
-	target.renderTemplate()
+	target.extractCharts()
+	target.renderAppSources()
 
 	return nil
 }
@@ -106,10 +102,7 @@ func compareFiles(changedFiles []string) {
 				}
 			}(tmpDir)
 
-			if err = processFiles(file, "src", m.Application{}); err == unsupportedAppConfiguration {
-				color.Yellow("Skipping unsupported application configuration")
-				return
-			} else if err != nil {
+			if err = processFiles(file, "src", m.Application{}); err != nil {
 				log.Panicf("Could not process the source Application: %s", err)
 			}
 
