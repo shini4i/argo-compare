@@ -72,11 +72,11 @@ func processFiles(fileName string, fileType string, application m.Application) e
 	}
 
 	target.generateValuesFiles()
-	if err := target.collectHelmChart(); err != nil {
+	if err := target.ensureHelmCharts(); err != nil {
 		return err
 	}
 
-	target.extractChart()
+	target.extractCharts()
 	target.renderAppSources()
 
 	return nil
