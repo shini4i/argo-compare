@@ -80,6 +80,7 @@ func (t *Target) extractCharts() {
 			extractHelmChart(source.Chart, source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, source.RepoURL), tmpDir, t.Type)
 		}
 	} else {
+		extractHelmChart(t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, t.App.Spec.Source.RepoURL), tmpDir, t.Type)
 	}
 }
 
