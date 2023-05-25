@@ -1,6 +1,14 @@
 package models
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+var (
+	NotApplicationError              = errors.New("file is not an Application")
+	UnsupportedAppConfigurationError = errors.New("unsupported Application configuration")
+)
 
 type Application struct {
 	Kind     string `yaml:"kind"`
@@ -32,16 +40,20 @@ func (app *Application) Validate() error {
 		return fmt.Errorf("both 'source' and 'sources' fields cannot be set at the same time")
 	}
 
+	if app.Kind != "Application" {
+		return NotApplicationError
+	}
+
 	// currently we support only helm repository based charts as a source
 	if len(app.Spec.Sources) != 0 {
 		for _, source := range app.Spec.Sources {
 			if len(source.Chart) == 0 {
-				return fmt.Errorf("unsupported configuration")
+				return UnsupportedAppConfigurationError
 			}
 		}
 	} else {
 		if len(app.Spec.Source.Chart) == 0 {
-			return fmt.Errorf("unsupported configuration")
+			return UnsupportedAppConfigurationError
 		}
 	}
 

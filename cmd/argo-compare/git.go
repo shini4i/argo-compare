@@ -45,6 +45,13 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) ([]string, error) {
 	for _, file := range strings.Split(out.String(), "\n") {
 		if filepath.Ext(file) == ".yaml" {
 			if isApp, err := checkIfApp(file); err != nil {
+				if errors.Is(err, m.NotApplicationError) {
+					log.Debugf("Skipping non-application file [%s]", file)
+					continue
+				} else if errors.Is(err, m.UnsupportedAppConfigurationError) {
+					log.Warningf("Skipping unsupported application configuration [%s]", file)
+					continue
+				}
 				g.invalidFiles = append(g.invalidFiles, file)
 			} else if isApp {
 				g.changedFiles = append(g.changedFiles, file)
@@ -121,10 +128,6 @@ func checkIfApp(file string) (bool, error) {
 
 	if err := target.parse(); err != nil {
 		return false, err
-	}
-
-	if target.App.Kind != "Application" {
-		return false, nil
 	}
 	return true, nil
 }
