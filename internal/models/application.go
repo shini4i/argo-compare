@@ -8,6 +8,7 @@ import (
 var (
 	NotApplicationError              = errors.New("file is not an Application")
 	UnsupportedAppConfigurationError = errors.New("unsupported Application configuration")
+	EmptyFileError                   = errors.New("file is empty")
 )
 
 type Application struct {
@@ -36,6 +37,10 @@ type Source struct {
 }
 
 func (app *Application) Validate() error {
+	if isEmpty(app) {
+		return EmptyFileError
+	}
+
 	if app.Spec.Source != nil && len(app.Spec.Sources) > 0 {
 		return fmt.Errorf("both 'source' and 'sources' fields cannot be set at the same time")
 	}
@@ -62,4 +67,14 @@ func (app *Application) Validate() error {
 	}
 
 	return nil
+}
+
+// Check if the Application structure is empty
+func isEmpty(app *Application) bool {
+	return app.Kind == "" &&
+		app.Metadata.Name == "" &&
+		app.Metadata.Namespace == "" &&
+		app.Spec.Source == nil &&
+		len(app.Spec.Sources) == 0 &&
+		app.Spec.MultiSource == false
 }
