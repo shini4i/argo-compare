@@ -51,6 +51,9 @@ func (g *GitRepo) getChangedFiles(cmdContext execContext) ([]string, error) {
 				} else if errors.Is(err, m.UnsupportedAppConfigurationError) {
 					log.Warningf("Skipping unsupported application configuration [%s]", file)
 					continue
+				} else if errors.Is(err, m.EmptyFileError) {
+					log.Debugf("Skipping empty file [%s]", file)
+					continue
 				}
 				g.invalidFiles = append(g.invalidFiles, file)
 			} else if isApp {
