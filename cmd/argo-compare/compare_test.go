@@ -57,7 +57,7 @@ func TestGenerateFilesStatus(t *testing.T) {
 
 func TestFindAndStripHelmLabels(t *testing.T) {
 	// Prepare test data
-	testFile := "../../testdata/deployment.yaml"
+	testFile := "../../testdata/dynamic/deployment.yaml"
 	backupFile := testFile + ".bak"
 
 	// Read the original file content
@@ -79,7 +79,7 @@ func TestFindAndStripHelmLabels(t *testing.T) {
 	}()
 
 	// Change directory to the testdata directory
-	if err := os.Chdir("../../testdata"); err != nil {
+	if err := os.Chdir("../../testdata/dynamic"); err != nil {
 		t.Fatalf("Failed to change directory: %s", err)
 	}
 
@@ -90,7 +90,7 @@ func TestFindAndStripHelmLabels(t *testing.T) {
 	c.findAndStripHelmLabels()
 
 	// Return to the original directory
-	if err := os.Chdir("../cmd/argo-compare"); err != nil {
+	if err := os.Chdir("../../cmd/argo-compare"); err != nil {
 		t.Fatalf("Failed to change directory: %s", err)
 	}
 

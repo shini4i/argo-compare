@@ -91,7 +91,7 @@ func TestFindYamlFiles(t *testing.T) {
 
 func TestStripHelmLabels(t *testing.T) {
 	// Call the function to strip Helm labels
-	fileContent, err := StripHelmLabels("../../testdata/deployment.yaml")
+	fileContent, err := StripHelmLabels("../../testdata/dynamic/deployment.yaml")
 
 	assert.NoError(t, err)
 	assert.Equal(t, expectedStrippedOutput, string(fileContent))
@@ -103,7 +103,7 @@ func TestStripHelmLabels(t *testing.T) {
 
 func TestWriteToFile(t *testing.T) {
 	// Prepare test data
-	filePath := "../../testdata/output.txt"
+	filePath := "../../testdata/dynamic/output.txt"
 
 	// Call the function to write data to file
 	if err := WriteToFile(filePath, []byte(expectedStrippedOutput)); err != nil {
