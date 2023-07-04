@@ -95,6 +95,10 @@ func TestStripHelmLabels(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, expectedStrippedOutput, string(fileContent))
+
+	// We want to be sure that the function returns an error if the file cannot be read
+	_, err = StripHelmLabels("../../testdata/invalid.yaml")
+	assert.Error(t, err)
 }
 
 func TestWriteToFile(t *testing.T) {
