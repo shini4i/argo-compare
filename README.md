@@ -7,7 +7,7 @@ A comparison tool for displaying the differences between applications in differe
 ![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/shini4i/argo-compare/run-tests.yml?branch=main)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/argo-compare)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/shini4i/argo-compare)
-![Downloads)](https://img.shields.io/github/downloads/shini4i/argo-compare/total)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=shini4i_argo-compare&metric=coverage)](https://sonarcloud.io/summary/new_code?id=shini4i_argo-compare)
 [![Go Report Card](https://goreportcard.com/badge/github.com/shini4i/argo-compare)](https://goreportcard.com/report/github.com/shini4i/argo-compare)
 ![GitHub](https://img.shields.io/github/license/shini4i/argo-compare)
 
