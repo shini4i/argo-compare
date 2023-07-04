@@ -12,12 +12,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-go@v3
         with:
           go-version: '1.20.1'
 
       - name: Run tests
-        run: go test -v ./... -count=1
+        run: make test-coverage
+
+      - name: SonarCloud Scan
+        uses: sonarsource/sonarcloud-github-action@v1.9.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
