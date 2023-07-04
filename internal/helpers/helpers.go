@@ -36,7 +36,7 @@ func Contains(slice []string, s string) bool {
 	return false
 }
 
-func StripHelmLabels(file string) error {
+func StripHelmLabels(file string) ([]byte, error) {
 	// list of labels to remove
 	labels := []string{
 		"app.kubernetes.io/managed-by",
@@ -51,14 +51,22 @@ func StripHelmLabels(file string) error {
 	// it might be error-prone, as those labels are not always the same
 	re := regexp.MustCompile("(?m)[\r\n]+^.*(" + regex + "):.*$")
 
-	if fileData, err := os.ReadFile(file); err != nil {
-		return err
-	} else {
-		if err = os.WriteFile(file, re.ReplaceAll(fileData, []byte("")), 0644); err != nil {
-			return err
-		}
+	var fileData []byte
+	var err error
+
+	if fileData, err = os.ReadFile(file); err != nil {
+		return nil, err
 	}
 
+	strippedFileData := re.ReplaceAll(fileData, []byte(""))
+
+	return strippedFileData, nil
+}
+
+func WriteToFile(file string, data []byte) error {
+	if err := os.WriteFile(file, data, 0644); err != nil {
+		return err
+	}
 	return nil
 }
 

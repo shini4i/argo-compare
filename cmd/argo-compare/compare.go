@@ -221,8 +221,12 @@ func (c *Compare) findAndStripHelmLabels() {
 	}
 
 	for _, helmFile := range helmFiles {
-		if err := h.StripHelmLabels(helmFile); err != nil {
+		if desiredState, err := h.StripHelmLabels(helmFile); err != nil {
 			log.Fatal(err)
+		} else {
+			if err := h.WriteToFile(helmFile, desiredState); err != nil {
+				log.Fatal(err)
+			}
 		}
 	}
 }

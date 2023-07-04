@@ -1,0 +1,12 @@
+# for testing purpose we need only limited fields
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/instance: traefik-web
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: traefik
+    argocd.argoproj.io/instance: traefik
+    helm.sh/chart: traefik-23.0.1
+  name: traefik
+  namespace: web
