@@ -15,7 +15,7 @@ test: mocks ## Run tests
 	@go test -v ./... -count=1
 
 .PHONY: test-coverage
-test-coverage: ## Run tests with coverage
+test-coverage: mocks ## Run tests with coverage
 	@go test -coverprofile=coverage.out ./... -count=1
 
 .PHONY: test-coverage-html
