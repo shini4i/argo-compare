@@ -22,13 +22,10 @@ const (
 )
 
 var (
-	cacheDir = h.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
-	tmpDir   string
-	version  = "local"
-	repo     = GitRepo{
-		CmdRunner: &utils.RealCmdRunner{},
-		OsFs:      &utils.RealOsFs{},
-	}
+	cacheDir        = h.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
+	tmpDir          string
+	version         = "local"
+	repo            = GitRepo{CmdRunner: &utils.RealCmdRunner{}}
 	repoCredentials []RepoCredentials
 	diffCommand     = h.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
 )
@@ -43,8 +40,7 @@ var (
 )
 
 var (
-	unsupportedAppConfiguration = errors.New("unsupported application configuration")
-	failedToDownloadChart       = errors.New("failed to download chart")
+	failedToDownloadChart = errors.New("failed to download chart")
 )
 
 var (

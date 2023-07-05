@@ -14,7 +14,6 @@ import (
 
 type GitRepo struct {
 	CmdRunner    utils.CmdRunner
-	OsFs         utils.OsFs
 	changedFiles []string
 	invalidFiles []string
 }

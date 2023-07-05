@@ -25,15 +25,11 @@ func TestChangedFiles(t *testing.T) {
 
 	// Create the mocks
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
-	mockOsFs := mocks.NewMockOsFs(ctrl)
 
 	// Setup the expectation
 	mockCmdRunner.EXPECT().Run("git", "--no-pager", "diff", "--name-only", gomock.Any()).Return("testdata/test.yaml\nfile2", "", nil)
 
-	repo := &GitRepo{
-		CmdRunner: mockCmdRunner,
-		OsFs:      mockOsFs,
-	}
+	repo := &GitRepo{CmdRunner: mockCmdRunner}
 
 	files, err := repo.getChangedFiles()
 	if err != nil {
@@ -50,17 +46,13 @@ func TestGetChangedFileContent(t *testing.T) {
 
 	// Create the mocks
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
-	mockOsFs := mocks.NewMockOsFs(ctrl)
 
 	appFileContent := string(h.ReadFile("../../" + appFile))
 
 	// Setup the expectation
 	mockCmdRunner.EXPECT().Run("git", "--no-pager", "show", gomock.Any()).Return(appFileContent, "", nil)
 
-	repo := &GitRepo{
-		CmdRunner: mockCmdRunner,
-		OsFs:      mockOsFs,
-	}
+	repo := &GitRepo{CmdRunner: mockCmdRunner}
 
 	content, _ := repo.getChangedFileContent("main", appFile)
 
