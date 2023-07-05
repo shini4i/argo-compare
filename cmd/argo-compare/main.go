@@ -10,8 +10,9 @@ import (
 	h "github.com/shini4i/argo-compare/internal/helpers"
 	m "github.com/shini4i/argo-compare/internal/models"
 	"os"
-	"os/exec"
 	"strings"
+
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 )
 
 const (
@@ -23,7 +24,7 @@ var (
 	cacheDir        = h.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
 	tmpDir          string
 	version         = "local"
-	repo            = GitRepo{}
+	repo            = GitRepo{CmdRunner: &utils.RealCmdRunner{}}
 	repoCredentials []RepoCredentials
 	diffCommand     = h.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
 )
@@ -38,15 +39,12 @@ var (
 )
 
 var (
-	unsupportedAppConfiguration = errors.New("unsupported application configuration")
-	failedToDownloadChart       = errors.New("failed to download chart")
+	failedToDownloadChart = errors.New("failed to download chart")
 )
 
 var (
 	cyan = color.New(color.FgCyan, color.Bold).SprintFunc()
 )
-
-type execContext = func(name string, arg ...string) *exec.Cmd
 
 type RepoCredentials struct {
 	Url      string `json:"url"`
@@ -61,10 +59,10 @@ func loggingInit(level logging.Level) {
 	logging.SetLevel(level, "")
 }
 
-func processFiles(fileName string, fileType string, application m.Application) error {
+func processFiles(cmdRunner utils.CmdRunner, fileName string, fileType string, application m.Application) error {
 	log.Debugf("Processing [%s] file: [%s]", cyan(fileType), cyan(fileName))
 
-	target := Target{File: fileName, Type: fileType, App: application}
+	target := Target{CmdRunner: cmdRunner, File: fileName, Type: fileType, App: application}
 	if fileType == "src" {
 		if err := target.parse(); err != nil {
 			return err
@@ -82,7 +80,7 @@ func processFiles(fileName string, fileType string, application m.Application) e
 	return nil
 }
 
-func compareFiles(changedFiles []string) {
+func compareFiles(cmdRunner utils.CmdRunner, changedFiles []string) {
 	for _, file := range changedFiles {
 		// We want to make sure that the temporary directory is removed after each iteration
 		// whatever the result is, and not after the whole loop is finished, hence the anonymous function
@@ -102,11 +100,11 @@ func compareFiles(changedFiles []string) {
 				}
 			}(tmpDir)
 
-			if err = processFiles(file, "src", m.Application{}); err != nil {
+			if err = processFiles(cmdRunner, file, "src", m.Application{}); err != nil {
 				log.Panicf("Could not process the source Application: %s", err)
 			}
 
-			app, err := repo.getChangedFileContent(targetBranch, file, exec.Command)
+			app, err := repo.getChangedFileContent(targetBranch, file)
 			if errors.Is(err, gitFileDoesNotExist) && !printAddedManifests {
 				return
 			} else if err != nil && !errors.Is(err, m.EmptyFileError) {
@@ -114,7 +112,7 @@ func compareFiles(changedFiles []string) {
 			}
 
 			if !errors.Is(err, m.EmptyFileError) {
-				if err = processFiles(file, "dst", app); err != nil && !printAddedManifests {
+				if err = processFiles(cmdRunner, file, "dst", app); err != nil && !printAddedManifests {
 					log.Panicf("Could not process the destination Application: %s", err)
 				}
 			}
@@ -208,7 +206,7 @@ func main() {
 	if fileToCompare != "" {
 		changedFiles = []string{fileToCompare}
 	} else {
-		if changedFiles, err = repo.getChangedFiles(exec.Command); err != nil {
+		if changedFiles, err = repo.getChangedFiles(); err != nil {
 			log.Fatal(err)
 		}
 	}
@@ -216,7 +214,7 @@ func main() {
 	if len(changedFiles) == 0 {
 		log.Info("No changed Application files found. Exiting...")
 	} else {
-		compareFiles(changedFiles)
+		compareFiles(&utils.RealCmdRunner{}, changedFiles)
 	}
 
 	printInvalidFilesList()

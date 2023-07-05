@@ -36,6 +36,14 @@ type Source struct {
 	} `yaml:"helm"`
 }
 
+// Validate performs validation checks on the Application struct.
+// It checks for the following:
+// - If the Application struct is empty, returns EmptyFileError.
+// - If both the 'source' and 'sources' fields are set at the same time, returns an error.
+// - If the kind of the application is not "Application", returns NotApplicationError.
+// - If the application specifies sources, ensures that each source has a non-empty 'chart' field.
+// - Sets the 'MultiSource' field to true if sources are specified.
+// - Returns nil if all validation checks pass.
 func (app *Application) Validate() error {
 	if isEmpty(app) {
 		return EmptyFileError
