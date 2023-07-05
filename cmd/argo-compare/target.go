@@ -192,7 +192,10 @@ func downloadHelmChart(cmdRunner utils.CmdRunner, cacheDir, repoUrl, chartName, 
 			"--version", targetRevision)
 
 		log.Info(stdout)
-		log.Error(stderr)
+
+		if len(stderr) > 0 {
+			log.Error(stderr)
+		}
 
 		if err != nil {
 			return failedToDownloadChart
@@ -240,7 +243,10 @@ func extractHelmChart(cmdRunner utils.CmdRunner, chartName, chartVersion, chartL
 	)
 
 	log.Info(stdout)
-	log.Error(stderr)
+
+	if len(stderr) > 0 {
+		log.Error(stderr)
+	}
 
 	if err != nil {
 		log.Fatal(err)
