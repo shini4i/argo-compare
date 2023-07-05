@@ -91,7 +91,7 @@ func TestGetChangedFileContent(t *testing.T) {
 
 	content, _ := repo.getChangedFileContent("main", appFile)
 
-	target := Target{CmdRunner: mockCmdRunner, File: appFile}
+	target := Target{CmdRunner: mockCmdRunner, FileReader: utils.OsFileReader{}, File: appFile}
 	if err := target.parse(); err != nil {
 		t.Errorf("test.yaml should be parsed")
 	}
