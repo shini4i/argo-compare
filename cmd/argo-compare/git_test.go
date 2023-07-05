@@ -56,7 +56,7 @@ func TestGetChangedFileContent(t *testing.T) {
 
 	content, _ := repo.getChangedFileContent("main", appFile)
 
-	target := Target{File: appFile}
+	target := Target{CmdRunner: mockCmdRunner, File: appFile}
 	if err := target.parse(); err != nil {
 		t.Errorf("test.yaml should be parsed")
 	}
@@ -65,7 +65,13 @@ func TestGetChangedFileContent(t *testing.T) {
 }
 
 func TestCheckIfApp(t *testing.T) {
-	isApp, err := checkIfApp(appFile)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Create the mocks
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+
+	isApp, err := checkIfApp(mockCmdRunner, appFile)
 	if !isApp || err != nil {
 		t.Errorf("test.yaml should be detected as app")
 	}

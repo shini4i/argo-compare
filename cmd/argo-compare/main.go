@@ -10,7 +10,6 @@ import (
 	h "github.com/shini4i/argo-compare/internal/helpers"
 	m "github.com/shini4i/argo-compare/internal/models"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
@@ -47,8 +46,6 @@ var (
 	cyan = color.New(color.FgCyan, color.Bold).SprintFunc()
 )
 
-type execContext = func(name string, arg ...string) *exec.Cmd
-
 type RepoCredentials struct {
 	Url      string `json:"url"`
 	Username string `json:"username"`
@@ -62,10 +59,10 @@ func loggingInit(level logging.Level) {
 	logging.SetLevel(level, "")
 }
 
-func processFiles(fileName string, fileType string, application m.Application) error {
+func processFiles(cmdRunner utils.CmdRunner, fileName string, fileType string, application m.Application) error {
 	log.Debugf("Processing [%s] file: [%s]", cyan(fileType), cyan(fileName))
 
-	target := Target{File: fileName, Type: fileType, App: application}
+	target := Target{CmdRunner: cmdRunner, File: fileName, Type: fileType, App: application}
 	if fileType == "src" {
 		if err := target.parse(); err != nil {
 			return err
@@ -83,7 +80,7 @@ func processFiles(fileName string, fileType string, application m.Application) e
 	return nil
 }
 
-func compareFiles(changedFiles []string) {
+func compareFiles(cmdRunner utils.CmdRunner, changedFiles []string) {
 	for _, file := range changedFiles {
 		// We want to make sure that the temporary directory is removed after each iteration
 		// whatever the result is, and not after the whole loop is finished, hence the anonymous function
@@ -103,7 +100,7 @@ func compareFiles(changedFiles []string) {
 				}
 			}(tmpDir)
 
-			if err = processFiles(file, "src", m.Application{}); err != nil {
+			if err = processFiles(cmdRunner, file, "src", m.Application{}); err != nil {
 				log.Panicf("Could not process the source Application: %s", err)
 			}
 
@@ -115,7 +112,7 @@ func compareFiles(changedFiles []string) {
 			}
 
 			if !errors.Is(err, m.EmptyFileError) {
-				if err = processFiles(file, "dst", app); err != nil && !printAddedManifests {
+				if err = processFiles(cmdRunner, file, "dst", app); err != nil && !printAddedManifests {
 					log.Panicf("Could not process the destination Application: %s", err)
 				}
 			}
@@ -217,7 +214,7 @@ func main() {
 	if len(changedFiles) == 0 {
 		log.Info("No changed Application files found. Exiting...")
 	} else {
-		compareFiles(changedFiles)
+		compareFiles(&utils.RealCmdRunner{}, changedFiles)
 	}
 
 	printInvalidFilesList()

@@ -41,7 +41,7 @@ func (g *GitRepo) getChangedFiles() ([]string, error) {
 
 	for _, file := range strings.Split(stdout, "\n") {
 		if filepath.Ext(file) == ".yaml" {
-			if isApp, err := checkIfApp(file); err != nil {
+			if isApp, err := checkIfApp(g.CmdRunner, file); err != nil {
 				if errors.Is(err, m.NotApplicationError) {
 					log.Debugf("Skipping non-application file [%s]", file)
 					continue
@@ -104,7 +104,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) 
 		}
 	}(tmpFile.Name())
 
-	target := Target{File: tmpFile.Name()}
+	target := Target{CmdRunner: g.CmdRunner, File: tmpFile.Name()}
 	if err := target.parse(); err != nil {
 		return m.Application{}, err
 	}
@@ -112,10 +112,10 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) 
 	return target.App, nil
 }
 
-func checkIfApp(file string) (bool, error) {
+func checkIfApp(cmdRunner utils.CmdRunner, file string) (bool, error) {
 	log.Debugf("===> Checking if [%s] is an Application", cyan(file))
 
-	target := Target{File: file}
+	target := Target{CmdRunner: cmdRunner, File: file}
 
 	if err := target.parse(); err != nil {
 		return false, err
