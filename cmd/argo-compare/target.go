@@ -15,6 +15,7 @@ import (
 
 type Target struct {
 	CmdRunner     utils.CmdRunner
+	FileReader    utils.FileReader
 	File          string
 	Type          string // src or dst version
 	App           m.Application
@@ -35,7 +36,8 @@ func (t *Target) parse() error {
 
 	log.Debugf("Parsing %s...", file)
 
-	if err := yaml.Unmarshal(h.ReadFile(file), &app); err != nil {
+	yamlContent := t.FileReader.ReadFile(file)
+	if err := yaml.Unmarshal(yamlContent, &app); err != nil {
 		return err
 	}
 

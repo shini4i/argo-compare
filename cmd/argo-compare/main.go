@@ -62,7 +62,7 @@ func loggingInit(level logging.Level) {
 func processFiles(cmdRunner utils.CmdRunner, fileName string, fileType string, application m.Application) error {
 	log.Debugf("Processing [%s] file: [%s]", cyan(fileType), cyan(fileName))
 
-	target := Target{CmdRunner: cmdRunner, File: fileName, Type: fileType, App: application}
+	target := Target{CmdRunner: cmdRunner, FileReader: utils.OsFileReader{}, File: fileName, Type: fileType, App: application}
 	if fileType == "src" {
 		if err := target.parse(); err != nil {
 			return err

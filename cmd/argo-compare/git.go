@@ -19,8 +19,23 @@ type GitRepo struct {
 }
 
 var (
+	invalidFileError    = errors.New("invalid yaml file")
 	gitFileDoesNotExist = errors.New("file does not exist in target branch")
 )
+
+func checkFile(cmdRunner utils.CmdRunner, fileReader utils.FileReader, file string) (bool, error) {
+	if _, err := checkIfApp(cmdRunner, fileReader, file); err != nil {
+		if errors.Is(err, m.NotApplicationError) {
+			log.Debugf("Skipping non-application file [%s]", file)
+		} else if errors.Is(err, m.UnsupportedAppConfigurationError) {
+			log.Warningf("Skipping unsupported application configuration [%s]", file)
+		} else if errors.Is(err, m.EmptyFileError) {
+			log.Debugf("Skipping empty file [%s]", file)
+		}
+		return false, invalidFileError
+	}
+	return true, nil
+}
 
 func (g *GitRepo) getChangedFiles() ([]string, error) {
 	stdout, stderr, err := g.CmdRunner.Run("git", "--no-pager", "diff", "--name-only", targetBranch)
@@ -41,19 +56,9 @@ func (g *GitRepo) getChangedFiles() ([]string, error) {
 
 	for _, file := range strings.Split(stdout, "\n") {
 		if filepath.Ext(file) == ".yaml" {
-			if isApp, err := checkIfApp(g.CmdRunner, file); err != nil {
-				if errors.Is(err, m.NotApplicationError) {
-					log.Debugf("Skipping non-application file [%s]", file)
-					continue
-				} else if errors.Is(err, m.UnsupportedAppConfigurationError) {
-					log.Warningf("Skipping unsupported application configuration [%s]", file)
-					continue
-				} else if errors.Is(err, m.EmptyFileError) {
-					log.Debugf("Skipping empty file [%s]", file)
-					continue
-				}
+			if _, err := checkFile(g.CmdRunner, utils.OsFileReader{}, file); errors.Is(err, invalidFileError) {
 				g.invalidFiles = append(g.invalidFiles, file)
-			} else if isApp {
+			} else {
 				g.changedFiles = append(g.changedFiles, file)
 			}
 		}
@@ -104,7 +109,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) 
 		}
 	}(tmpFile.Name())
 
-	target := Target{CmdRunner: g.CmdRunner, File: tmpFile.Name()}
+	target := Target{CmdRunner: g.CmdRunner, FileReader: utils.OsFileReader{}, File: tmpFile.Name()}
 	if err := target.parse(); err != nil {
 		return m.Application{}, err
 	}
@@ -112,10 +117,10 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) 
 	return target.App, nil
 }
 
-func checkIfApp(cmdRunner utils.CmdRunner, file string) (bool, error) {
+func checkIfApp(cmdRunner utils.CmdRunner, fileReader utils.FileReader, file string) (bool, error) {
 	log.Debugf("===> Checking if [%s] is an Application", cyan(file))
 
-	target := Target{CmdRunner: cmdRunner, File: file}
+	target := Target{CmdRunner: cmdRunner, FileReader: fileReader, File: file}
 
 	if err := target.parse(); err != nil {
 		return false, err

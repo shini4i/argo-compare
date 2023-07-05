@@ -2,8 +2,10 @@ package main
 
 import (
 	"github.com/op/go-logging"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
+	"strings"
 	"testing"
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
@@ -17,6 +19,39 @@ const (
 func init() {
 	// We don't want to see any logs in tests
 	loggingInit(logging.CRITICAL)
+}
+
+func TestCheckFile(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Create the mocks
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	mockFileReader := mocks.NewMockFileReader(ctrl)
+
+	// Test case 1: file exists and is Application
+	mockFileReader.EXPECT().ReadFile(gomock.Any()).DoAndReturn(func(path string) []byte {
+		if strings.HasSuffix(path, appFile) {
+			return h.ReadFile("../../" + appFile)
+		}
+		return nil
+	})
+	isApp, err := checkFile(mockCmdRunner, mockFileReader, appFile)
+
+	assert.True(t, isApp, "expected true, got false")
+	assert.NoError(t, err, "expected no error, got %v", err)
+
+	// Test case 2: file exists and is not Application
+	mockFileReader.EXPECT().ReadFile(gomock.Any()).DoAndReturn(func(path string) []byte {
+		if strings.HasSuffix(path, appFile) {
+			return []byte("test")
+		}
+		return nil
+	})
+	isApp, err = checkFile(mockCmdRunner, mockFileReader, appFile)
+
+	assert.False(t, isApp, "expected false, got true")
+	assert.ErrorIsf(t, err, invalidFileError, "expected invalidFileError, got %v", err)
 }
 
 func TestChangedFiles(t *testing.T) {
@@ -71,7 +106,7 @@ func TestCheckIfApp(t *testing.T) {
 	// Create the mocks
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
 
-	isApp, err := checkIfApp(mockCmdRunner, appFile)
+	isApp, err := checkIfApp(mockCmdRunner, utils.OsFileReader{}, appFile)
 	if !isApp || err != nil {
 		t.Errorf("test.yaml should be detected as app")
 	}
