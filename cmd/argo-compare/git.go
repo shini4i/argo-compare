@@ -1,56 +1,20 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"github.com/fatih/color"
 	"github.com/op/go-logging"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	m "github.com/shini4i/argo-compare/internal/models"
 )
 
-type CmdRunner interface {
-	Run(cmd string, args ...string) (stdout string, stderr string, err error)
-}
-
-type OsFs interface {
-	CreateTemp(dir, pattern string) (f *os.File, err error)
-	Remove(name string) error
-}
-
-type RealCmdRunner struct{}
-
-func (r *RealCmdRunner) Run(cmd string, args ...string) (string, string, error) {
-	command := exec.Command(cmd, args...)
-
-	var stdoutBuffer, stderrBuffer bytes.Buffer
-	command.Stdout = &stdoutBuffer
-	command.Stderr = &stderrBuffer
-
-	if err := command.Run(); err != nil {
-		return "", "", err
-	}
-
-	return stdoutBuffer.String(), stderrBuffer.String(), nil
-}
-
-type RealOsFs struct{}
-
-func (r *RealOsFs) CreateTemp(dir, pattern string) (f *os.File, err error) {
-	return os.CreateTemp(dir, pattern)
-}
-
-func (r *RealOsFs) Remove(name string) error {
-	return os.Remove(name)
-}
-
 type GitRepo struct {
-	CmdRunner    CmdRunner
-	OsFs         OsFs
+	CmdRunner    utils.CmdRunner
+	OsFs         utils.OsFs
 	changedFiles []string
 	invalidFiles []string
 }
@@ -106,23 +70,14 @@ func (g *GitRepo) getChangedFiles() ([]string, error) {
 	return g.changedFiles, nil
 }
 
-func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, cmdContext execContext) (m.Application, error) {
-	var (
-		err     error
-		out     bytes.Buffer
-		errOut  bytes.Buffer
-		tmpFile *os.File
-	)
+func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) (m.Application, error) {
+	var tmpFile *os.File
 
 	log.Debugf("Getting content of %s from %s", targetFile, targetBranch)
 
-	cmd := cmdContext("git", "--no-pager", "show", targetBranch+":"+targetFile)
-
-	cmd.Stdout = &out
-	cmd.Stderr = &errOut
-
-	if err = cmd.Run(); err != nil {
-		if strings.Contains(errOut.String(), "exists on disk, but not in") {
+	stdout, stderr, err := g.CmdRunner.Run("git", "--no-pager", "show", targetBranch+":"+targetFile)
+	if err != nil {
+		if strings.Contains(stderr, "exists on disk, but not in") {
 			color.Yellow("The requested file does not exist in target branch, assuming it is a new Application")
 		} else {
 			return m.Application{}, err
@@ -139,7 +94,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string, 
 		log.Fatal("Error creating temporary file")
 	}
 
-	if _, err = tmpFile.WriteString(out.String()); err != nil {
+	if _, err = tmpFile.WriteString(stdout); err != nil {
 		log.Fatal(err.Error())
 	}
 

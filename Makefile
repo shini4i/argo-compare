@@ -8,10 +8,10 @@ help: ## Print this help
 .PHONY: mocks
 mocks: ## Generate mocks
 	@echo "===> Generating mocks"
-	@mockgen --source=cmd/argo-compare/git.go --destination=cmd/argo-compare/mocks/git.go --package=mocks
+	@mockgen --source=cmd/argo-compare/utils/interfaces.go --destination=cmd/argo-compare/mocks/interfaces.go --package=mocks
 
 .PHONY: test
-test: ## Run tests
+test: mocks ## Run tests
 	@go test -v ./... -count=1
 
 .PHONY: test-coverage

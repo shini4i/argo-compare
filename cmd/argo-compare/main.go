@@ -12,6 +12,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 )
 
 const (
@@ -24,8 +26,8 @@ var (
 	tmpDir   string
 	version  = "local"
 	repo     = GitRepo{
-		CmdRunner: &RealCmdRunner{},
-		OsFs:      &RealOsFs{},
+		CmdRunner: &utils.RealCmdRunner{},
+		OsFs:      &utils.RealOsFs{},
 	}
 	repoCredentials []RepoCredentials
 	diffCommand     = h.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
@@ -109,7 +111,7 @@ func compareFiles(changedFiles []string) {
 				log.Panicf("Could not process the source Application: %s", err)
 			}
 
-			app, err := repo.getChangedFileContent(targetBranch, file, exec.Command)
+			app, err := repo.getChangedFileContent(targetBranch, file)
 			if errors.Is(err, gitFileDoesNotExist) && !printAddedManifests {
 				return
 			} else if err != nil && !errors.Is(err, m.EmptyFileError) {
