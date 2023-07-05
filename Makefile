@@ -5,12 +5,17 @@ help: ## Print this help
 	@echo "Usage: make [target]"
 	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
+.PHONY: mocks
+mocks: ## Generate mocks
+	@echo "===> Generating mocks"
+	@mockgen --source=cmd/argo-compare/utils/interfaces.go --destination=cmd/argo-compare/mocks/interfaces.go --package=mocks
+
 .PHONY: test
-test: ## Run tests
+test: mocks ## Run tests
 	@go test -v ./... -count=1
 
 .PHONY: test-coverage
-test-coverage: ## Run tests with coverage
+test-coverage: mocks ## Run tests with coverage
 	@go test -coverprofile=coverage.out ./... -count=1
 
 .PHONY: test-coverage-html
