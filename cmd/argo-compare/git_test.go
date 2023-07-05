@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/golang/mock/gomock"
 	"github.com/op/go-logging"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	"testing"
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
