@@ -2,12 +2,15 @@ package main
 
 import (
 	"fmt"
+	"github.com/golang/mock/gomock"
 	"github.com/op/go-logging"
+	"github.com/stretchr/testify/assert"
 	"os"
 	"os/exec"
 	"reflect"
 	"testing"
 
+	mocks "github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	h "github.com/shini4i/argo-compare/internal/helpers"
 )
 
@@ -27,11 +30,28 @@ func init() {
 }
 
 func TestChangedFiles(t *testing.T) {
-	stdout, _ := git.getChangedFiles(fakeChangedFile)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-	if !h.Contains(stdout, appFile) {
-		t.Errorf("test.yaml should be in the list")
+	// Create the mocks
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	mockOsFs := mocks.NewMockOsFs(ctrl)
+
+	// Setup the expectation
+	mockCmdRunner.EXPECT().Run("git", "--no-pager", "diff", "--name-only", gomock.Any()).Return("testdata/test.yaml\nfile2", "", nil)
+
+	repo := &GitRepo{
+		CmdRunner: mockCmdRunner,
+		OsFs:      mockOsFs,
 	}
+
+	files, err := repo.getChangedFiles()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	assert.Len(t, files, 1, "expected 1 file")
+	assert.Equal(t, "testdata/test.yaml", files[0])
 }
 
 func TestGetChangedFileContent(t *testing.T) {

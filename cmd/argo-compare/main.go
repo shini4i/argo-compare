@@ -20,10 +20,13 @@ const (
 )
 
 var (
-	cacheDir        = h.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
-	tmpDir          string
-	version         = "local"
-	repo            = GitRepo{}
+	cacheDir = h.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
+	tmpDir   string
+	version  = "local"
+	repo     = GitRepo{
+		CmdRunner: &RealCmdRunner{},
+		OsFs:      &RealOsFs{},
+	}
 	repoCredentials []RepoCredentials
 	diffCommand     = h.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
 )
@@ -208,7 +211,7 @@ func main() {
 	if fileToCompare != "" {
 		changedFiles = []string{fileToCompare}
 	} else {
-		if changedFiles, err = repo.getChangedFiles(exec.Command); err != nil {
+		if changedFiles, err = repo.getChangedFiles(); err != nil {
 			log.Fatal(err)
 		}
 	}

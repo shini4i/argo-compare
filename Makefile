@@ -5,6 +5,11 @@ help: ## Print this help
 	@echo "Usage: make [target]"
 	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
+.PHONY: mocks
+mocks: ## Generate mocks
+	@echo "===> Generating mocks"
+	@mockgen --source=cmd/argo-compare/git.go --destination=cmd/argo-compare/mocks/git.go --package=mocks
+
 .PHONY: test
 test: ## Run tests
 	@go test -v ./... -count=1

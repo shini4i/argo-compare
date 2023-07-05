@@ -6,13 +6,51 @@ import (
 	"github.com/fatih/color"
 	"github.com/op/go-logging"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	m "github.com/shini4i/argo-compare/internal/models"
 )
 
+type CmdRunner interface {
+	Run(cmd string, args ...string) (stdout string, stderr string, err error)
+}
+
+type OsFs interface {
+	CreateTemp(dir, pattern string) (f *os.File, err error)
+	Remove(name string) error
+}
+
+type RealCmdRunner struct{}
+
+func (r *RealCmdRunner) Run(cmd string, args ...string) (string, string, error) {
+	command := exec.Command(cmd, args...)
+
+	var stdoutBuffer, stderrBuffer bytes.Buffer
+	command.Stdout = &stdoutBuffer
+	command.Stderr = &stderrBuffer
+
+	if err := command.Run(); err != nil {
+		return "", "", err
+	}
+
+	return stdoutBuffer.String(), stderrBuffer.String(), nil
+}
+
+type RealOsFs struct{}
+
+func (r *RealOsFs) CreateTemp(dir, pattern string) (f *os.File, err error) {
+	return os.CreateTemp(dir, pattern)
+}
+
+func (r *RealOsFs) Remove(name string) error {
+	return os.Remove(name)
+}
+
 type GitRepo struct {
+	CmdRunner    CmdRunner
+	OsFs         OsFs
 	changedFiles []string
 	invalidFiles []string
 }
@@ -21,28 +59,24 @@ var (
 	gitFileDoesNotExist = errors.New("file does not exist in target branch")
 )
 
-func (g *GitRepo) getChangedFiles(cmdContext execContext) ([]string, error) {
-	cmd := cmdContext("git", "--no-pager", "diff", "--name-only", targetBranch)
-
-	var out bytes.Buffer
-
-	cmd.Stdout = &out
-	if logging.GetLevel(loggerName) == logging.DEBUG {
-		cmd.Stderr = os.Stderr
+func (g *GitRepo) getChangedFiles() ([]string, error) {
+	stdout, stderr, err := g.CmdRunner.Run("git", "--no-pager", "diff", "--name-only", targetBranch)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := cmd.Run(); err != nil {
-		return []string{}, err
+	if logging.GetLevel(loggerName) == logging.DEBUG {
+		log.Error(stderr)
 	}
 
 	log.Debug("===> Found the following changed files:")
-	for _, file := range strings.Split(out.String(), "\n") {
+	for _, file := range strings.Split(stdout, "\n") {
 		if file != "" {
 			log.Debugf("▶ %s", file)
 		}
 	}
 
-	for _, file := range strings.Split(out.String(), "\n") {
+	for _, file := range strings.Split(stdout, "\n") {
 		if filepath.Ext(file) == ".yaml" {
 			if isApp, err := checkIfApp(file); err != nil {
 				if errors.Is(err, m.NotApplicationError) {
