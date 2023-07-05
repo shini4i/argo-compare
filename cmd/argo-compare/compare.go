@@ -212,6 +212,8 @@ func (c *Compare) printDiffFile(diffFile File) {
 	}
 }
 
+// findAndStripHelmLabels scans directory for YAML files, strips pre-defined Helm labels,
+// and writes modified content back.
 func (c *Compare) findAndStripHelmLabels() {
 	var helmFiles []string
 	var err error

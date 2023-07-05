@@ -1,10 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"github.com/stretchr/testify/assert"
 	"os"
-	"reflect"
 	"testing"
 )
 
@@ -39,20 +37,9 @@ func TestGenerateFilesStatus(t *testing.T) {
 
 	c.generateFilesStatus()
 
-	if !reflect.DeepEqual(c.addedFiles, expectedAddedFiles) {
-		fmt.Println(c.addedFiles)
-		t.Errorf("generateFilesStatus() did not generate expected addedFiles")
-	}
-
-	if !reflect.DeepEqual(c.removedFiles, expectedRemovedFiles) {
-		fmt.Println(c.removedFiles)
-		t.Errorf("generateFilesStatus() did not generate expected removedFiles")
-	}
-
-	if !reflect.DeepEqual(c.diffFiles, expectedDiffFiles) {
-		fmt.Println(c.diffFiles)
-		t.Errorf("generateFilesStatus() did not generate expected diffFiles")
-	}
+	assert.Equal(t, expectedAddedFiles, c.addedFiles)
+	assert.Equal(t, expectedRemovedFiles, c.removedFiles)
+	assert.Equal(t, expectedDiffFiles, c.diffFiles)
 }
 
 func TestFindAndStripHelmLabels(t *testing.T) {
