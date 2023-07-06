@@ -134,4 +134,13 @@ func TestExtractHelmChart(t *testing.T) {
 	err := extractHelmChart(mockCmdRunner, mockGlobber, "ingress-nginx", "3.34.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
 
 	assert.NoError(t, err, "expected no error, got %v", err)
+
+	// Test case 2: Multiple chart files found, error expected
+	expectedChartFilesNames := []string{"testdata/charts/sonarqube/sonarqube-4.0.0+315.tgz",
+		"testdata/charts/sonarqube/sonarqube-4.0.0+316.tgz"}
+
+	mockGlobber.EXPECT().Glob("testdata/cache/sonarqube-4.0.0*.tgz").Return(expectedChartFilesNames, nil)
+
+	err = extractHelmChart(mockCmdRunner, mockGlobber, "sonarqube", "4.0.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
+	assert.Error(t, err, "expected error, got %v", err)
 }

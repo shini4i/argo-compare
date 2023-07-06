@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"gopkg.in/yaml.v3"
@@ -198,7 +199,9 @@ func downloadHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, cacheDi
 			chartName,
 			"--version", targetRevision)
 
-		log.Info(stdout)
+		if len(stdout) > 0 {
+			log.Info(stdout)
+		}
 
 		if len(stderr) > 0 {
 			log.Error(stderr)
@@ -240,7 +243,7 @@ func extractHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, chartNam
 	// It's highly unlikely that we will have more than one file matching the pattern
 	// Nevertheless we need to handle this case, please submit an issue if you encounter this
 	if len(chartFileName) > 1 {
-		log.Fatal("More than one chart file found, please check your cache directory")
+		return errors.New("more than one chart file found, please check your cache directory")
 	}
 
 	stdout, stderr, err := cmdRunner.Run("tar",
