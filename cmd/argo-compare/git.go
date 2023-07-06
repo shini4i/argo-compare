@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
-	m "github.com/shini4i/argo-compare/internal/models"
+	"github.com/shini4i/argo-compare/internal/models"
 )
 
 type GitRepo struct {
@@ -25,11 +25,11 @@ var (
 
 func checkFile(cmdRunner utils.CmdRunner, fileReader utils.FileReader, file string) (bool, error) {
 	if _, err := checkIfApp(cmdRunner, fileReader, file); err != nil {
-		if errors.Is(err, m.NotApplicationError) {
+		if errors.Is(err, models.NotApplicationError) {
 			log.Debugf("Skipping non-application file [%s]", file)
-		} else if errors.Is(err, m.UnsupportedAppConfigurationError) {
+		} else if errors.Is(err, models.UnsupportedAppConfigurationError) {
 			log.Warningf("Skipping unsupported application configuration [%s]", file)
-		} else if errors.Is(err, m.EmptyFileError) {
+		} else if errors.Is(err, models.EmptyFileError) {
 			log.Debugf("Skipping empty file [%s]", file)
 		}
 		return false, invalidFileError
@@ -74,7 +74,7 @@ func (g *GitRepo) getChangedFiles() ([]string, error) {
 	return g.changedFiles, nil
 }
 
-func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) (m.Application, error) {
+func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) (models.Application, error) {
 	var tmpFile *os.File
 
 	log.Debugf("Getting content of %s from %s", targetFile, targetBranch)
@@ -84,12 +84,12 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) 
 		if strings.Contains(stderr, "exists on disk, but not in") {
 			color.Yellow("The requested file does not exist in target branch, assuming it is a new Application")
 		} else {
-			return m.Application{}, err
+			return models.Application{}, err
 		}
 
 		// unless we want to print the added manifests, we stop here
 		if !printAddedManifests {
-			return m.Application{}, gitFileDoesNotExist
+			return models.Application{}, gitFileDoesNotExist
 		}
 	}
 
@@ -111,7 +111,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) 
 
 	target := Target{CmdRunner: g.CmdRunner, FileReader: utils.OsFileReader{}, File: tmpFile.Name()}
 	if err := target.parse(); err != nil {
-		return m.Application{}, err
+		return models.Application{}, err
 	}
 
 	return target.App, nil
