@@ -2,14 +2,15 @@ package main
 
 import (
 	"github.com/op/go-logging"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
+	h "github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
-
-	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
-	h "github.com/shini4i/argo-compare/internal/helpers"
 )
 
 const (
@@ -81,22 +82,26 @@ func TestGetChangedFileContent(t *testing.T) {
 
 	// Create the mocks
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
-
 	appFileContent := string(h.ReadFile("../../" + appFile))
 
-	// Setup the expectation
+	// Test case 1: file exists and is Application
 	mockCmdRunner.EXPECT().Run("git", "--no-pager", "show", gomock.Any()).Return(appFileContent, "", nil)
-
 	repo := &GitRepo{CmdRunner: mockCmdRunner}
-
 	content, _ := repo.getChangedFileContent("main", appFile)
-
 	target := Target{CmdRunner: mockCmdRunner, FileReader: utils.OsFileReader{}, File: appFile}
 	if err := target.parse(); err != nil {
 		t.Errorf("test.yaml should be parsed")
 	}
-
 	assert.Equal(t, content, target.App, "content should be equal to app.App")
+
+	// Test case 2: file does not exist in target branch, and we do not plan to print added/removed files
+	osErr := &exec.ExitError{
+		ProcessState: &os.ProcessState{},
+	}
+	mockCmdRunner.EXPECT().Run("git", "--no-pager", "show", gomock.Any()).Return("", "exists on disk, but not in", osErr)
+	repo = &GitRepo{CmdRunner: mockCmdRunner}
+	_, err := repo.getChangedFileContent("main", appFile)
+	assert.ErrorIsf(t, err, gitFileDoesNotExist, "expected gitFileDoesNotExist, got %v", err)
 }
 
 func TestCheckIfApp(t *testing.T) {
