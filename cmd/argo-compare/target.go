@@ -1,8 +1,8 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"github.com/mattn/go-zglob"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"gopkg.in/yaml.v3"
 	"os"
@@ -15,6 +15,7 @@ import (
 
 type Target struct {
 	CmdRunner     utils.CmdRunner
+	FileReader    utils.FileReader
 	File          string
 	Type          string // src or dst version
 	App           m.Application
@@ -35,7 +36,8 @@ func (t *Target) parse() error {
 
 	log.Debugf("Parsing %s...", file)
 
-	if err := yaml.Unmarshal(h.ReadFile(file), &app); err != nil {
+	yamlContent := t.FileReader.ReadFile(file)
+	if err := yaml.Unmarshal(yamlContent, &app); err != nil {
 		return err
 	}
 
@@ -61,12 +63,12 @@ func (t *Target) generateValuesFiles() {
 func (t *Target) ensureHelmCharts() error {
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
-			if err := downloadHelmChart(t.CmdRunner, cacheDir, source.RepoURL, source.Chart, source.TargetRevision); err != nil {
+			if err := downloadHelmChart(t.CmdRunner, utils.CustomGlobber{}, cacheDir, source.RepoURL, source.Chart, source.TargetRevision); err != nil {
 				return err
 			}
 		}
 	} else {
-		if err := downloadHelmChart(t.CmdRunner, cacheDir, t.App.Spec.Source.RepoURL, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision); err != nil {
+		if err := downloadHelmChart(t.CmdRunner, utils.CustomGlobber{}, cacheDir, t.App.Spec.Source.RepoURL, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision); err != nil {
 			return err
 		}
 	}
@@ -79,10 +81,16 @@ func (t *Target) extractCharts() {
 	// because we don't want to re-download the chart if the TargetRevision is the same
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
-			extractHelmChart(t.CmdRunner, source.Chart, source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, source.RepoURL), tmpDir, t.Type)
+			err := extractHelmChart(t.CmdRunner, utils.CustomGlobber{}, source.Chart, source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, source.RepoURL), tmpDir, t.Type)
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 	} else {
-		extractHelmChart(t.CmdRunner, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, t.App.Spec.Source.RepoURL), tmpDir, t.Type)
+		err := extractHelmChart(t.CmdRunner, utils.CustomGlobber{}, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, t.App.Spec.Source.RepoURL), tmpDir, t.Type)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
@@ -153,7 +161,7 @@ func generateValuesFile(chartName, tmpDir, targetType, values string) {
 	}
 }
 
-func downloadHelmChart(cmdRunner utils.CmdRunner, cacheDir, repoUrl, chartName, targetRevision string) error {
+func downloadHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, cacheDir, repoUrl, chartName, targetRevision string) error {
 	chartLocation := fmt.Sprintf("%s/%s", cacheDir, repoUrl)
 
 	if err := os.MkdirAll(chartLocation, os.ModePerm); err != nil {
@@ -162,7 +170,7 @@ func downloadHelmChart(cmdRunner utils.CmdRunner, cacheDir, repoUrl, chartName, 
 
 	// A bit hacky, but we need to support cases when helm chart tgz filename does not follow the standard naming convention
 	// For example, sonarqube-4.0.0+315.tgz
-	chartFileName, err := zglob.Glob(fmt.Sprintf("%s/%s-%s*.tgz", chartLocation, chartName, targetRevision))
+	chartFileName, err := globber.Glob(fmt.Sprintf("%s/%s-%s*.tgz", chartLocation, chartName, targetRevision))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -191,7 +199,9 @@ func downloadHelmChart(cmdRunner utils.CmdRunner, cacheDir, repoUrl, chartName, 
 			chartName,
 			"--version", targetRevision)
 
-		log.Info(stdout)
+		if len(stdout) > 0 {
+			log.Info(stdout)
+		}
 
 		if len(stderr) > 0 {
 			log.Error(stderr)
@@ -209,7 +219,7 @@ func downloadHelmChart(cmdRunner utils.CmdRunner, cacheDir, repoUrl, chartName, 
 	return nil
 }
 
-func extractHelmChart(cmdRunner utils.CmdRunner, chartName, chartVersion, chartLocation, tmpDir, targetType string) {
+func extractHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, chartName, chartVersion, chartLocation, tmpDir, targetType string) error {
 	log.Debugf("Extracting [%s] chart version [%s] to %s/charts/%s...",
 		cyan(chartName),
 		cyan(chartVersion),
@@ -225,15 +235,15 @@ func extractHelmChart(cmdRunner utils.CmdRunner, chartName, chartVersion, chartL
 		chartName,
 		chartVersion)
 
-	chartFileName, err := zglob.Glob(searchPattern)
+	chartFileName, err := globber.Glob(searchPattern)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	// It's highly unlikely that we will have more than one file matching the pattern
 	// Nevertheless we need to handle this case, please submit an issue if you encounter this
 	if len(chartFileName) > 1 {
-		log.Fatal("More than one chart file found, please check your cache directory")
+		return errors.New("more than one chart file found, please check your cache directory")
 	}
 
 	stdout, stderr, err := cmdRunner.Run("tar",
@@ -249,6 +259,8 @@ func extractHelmChart(cmdRunner utils.CmdRunner, chartName, chartVersion, chartL
 	}
 
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
+
+	return nil
 }

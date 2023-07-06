@@ -10,3 +10,11 @@ type OsFs interface {
 	CreateTemp(dir, pattern string) (f *os.File, err error)
 	Remove(name string) error
 }
+
+type FileReader interface {
+	ReadFile(file string) []byte
+}
+
+type Globber interface {
+	Glob(pattern string) ([]string, error)
+}
