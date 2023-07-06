@@ -63,12 +63,12 @@ func (t *Target) generateValuesFiles() {
 func (t *Target) ensureHelmCharts() error {
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
-			if err := downloadHelmChart(t.CmdRunner, cacheDir, source.RepoURL, source.Chart, source.TargetRevision); err != nil {
+			if err := downloadHelmChart(t.CmdRunner, utils.CustomGlobber{}, cacheDir, source.RepoURL, source.Chart, source.TargetRevision); err != nil {
 				return err
 			}
 		}
 	} else {
-		if err := downloadHelmChart(t.CmdRunner, cacheDir, t.App.Spec.Source.RepoURL, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision); err != nil {
+		if err := downloadHelmChart(t.CmdRunner, utils.CustomGlobber{}, cacheDir, t.App.Spec.Source.RepoURL, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision); err != nil {
 			return err
 		}
 	}
@@ -155,7 +155,7 @@ func generateValuesFile(chartName, tmpDir, targetType, values string) {
 	}
 }
 
-func downloadHelmChart(cmdRunner utils.CmdRunner, cacheDir, repoUrl, chartName, targetRevision string) error {
+func downloadHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, cacheDir, repoUrl, chartName, targetRevision string) error {
 	chartLocation := fmt.Sprintf("%s/%s", cacheDir, repoUrl)
 
 	if err := os.MkdirAll(chartLocation, os.ModePerm); err != nil {
@@ -164,7 +164,7 @@ func downloadHelmChart(cmdRunner utils.CmdRunner, cacheDir, repoUrl, chartName, 
 
 	// A bit hacky, but we need to support cases when helm chart tgz filename does not follow the standard naming convention
 	// For example, sonarqube-4.0.0+315.tgz
-	chartFileName, err := zglob.Glob(fmt.Sprintf("%s/%s-%s*.tgz", chartLocation, chartName, targetRevision))
+	chartFileName, err := globber.Glob(fmt.Sprintf("%s/%s-%s*.tgz", chartLocation, chartName, targetRevision))
 	if err != nil {
 		log.Fatal(err)
 	}

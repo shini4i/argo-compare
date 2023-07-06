@@ -14,3 +14,7 @@ type OsFs interface {
 type FileReader interface {
 	ReadFile(file string) []byte
 }
+
+type Globber interface {
+	Glob(pattern string) ([]string, error)
+}
