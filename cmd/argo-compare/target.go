@@ -28,7 +28,11 @@ func (t *Target) parse() error {
 
 	// if we are working with a temporary file, we don't need to prepend the repo root path
 	if !strings.Contains(t.File, "/tmp/") {
-		file = fmt.Sprintf("%s/%s", h.GetGitRepoRoot(), t.File)
+		if gitRepoRoot, err := h.GetGitRepoRoot(&utils.RealCmdRunner{}); err != nil {
+			return err
+		} else {
+			file = fmt.Sprintf("%s/%s", gitRepoRoot, t.File)
+		}
 	} else {
 		file = t.File
 	}

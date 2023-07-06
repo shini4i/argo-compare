@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/mattn/go-zglob"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -74,11 +74,11 @@ func FindYamlFiles(dirPath string) ([]string, error) {
 	return zglob.Glob(filepath.Join(dirPath, "**", "*.yaml"))
 }
 
-func GetGitRepoRoot() string {
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	out, err := cmd.Output()
+func GetGitRepoRoot(cmdRunner utils.CmdRunner) (string, error) {
+	stdout, stderr, err := cmdRunner.Run("git", "rev-parse", "--show-toplevel")
 	if err != nil {
-		panic(fmt.Sprintf("failed to get git repository root: %v", err))
+		fmt.Println(stderr)
+		return "", err
 	}
-	return strings.TrimSpace(string(out))
+	return strings.TrimSpace(stdout), nil
 }
