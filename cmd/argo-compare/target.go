@@ -6,7 +6,6 @@ import (
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"gopkg.in/yaml.v3"
 	"os"
-	"os/exec"
 	"strings"
 
 	h "github.com/shini4i/argo-compare/internal/helpers"
@@ -114,25 +113,25 @@ func (t *Target) renderAppSources() {
 			} else {
 				releaseName = t.App.Metadata.Name
 			}
-			if err := renderAppSource(releaseName, source.Chart, source.TargetRevision, tmpDir, t.Type); err != nil {
+			if err := renderAppSource(&utils.RealCmdRunner{}, releaseName, source.Chart, source.TargetRevision, tmpDir, t.Type); err != nil {
 				log.Fatal(err)
 			}
 		}
 		return
 	}
 
-	if err := renderAppSource(releaseName, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision, tmpDir, t.Type); err != nil {
+	if err := renderAppSource(&utils.RealCmdRunner{}, releaseName, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision, tmpDir, t.Type); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func renderAppSource(releaseName, chartName, chartVersion, tmpDir, targetType string) error {
+func renderAppSource(cmdRunner utils.CmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType string) error {
 	log.Debugf("Rendering [%s] chart's version [%s] templates using release name [%s]",
 		cyan(chartName),
 		cyan(chartVersion),
 		cyan(releaseName))
 
-	cmd := exec.Command(
+	_, stderr, err := cmdRunner.Run(
 		"helm",
 		"template",
 		"--release-name", releaseName,
@@ -142,11 +141,14 @@ func renderAppSource(releaseName, chartName, chartVersion, tmpDir, targetType st
 		"--values", fmt.Sprintf("%s/%s-values-%s.yaml", tmpDir, chartName, targetType),
 	)
 
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
+	if err != nil {
 		return err
 	}
+
+	if stderr != "" {
+		log.Error(stderr)
+	}
+
 	return nil
 }
 
