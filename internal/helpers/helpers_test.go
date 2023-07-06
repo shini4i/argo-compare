@@ -65,9 +65,7 @@ func TestReadFile(t *testing.T) {
 	// Test case 2: Check if a missing file is handled properly
 	missingFile := filepath.Join(repoRoot, "testdata/missing.yaml")
 	actualContents = ReadFile(missingFile)
-	if actualContents != nil {
-		t.Errorf("expected file contents to be nil, but got [%s]", string(actualContents))
-	}
+	assert.Nilf(t, actualContents, "expected file contents to be nil, but got [%s]", string(actualContents))
 }
 
 func TestContains(t *testing.T) {
