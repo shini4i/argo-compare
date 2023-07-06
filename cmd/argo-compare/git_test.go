@@ -4,7 +4,7 @@ import (
 	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
-	h "github.com/shini4i/argo-compare/internal/helpers"
+	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"os"
@@ -33,7 +33,7 @@ func TestCheckFile(t *testing.T) {
 	// Test case 1: file exists and is Application
 	mockFileReader.EXPECT().ReadFile(gomock.Any()).DoAndReturn(func(path string) []byte {
 		if strings.HasSuffix(path, appFile) {
-			return h.ReadFile("../../" + appFile)
+			return helpers.ReadFile("../../" + appFile)
 		}
 		return nil
 	})
@@ -82,7 +82,7 @@ func TestGetChangedFileContent(t *testing.T) {
 
 	// Create the mocks
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
-	appFileContent := string(h.ReadFile("../../" + appFile))
+	appFileContent := string(helpers.ReadFile("../../" + appFile))
 
 	// Test case 1: file exists and is Application
 	mockCmdRunner.EXPECT().Run("git", "--no-pager", "show", gomock.Any()).Return(appFileContent, "", nil)

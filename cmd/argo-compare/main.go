@@ -7,8 +7,8 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/fatih/color"
 	"github.com/op/go-logging"
-	h "github.com/shini4i/argo-compare/internal/helpers"
-	m "github.com/shini4i/argo-compare/internal/models"
+	"github.com/shini4i/argo-compare/internal/helpers"
+	"github.com/shini4i/argo-compare/internal/models"
 	"os"
 	"strings"
 
@@ -21,12 +21,12 @@ const (
 )
 
 var (
-	cacheDir        = h.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
+	cacheDir        = helpers.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
 	tmpDir          string
 	version         = "local"
 	repo            = GitRepo{CmdRunner: &utils.RealCmdRunner{}}
 	repoCredentials []RepoCredentials
-	diffCommand     = h.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
+	diffCommand     = helpers.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
 )
 
 var (
@@ -59,7 +59,7 @@ func loggingInit(level logging.Level) {
 	logging.SetLevel(level, "")
 }
 
-func processFiles(cmdRunner utils.CmdRunner, fileName string, fileType string, application m.Application) error {
+func processFiles(cmdRunner utils.CmdRunner, fileName string, fileType string, application models.Application) error {
 	log.Debugf("Processing [%s] file: [%s]", cyan(fileType), cyan(fileName))
 
 	target := Target{CmdRunner: cmdRunner, FileReader: utils.OsFileReader{}, File: fileName, Type: fileType, App: application}
@@ -100,18 +100,18 @@ func compareFiles(cmdRunner utils.CmdRunner, changedFiles []string) {
 				}
 			}(tmpDir)
 
-			if err = processFiles(cmdRunner, file, "src", m.Application{}); err != nil {
+			if err = processFiles(cmdRunner, file, "src", models.Application{}); err != nil {
 				log.Panicf("Could not process the source Application: %s", err)
 			}
 
 			app, err := repo.getChangedFileContent(targetBranch, file)
 			if errors.Is(err, gitFileDoesNotExist) && !printAddedManifests {
 				return
-			} else if err != nil && !errors.Is(err, m.EmptyFileError) {
+			} else if err != nil && !errors.Is(err, models.EmptyFileError) {
 				log.Errorf("Could not get the target Application from branch [%s]: %s", targetBranch, err)
 			}
 
-			if !errors.Is(err, m.EmptyFileError) {
+			if !errors.Is(err, models.EmptyFileError) {
 				if err = processFiles(cmdRunner, file, "dst", app); err != nil && !printAddedManifests {
 					log.Panicf("Could not process the destination Application: %s", err)
 				}

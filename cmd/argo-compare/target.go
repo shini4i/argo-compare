@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
-	h "github.com/shini4i/argo-compare/internal/helpers"
-	m "github.com/shini4i/argo-compare/internal/models"
+	"github.com/shini4i/argo-compare/internal/helpers"
+	"github.com/shini4i/argo-compare/internal/models"
 )
 
 type Target struct {
@@ -17,18 +17,18 @@ type Target struct {
 	FileReader    utils.FileReader
 	File          string
 	Type          string // src or dst version
-	App           m.Application
+	App           models.Application
 	chartLocation string
 }
 
 func (t *Target) parse() error {
-	app := m.Application{}
+	app := models.Application{}
 
 	var file string
 
 	// if we are working with a temporary file, we don't need to prepend the repo root path
 	if !strings.Contains(t.File, "/tmp/") {
-		if gitRepoRoot, err := h.GetGitRepoRoot(&utils.RealCmdRunner{}); err != nil {
+		if gitRepoRoot, err := helpers.GetGitRepoRoot(&utils.RealCmdRunner{}); err != nil {
 			return err
 		} else {
 			file = fmt.Sprintf("%s/%s", gitRepoRoot, t.File)

@@ -6,7 +6,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/op/go-logging"
 	"github.com/sergi/go-diff/diffmatchpatch"
-	h "github.com/shini4i/argo-compare/internal/helpers"
+	"github.com/shini4i/argo-compare/internal/helpers"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,7 +46,7 @@ func (c *Compare) findFiles() {
 
 	go func() {
 		defer wg.Done()
-		if srcFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/src")); err == nil {
+		if srcFiles, err := helpers.FindYamlFiles(filepath.Join(tmpDir, "templates/src")); err == nil {
 			c.srcFiles = c.processFiles(srcFiles, "src")
 		} else {
 			log.Fatal(err)
@@ -55,7 +55,7 @@ func (c *Compare) findFiles() {
 
 	go func() {
 		defer wg.Done()
-		if dstFiles, err := h.FindYamlFiles(filepath.Join(tmpDir, "templates/dst")); err == nil {
+		if dstFiles, err := helpers.FindYamlFiles(filepath.Join(tmpDir, "templates/dst")); err == nil {
 			c.dstFiles = c.processFiles(dstFiles, "dst")
 		} else {
 			// we are no longer failing here, because we need to support the case where the destination
@@ -166,11 +166,11 @@ func (c *Compare) processManifest(file File, fileType string) {
 	switch fileType {
 	case "added":
 		if printAddedManifests {
-			color.Green(string(h.ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, file.Name))))
+			color.Green(string(helpers.ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, file.Name))))
 		}
 	case "removed":
 		if printRemovedManifests {
-			color.Red(string(h.ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, file.Name))))
+			color.Red(string(helpers.ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, file.Name))))
 		}
 	case "changed":
 		c.printDiffFile(file)
@@ -182,8 +182,8 @@ func (c *Compare) printDiffFile(diffFile File) {
 	case "built-in":
 		differ := diffmatchpatch.New()
 
-		srcFile := string(h.ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name)))
-		dstFile := string(h.ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name)))
+		srcFile := string(helpers.ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name)))
+		dstFile := string(helpers.ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name)))
 
 		diffs := differ.DiffMain(dstFile, srcFile, false)
 
@@ -218,15 +218,15 @@ func (c *Compare) findAndStripHelmLabels() {
 	var helmFiles []string
 	var err error
 
-	if helmFiles, err = h.FindYamlFiles(tmpDir); err != nil {
+	if helmFiles, err = helpers.FindYamlFiles(tmpDir); err != nil {
 		log.Fatal(err)
 	}
 
 	for _, helmFile := range helmFiles {
-		if desiredState, err := h.StripHelmLabels(helmFile); err != nil {
+		if desiredState, err := helpers.StripHelmLabels(helmFile); err != nil {
 			log.Fatal(err)
 		} else {
-			if err := h.WriteToFile(helmFile, desiredState); err != nil {
+			if err := helpers.WriteToFile(helmFile, desiredState); err != nil {
 				log.Fatal(err)
 			}
 		}
