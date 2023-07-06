@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/mattn/go-zglob"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"gopkg.in/yaml.v3"
 	"os"
@@ -81,10 +80,16 @@ func (t *Target) extractCharts() {
 	// because we don't want to re-download the chart if the TargetRevision is the same
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
-			extractHelmChart(t.CmdRunner, source.Chart, source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, source.RepoURL), tmpDir, t.Type)
+			err := extractHelmChart(t.CmdRunner, utils.CustomGlobber{}, source.Chart, source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, source.RepoURL), tmpDir, t.Type)
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 	} else {
-		extractHelmChart(t.CmdRunner, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, t.App.Spec.Source.RepoURL), tmpDir, t.Type)
+		err := extractHelmChart(t.CmdRunner, utils.CustomGlobber{}, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, t.App.Spec.Source.RepoURL), tmpDir, t.Type)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
@@ -211,7 +216,7 @@ func downloadHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, cacheDi
 	return nil
 }
 
-func extractHelmChart(cmdRunner utils.CmdRunner, chartName, chartVersion, chartLocation, tmpDir, targetType string) {
+func extractHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, chartName, chartVersion, chartLocation, tmpDir, targetType string) error {
 	log.Debugf("Extracting [%s] chart version [%s] to %s/charts/%s...",
 		cyan(chartName),
 		cyan(chartVersion),
@@ -227,9 +232,9 @@ func extractHelmChart(cmdRunner utils.CmdRunner, chartName, chartVersion, chartL
 		chartName,
 		chartVersion)
 
-	chartFileName, err := zglob.Glob(searchPattern)
+	chartFileName, err := globber.Glob(searchPattern)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	// It's highly unlikely that we will have more than one file matching the pattern
@@ -251,6 +256,8 @@ func extractHelmChart(cmdRunner utils.CmdRunner, chartName, chartVersion, chartL
 	}
 
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
+
+	return nil
 }

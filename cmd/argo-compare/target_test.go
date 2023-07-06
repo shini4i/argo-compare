@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
@@ -58,7 +59,6 @@ func TestDownloadHelmChart(t *testing.T) {
 		"ingress-nginx",
 		"3.34.0",
 	)
-
 	assert.NoError(t, err, "expected no error, got %v", err)
 
 	// Test case 2: chart does not exist, and successfully downloaded
@@ -71,7 +71,6 @@ func TestDownloadHelmChart(t *testing.T) {
 		"--repo", gomock.Any(),
 		gomock.Any(),
 		"--version", gomock.Any()).Return("", "", nil)
-
 	err = downloadHelmChart(mockCmdRunner,
 		mockGlobber,
 		"testdata/dynamic/cache",
@@ -79,14 +78,12 @@ func TestDownloadHelmChart(t *testing.T) {
 		"ingress-nginx",
 		"3.34.0",
 	)
-
 	assert.NoError(t, err, "expected no error, got %v", err)
 
 	// Test case 3: chart does not exist, and failed to download
 	osErr := &exec.ExitError{
 		ProcessState: &os.ProcessState{},
 	}
-
 	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{}, nil)
 	mockCmdRunner.EXPECT().Run("helm",
 		"pull",
@@ -96,7 +93,6 @@ func TestDownloadHelmChart(t *testing.T) {
 		"--repo", gomock.Any(),
 		gomock.Any(),
 		"--version", gomock.Any()).Return("", "dummy error message", osErr)
-
 	err = downloadHelmChart(mockCmdRunner,
 		mockGlobber,
 		"testdata/dynamic/cache",
@@ -104,6 +100,38 @@ func TestDownloadHelmChart(t *testing.T) {
 		"ingress-nginx",
 		"3.34.0",
 	)
-
 	assert.ErrorIsf(t, err, failedToDownloadChart, "expected error %v, got %v", failedToDownloadChart, err)
+}
+
+func TestExtractHelmChart(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Create the mocks
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	mockGlobber := mocks.NewMockGlobber(ctrl)
+
+	// Set up the expected behavior for the mocks
+
+	// Test case 1: Single chart file found
+	expectedChartFileName := "testdata/charts/ingress-nginx/ingress-nginx-3.34.0.tgz"
+	expectedChartLocation := "testdata/cache"
+	expectedTmpDir := "testdata/tmp"
+	expectedTargetType := "target"
+
+	// Mock the behavior of the globber
+	mockGlobber.EXPECT().Glob("testdata/cache/ingress-nginx-3.34.0*.tgz").Return([]string{expectedChartFileName}, nil)
+
+	// Mock the behavior of the cmdRunner
+	mockCmdRunner.EXPECT().Run("tar",
+		"xf",
+		expectedChartFileName,
+		"-C",
+		fmt.Sprintf("%s/charts/%s", expectedTmpDir, expectedTargetType),
+	).Return("", "", nil)
+
+	// Call the function under test
+	err := extractHelmChart(mockCmdRunner, mockGlobber, "ingress-nginx", "3.34.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
+
+	assert.NoError(t, err, "expected no error, got %v", err)
 }
