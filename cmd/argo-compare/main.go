@@ -206,7 +206,7 @@ func main() {
 	if fileToCompare != "" {
 		changedFiles = []string{fileToCompare}
 	} else {
-		if changedFiles, err = repo.getChangedFiles(); err != nil {
+		if changedFiles, err = repo.getChangedFiles(utils.OsFileReader{}); err != nil {
 			log.Fatal(err)
 		}
 	}

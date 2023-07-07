@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"github.com/fatih/color"
-	"github.com/op/go-logging"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,14 +36,13 @@ func checkFile(cmdRunner utils.CmdRunner, fileReader utils.FileReader, file stri
 	return true, nil
 }
 
-func (g *GitRepo) getChangedFiles() ([]string, error) {
+func (g *GitRepo) getChangedFiles(fileReader utils.FileReader) ([]string, error) {
 	stdout, stderr, err := g.CmdRunner.Run("git", "--no-pager", "diff", "--name-only", targetBranch)
 	if err != nil {
+		if stderr != "" {
+			log.Errorf("Error running git command: %s", stderr)
+		}
 		return nil, err
-	}
-
-	if logging.GetLevel(loggerName) == logging.DEBUG {
-		log.Error(stderr)
 	}
 
 	log.Debug("===> Found the following changed files:")
@@ -56,7 +54,7 @@ func (g *GitRepo) getChangedFiles() ([]string, error) {
 
 	for _, file := range strings.Split(stdout, "\n") {
 		if filepath.Ext(file) == ".yaml" {
-			if _, err := checkFile(g.CmdRunner, utils.OsFileReader{}, file); errors.Is(err, invalidFileError) {
+			if _, err := checkFile(g.CmdRunner, fileReader, file); errors.Is(err, invalidFileError) {
 				g.invalidFiles = append(g.invalidFiles, file)
 			} else {
 				g.changedFiles = append(g.changedFiles, file)
