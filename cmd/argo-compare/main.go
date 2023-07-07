@@ -124,13 +124,13 @@ func compareFiles(cmdRunner utils.CmdRunner, changedFiles []string) {
 	}
 }
 
-func collectRepoCredentials() {
+func collectRepoCredentials() error {
 	log.Debug("===> Collecting repo credentials")
 	for _, env := range os.Environ() {
 		if strings.HasPrefix(env, repoCredsPrefix) {
 			var repoCreds RepoCredentials
 			if err := json.Unmarshal([]byte(strings.SplitN(env, "=", 2)[1]), &repoCreds); err != nil {
-				log.Fatal(err)
+				return err
 			}
 			repoCredentials = append(repoCredentials, repoCreds)
 		}
@@ -139,16 +139,19 @@ func collectRepoCredentials() {
 	for _, repo := range repoCredentials {
 		log.Debugf("▶ Found repo credentials for [%s]", cyan(repo.Url))
 	}
+
+	return nil
 }
 
-func printInvalidFilesList() {
+func printInvalidFilesList(repo *GitRepo) error {
 	if len(repo.invalidFiles) > 0 {
 		log.Info("===> The following yaml files are invalid and were skipped")
 		for _, file := range repo.invalidFiles {
 			log.Warningf("▶ %s", file)
 		}
-		os.Exit(1)
+		return errors.New("invalid files found")
 	}
+	return nil
 }
 
 func main() {
@@ -197,7 +200,9 @@ func main() {
 
 	log.Infof("===> Running argo-compare version [%s]", cyan(version))
 
-	collectRepoCredentials()
+	if err := collectRepoCredentials(); err != nil {
+		log.Fatal(err)
+	}
 
 	var changedFiles []string
 	var err error
@@ -217,5 +222,7 @@ func main() {
 		compareFiles(&utils.RealCmdRunner{}, changedFiles)
 	}
 
-	printInvalidFilesList()
+	if err := printInvalidFilesList(&repo); err != nil {
+		os.Exit(1)
+	}
 }
