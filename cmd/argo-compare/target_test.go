@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/stretchr/testify/assert"
@@ -134,7 +135,6 @@ func TestExtractHelmChart(t *testing.T) {
 		fmt.Sprintf("%s/charts/%s", expectedTmpDir, expectedTargetType),
 	).Return("", "", nil)
 
-	// Call the function under test
 	err := extractHelmChart(mockCmdRunner, mockGlobber, "ingress-nginx", "3.34.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
 
 	assert.NoError(t, err, "expected no error, got %v", err)
@@ -146,6 +146,30 @@ func TestExtractHelmChart(t *testing.T) {
 	mockGlobber.EXPECT().Glob(testsDir+"/cache/sonarqube-4.0.0*.tgz").Return(expectedChartFilesNames, nil)
 
 	err = extractHelmChart(mockCmdRunner, mockGlobber, "sonarqube", "4.0.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
+	assert.Error(t, err, "expected error, got %v", err)
+
+	// Test case 3: Chart file found, but failed to extract
+	mockGlobber.EXPECT().Glob(testsDir+"/cache/ingress-nginx-3.34.0*.tgz").Return([]string{expectedChartFileName}, nil)
+	mockCmdRunner.EXPECT().Run("tar",
+		"xf",
+		expectedChartFileName,
+		"-C",
+		fmt.Sprintf("%s/charts/%s", expectedTmpDir, expectedTargetType),
+	).Return("", "some unexpected error", errors.New("some unexpected error"))
+
+	err = extractHelmChart(mockCmdRunner, mockGlobber, "ingress-nginx", "3.34.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
+	assert.Error(t, err, "expected error, got %v", err)
+
+	// Test case 4: zglob failed to run
+	mockGlobber.EXPECT().Glob(testsDir+"/cache/ingress-nginx-3.34.0*.tgz").Return([]string{}, os.ErrPermission)
+
+	err = extractHelmChart(mockCmdRunner, mockGlobber, "ingress-nginx", "3.34.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
+	assert.Error(t, err, "expected error, got %v", err)
+
+	// Test case 5: Failed to find chart file
+	mockGlobber.EXPECT().Glob(testsDir+"/cache/ingress-nginx-3.34.0*.tgz").Return([]string{}, nil)
+
+	err = extractHelmChart(mockCmdRunner, mockGlobber, "ingress-nginx", "3.34.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
 	assert.Error(t, err, "expected error, got %v", err)
 }
 

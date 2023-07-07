@@ -275,7 +275,7 @@ func extractHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, chartNam
 
 	path := fmt.Sprintf("%s/charts/%s/%s", tmpDir, targetType, chartName)
 	if err := os.MkdirAll(path, os.ModePerm); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	searchPattern := fmt.Sprintf("%s/%s-%s*.tgz",
@@ -286,6 +286,10 @@ func extractHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, chartNam
 	chartFileName, err := globber.Glob(searchPattern)
 	if err != nil {
 		return err
+	}
+
+	if len(chartFileName) == 0 {
+		return errors.New("chart file not found")
 	}
 
 	// It's highly unlikely that we will have more than one file matching the pattern

@@ -164,9 +164,7 @@ func main() {
 	switch ctx.Command() {
 	case "branch <name>":
 		targetBranch = CLI.Branch.Name
-		if len(CLI.Branch.File) > 0 {
-			fileToCompare = CLI.Branch.File
-		}
+		fileToCompare = CLI.Branch.File
 	default:
 		panic(ctx.Command())
 	}
