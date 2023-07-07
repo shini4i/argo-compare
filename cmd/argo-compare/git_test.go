@@ -131,6 +131,12 @@ func TestGetChangedFileContent(t *testing.T) {
 	repo = &GitRepo{CmdRunner: mockCmdRunner}
 	_, err := repo.getChangedFileContent("main", appFile)
 	assert.ErrorIsf(t, err, gitFileDoesNotExist, "expected gitFileDoesNotExist, got %v", err)
+
+	// Test case 3: we got an unexpected error
+	mockCmdRunner.EXPECT().Run("git", "--no-pager", "show", gomock.Any()).Return("", "some meaningful error", os.ErrNotExist)
+	repo = &GitRepo{CmdRunner: mockCmdRunner}
+	_, err = repo.getChangedFileContent("main", appFile)
+	assert.ErrorIsf(t, err, os.ErrNotExist, "expected os.ErrNotExist, got %v", err)
 }
 
 func TestCheckIfApp(t *testing.T) {
