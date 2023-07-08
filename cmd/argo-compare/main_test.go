@@ -2,8 +2,10 @@ package main
 
 import (
 	"github.com/op/go-logging"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	"os"
 	"testing"
 )
@@ -80,4 +82,32 @@ func TestInvalidFilesList(t *testing.T) {
 	err = printInvalidFilesList(&repo)
 	// If the list is empty, we should not return an error
 	assert.NoError(t, err)
+}
+
+func TestMainGetChangedFiles(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Test case 1: there are changed files, and specific file was not provided
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	mockCmdRunner.EXPECT().Run("git", "--no-pager", "diff", "--name-only", gomock.Any()).Return("testdata/test.yaml\nfile2", "", nil)
+
+	repo := GitRepo{CmdRunner: mockCmdRunner}
+
+	changedFiles, err := getChangedFiles(utils.OsFileReader{}, &repo, "")
+
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"testdata/test.yaml"}, changedFiles)
+
+	// Test case 2: an unexpected error occurred
+	mockCmdRunner.EXPECT().Run("git", "--no-pager", "diff", "--name-only", gomock.Any()).Return("", "", os.ErrPermission)
+
+	repo = GitRepo{CmdRunner: mockCmdRunner}
+	_, err = getChangedFiles(utils.OsFileReader{}, &repo, "")
+	assert.ErrorIsf(t, err, os.ErrPermission, "expected to get an error when running git diff")
+
+	// Test case 3: a specific file was provided
+	changedFiles, err = getChangedFiles(utils.OsFileReader{}, &repo, "file1")
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"file1"}, changedFiles)
 }

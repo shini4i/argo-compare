@@ -154,6 +154,8 @@ func printInvalidFilesList(repo *GitRepo) error {
 	return nil
 }
 
+// parseCli processes command-line arguments, setting appropriate global variables based on user input.
+// If the user does not provide a recognized command, it returns an error.
 func parseCli() error {
 	ctx := kong.Parse(&CLI,
 		kong.Name("argo-compare"),
@@ -185,7 +187,7 @@ func runCLI() error {
 		return err
 	}
 
-	changedFiles, err := getChangedFiles()
+	changedFiles, err := getChangedFiles(utils.OsFileReader{}, &repo, "")
 	if err != nil {
 		return err
 	}
@@ -199,14 +201,14 @@ func runCLI() error {
 	return printInvalidFilesList(&repo)
 }
 
-func getChangedFiles() ([]string, error) {
+func getChangedFiles(fileReader utils.FileReader, repo *GitRepo, fileToCompare string) ([]string, error) {
 	var changedFiles []string
 	var err error
 
 	if fileToCompare != "" {
 		changedFiles = []string{fileToCompare}
 	} else {
-		changedFiles, err = repo.getChangedFiles(utils.OsFileReader{})
+		changedFiles, err = repo.getChangedFiles(fileReader)
 		if err != nil {
 			return nil, err
 		}
