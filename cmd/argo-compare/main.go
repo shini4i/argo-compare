@@ -124,13 +124,13 @@ func compareFiles(cmdRunner utils.CmdRunner, changedFiles []string) {
 	}
 }
 
-func collectRepoCredentials() {
+func collectRepoCredentials() error {
 	log.Debug("===> Collecting repo credentials")
 	for _, env := range os.Environ() {
 		if strings.HasPrefix(env, repoCredsPrefix) {
 			var repoCreds RepoCredentials
 			if err := json.Unmarshal([]byte(strings.SplitN(env, "=", 2)[1]), &repoCreds); err != nil {
-				log.Fatal(err)
+				return err
 			}
 			repoCredentials = append(repoCredentials, repoCreds)
 		}
@@ -139,19 +139,24 @@ func collectRepoCredentials() {
 	for _, repo := range repoCredentials {
 		log.Debugf("▶ Found repo credentials for [%s]", cyan(repo.Url))
 	}
+
+	return nil
 }
 
-func printInvalidFilesList() {
+func printInvalidFilesList(repo *GitRepo) error {
 	if len(repo.invalidFiles) > 0 {
 		log.Info("===> The following yaml files are invalid and were skipped")
 		for _, file := range repo.invalidFiles {
 			log.Warningf("▶ %s", file)
 		}
-		os.Exit(1)
+		return errors.New("invalid files found")
 	}
+	return nil
 }
 
-func main() {
+// parseCli processes command-line arguments, setting appropriate global variables based on user input.
+// If the user does not provide a recognized command, it returns an error.
+func parseCli() error {
 	ctx := kong.Parse(&CLI,
 		kong.Name("argo-compare"),
 		kong.Description("Compare ArgoCD applications between git branches"),
@@ -161,13 +166,58 @@ func main() {
 	switch ctx.Command() {
 	case "branch <name>":
 		targetBranch = CLI.Branch.Name
-		if len(CLI.Branch.File) > 0 {
-			fileToCompare = CLI.Branch.File
-		}
+		fileToCompare = CLI.Branch.File
 	default:
-		panic(ctx.Command())
+		return errors.New("unknown command")
 	}
 
+	return nil
+}
+
+func runCLI() error {
+	if err := parseCli(); err != nil {
+		return err
+	}
+
+	updateConfigurations()
+
+	log.Infof("===> Running Argo Compare version [%s]", cyan(version))
+
+	if err := collectRepoCredentials(); err != nil {
+		return err
+	}
+
+	changedFiles, err := getChangedFiles(utils.OsFileReader{}, &repo, "")
+	if err != nil {
+		return err
+	}
+
+	if len(changedFiles) == 0 {
+		log.Info("No changed Application files found. Exiting...")
+	} else {
+		compareFiles(&utils.RealCmdRunner{}, changedFiles)
+	}
+
+	return printInvalidFilesList(&repo)
+}
+
+func getChangedFiles(fileReader utils.FileReader, repo *GitRepo, fileToCompare string) ([]string, error) {
+	var changedFiles []string
+	var err error
+
+	if fileToCompare != "" {
+		changedFiles = []string{fileToCompare}
+	} else {
+		changedFiles, err = repo.getChangedFiles(fileReader)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return changedFiles, nil
+}
+
+func updateConfigurations() {
 	if CLI.Debug {
 		loggingInit(logging.DEBUG)
 	} else {
@@ -178,44 +228,22 @@ func main() {
 		preserveHelmLabels = true
 	}
 
-	// Cover the edge case when we need to render all manifests for a new Application
-	// It will produce a big output and does not fit into "compare" definition hence it's disabled by default
 	if CLI.Branch.PrintAddedManifests {
 		printAddedManifests = true
 	}
 
-	// Cover cases when we need to print out all removed manifests
 	if CLI.Branch.PrintRemovedManifests {
 		printRemovedManifests = true
 	}
 
-	// Cover cases when we need to print out all manifests. It will produce the biggest output.
 	if CLI.Branch.FullOutput {
 		printAddedManifests = true
 		printRemovedManifests = true
 	}
+}
 
-	log.Infof("===> Running argo-compare version [%s]", cyan(version))
-
-	collectRepoCredentials()
-
-	var changedFiles []string
-	var err error
-
-	// There are valid cases when we want to compare a single file only
-	if fileToCompare != "" {
-		changedFiles = []string{fileToCompare}
-	} else {
-		if changedFiles, err = repo.getChangedFiles(); err != nil {
-			log.Fatal(err)
-		}
+func main() {
+	if err := runCLI(); err != nil {
+		log.Fatal(err)
 	}
-
-	if len(changedFiles) == 0 {
-		log.Info("No changed Application files found. Exiting...")
-	} else {
-		compareFiles(&utils.RealCmdRunner{}, changedFiles)
-	}
-
-	printInvalidFilesList()
 }

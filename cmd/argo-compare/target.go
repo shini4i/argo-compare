@@ -21,6 +21,9 @@ type Target struct {
 	chartLocation string
 }
 
+// parse reads the YAML content from a file and unmarshals it into an Application model.
+// It uses the FileReader interface to support different implementations for file reading.
+// Returns an error in case of issues during reading, unmarshaling or validation.
 func (t *Target) parse() error {
 	app := models.Application{}
 
@@ -53,16 +56,27 @@ func (t *Target) parse() error {
 	return nil
 }
 
+// generateValuesFiles generates Helm values files for the application's sources.
+// If the application uses multiple sources, a separate values file is created for each source.
+// Otherwise, a single values file is generated for the application's single source.
 func (t *Target) generateValuesFiles() {
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
-			generateValuesFile(source.Chart, tmpDir, t.Type, source.Helm.Values)
+			if err := generateValuesFile(source.Chart, tmpDir, t.Type, source.Helm.Values); err != nil {
+				log.Fatal(err)
+			}
 		}
 	} else {
-		generateValuesFile(t.App.Spec.Source.Chart, tmpDir, t.Type, t.App.Spec.Source.Helm.Values)
+		if err := generateValuesFile(t.App.Spec.Source.Chart, tmpDir, t.Type, t.App.Spec.Source.Helm.Values); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
+// ensureHelmCharts downloads Helm charts for the application's sources.
+// If the application uses multiple sources, each chart is downloaded separately.
+// If the application has a single source, only the respective chart is downloaded.
+// In case of any error during download, the error is returned immediately.
 func (t *Target) ensureHelmCharts() error {
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
@@ -79,6 +93,10 @@ func (t *Target) ensureHelmCharts() error {
 	return nil
 }
 
+// extractCharts extracts the content of the downloaded Helm charts.
+// For applications with multiple sources, each chart is extracted separately.
+// For single-source applications, only the corresponding chart is extracted.
+// If an error occurs during extraction, the program is terminated.
 func (t *Target) extractCharts() {
 	// We have a separate function for this and not using helm to extract the content of the chart
 	// because we don't want to re-download the chart if the TargetRevision is the same
@@ -97,6 +115,11 @@ func (t *Target) extractCharts() {
 	}
 }
 
+// renderAppSources uses Helm to render chart templates for the application's sources.
+// If the Helm specification provides a release name, it is used; otherwise, the application's metadata name is used.
+// If the application has multiple sources, each source is rendered individually.
+// If the application has only one source, the source is rendered accordingly.
+// If there's any error during rendering, it will lead to a fatal error, and the program will exit.
 func (t *Target) renderAppSources() {
 	var releaseName string
 
@@ -129,6 +152,12 @@ func (t *Target) renderAppSources() {
 	}
 }
 
+// renderAppSource uses the Helm CLI to render the templates of a given chart.
+// It takes a cmdRunner to run the Helm command, a release name for the Helm release,
+// the chart name and version, a temporary directory for storing intermediate files,
+// and the target type which categorizes the application.
+// The function constructs the Helm command with the provided arguments, runs it, and checks for any errors.
+// If there are any errors, it returns them. Otherwise, it returns nil.
 func renderAppSource(cmdRunner utils.CmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType string) error {
 	log.Debugf("Rendering [%s] chart's version [%s] templates using release name [%s]",
 		cyan(chartName),
@@ -146,27 +175,37 @@ func renderAppSource(cmdRunner utils.CmdRunner, releaseName, chartName, chartVer
 	)
 
 	if err != nil {
-		return err
-	}
-
-	if stderr != "" {
 		log.Error(stderr)
+		return err
 	}
 
 	return nil
 }
 
-func generateValuesFile(chartName, tmpDir, targetType, values string) {
+// generateValuesFile creates a Helm values file for a given chart in a specified directory.
+// It takes a chart name, a temporary directory for storing the file, the target type categorizing the application,
+// and the content of the values file in string format.
+// The function first attempts to create the file. If an error occurs, it terminates the program.
+// Next, it writes the values string to the file. If an error occurs during this process, the program is also terminated.
+func generateValuesFile(chartName, tmpDir, targetType, values string) error {
 	yamlFile, err := os.Create(fmt.Sprintf("%s/%s-values-%s.yaml", tmpDir, chartName, targetType))
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	if _, err := yamlFile.WriteString(values); err != nil {
-		log.Fatal(err)
+		return err
 	}
+
+	return nil
 }
 
+// downloadHelmChart fetches a specified version of a Helm chart from a given repository URL and
+// stores it in a cache directory. The function leverages the provided CmdRunner to execute
+// the helm pull command and Globber to deal with possible non-standard chart naming.
+// If the chart is already present in the cache, the function just logs the information and doesn't download it again.
+// The function is designed to handle potential errors during directory creation, globbing, and Helm chart downloading.
+// Any critical error during these operations terminates the program.
 func downloadHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, cacheDir, repoUrl, chartName, targetRevision string) error {
 	chartLocation := fmt.Sprintf("%s/%s", cacheDir, repoUrl)
 
@@ -225,6 +264,12 @@ func downloadHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, cacheDi
 	return nil
 }
 
+// extractHelmChart extracts a specific version of a Helm chart from a cache directory
+// and stores it in a temporary directory. The function uses the provided CmdRunner to
+// execute the tar command and Globber to match the chart file in the cache.
+// If multiple files matching the pattern are found, an error is returned.
+// The function logs any output (standard or error) from the tar command.
+// Any critical error during these operations, like directory creation or extraction failure, terminates the program.
 func extractHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, chartName, chartVersion, chartLocation, tmpDir, targetType string) error {
 	log.Debugf("Extracting [%s] chart version [%s] to %s/charts/%s...",
 		cyan(chartName),
@@ -233,7 +278,7 @@ func extractHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, chartNam
 
 	path := fmt.Sprintf("%s/charts/%s/%s", tmpDir, targetType, chartName)
 	if err := os.MkdirAll(path, os.ModePerm); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	searchPattern := fmt.Sprintf("%s/%s-%s*.tgz",
@@ -244,6 +289,10 @@ func extractHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, chartNam
 	chartFileName, err := globber.Glob(searchPattern)
 	if err != nil {
 		return err
+	}
+
+	if len(chartFileName) == 0 {
+		return errors.New("chart file not found")
 	}
 
 	// It's highly unlikely that we will have more than one file matching the pattern
