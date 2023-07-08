@@ -34,8 +34,9 @@ func TestGenerateValuesFile(t *testing.T) {
 	targetType := "src"
 	values := "fullnameOverride: ingress-nginx\ncontroller:\n  kind: DaemonSet\n  service:\n    externalTrafficPolicy: Local\n    annotations:\n      fancyAnnotation: false\n"
 
-	// Call the function to test
-	generateValuesFile(chartName, tmpDir, targetType, values)
+	// Test case 1: Everything works as expected
+	err = generateValuesFile(chartName, tmpDir, targetType, values)
+	assert.NoError(t, err, "expected no error, got %v", err)
 
 	// Read the generated file
 	generatedValues, err := os.ReadFile(tmpDir + "/" + chartName + "-values-" + targetType + ".yaml")
@@ -43,8 +44,11 @@ func TestGenerateValuesFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Verify the contents
 	assert.Equal(t, values, string(generatedValues))
+
+	// Test case 2: Error when creating the file
+	err = generateValuesFile(chartName, "/non/existing/path", targetType, values)
+	assert.Error(t, err, "expected error, got nil")
 }
 
 func TestDownloadHelmChart(t *testing.T) {

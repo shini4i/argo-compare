@@ -62,10 +62,14 @@ func (t *Target) parse() error {
 func (t *Target) generateValuesFiles() {
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
-			generateValuesFile(source.Chart, tmpDir, t.Type, source.Helm.Values)
+			if err := generateValuesFile(source.Chart, tmpDir, t.Type, source.Helm.Values); err != nil {
+				log.Fatal(err)
+			}
 		}
 	} else {
-		generateValuesFile(t.App.Spec.Source.Chart, tmpDir, t.Type, t.App.Spec.Source.Helm.Values)
+		if err := generateValuesFile(t.App.Spec.Source.Chart, tmpDir, t.Type, t.App.Spec.Source.Helm.Values); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
@@ -171,11 +175,8 @@ func renderAppSource(cmdRunner utils.CmdRunner, releaseName, chartName, chartVer
 	)
 
 	if err != nil {
-		return err
-	}
-
-	if stderr != "" {
 		log.Error(stderr)
+		return err
 	}
 
 	return nil
@@ -186,15 +187,17 @@ func renderAppSource(cmdRunner utils.CmdRunner, releaseName, chartName, chartVer
 // and the content of the values file in string format.
 // The function first attempts to create the file. If an error occurs, it terminates the program.
 // Next, it writes the values string to the file. If an error occurs during this process, the program is also terminated.
-func generateValuesFile(chartName, tmpDir, targetType, values string) {
+func generateValuesFile(chartName, tmpDir, targetType, values string) error {
 	yamlFile, err := os.Create(fmt.Sprintf("%s/%s-values-%s.yaml", tmpDir, chartName, targetType))
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	if _, err := yamlFile.WriteString(values); err != nil {
-		log.Fatal(err)
+		return err
 	}
+
+	return nil
 }
 
 // downloadHelmChart fetches a specified version of a Helm chart from a given repository URL and
