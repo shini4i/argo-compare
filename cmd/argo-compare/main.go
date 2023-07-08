@@ -154,7 +154,7 @@ func printInvalidFilesList(repo *GitRepo) error {
 	return nil
 }
 
-func main() {
+func parseCli() error {
 	ctx := kong.Parse(&CLI,
 		kong.Name("argo-compare"),
 		kong.Description("Compare ArgoCD applications between git branches"),
@@ -166,9 +166,56 @@ func main() {
 		targetBranch = CLI.Branch.Name
 		fileToCompare = CLI.Branch.File
 	default:
-		panic(ctx.Command())
+		return errors.New("unknown command")
 	}
 
+	return nil
+}
+
+func runCLI() error {
+	if err := parseCli(); err != nil {
+		return err
+	}
+
+	updateConfigurations()
+
+	log.Infof("===> Running Argo Compare version [%s]", cyan(version))
+
+	if err := collectRepoCredentials(); err != nil {
+		return err
+	}
+
+	changedFiles, err := getChangedFiles()
+	if err != nil {
+		return err
+	}
+
+	if len(changedFiles) == 0 {
+		log.Info("No changed Application files found. Exiting...")
+	} else {
+		compareFiles(&utils.RealCmdRunner{}, changedFiles)
+	}
+
+	return printInvalidFilesList(&repo)
+}
+
+func getChangedFiles() ([]string, error) {
+	var changedFiles []string
+	var err error
+
+	if fileToCompare != "" {
+		changedFiles = []string{fileToCompare}
+	} else {
+		changedFiles, err = repo.getChangedFiles(utils.OsFileReader{})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return changedFiles, nil
+}
+
+func updateConfigurations() {
 	if CLI.Debug {
 		loggingInit(logging.DEBUG)
 	} else {
@@ -179,48 +226,22 @@ func main() {
 		preserveHelmLabels = true
 	}
 
-	// Cover the edge case when we need to render all manifests for a new Application
-	// It will produce a big output and does not fit into "compare" definition hence it's disabled by default
 	if CLI.Branch.PrintAddedManifests {
 		printAddedManifests = true
 	}
 
-	// Cover cases when we need to print out all removed manifests
 	if CLI.Branch.PrintRemovedManifests {
 		printRemovedManifests = true
 	}
 
-	// Cover cases when we need to print out all manifests. It will produce the biggest output.
 	if CLI.Branch.FullOutput {
 		printAddedManifests = true
 		printRemovedManifests = true
 	}
+}
 
-	log.Infof("===> Running argo-compare version [%s]", cyan(version))
-
-	if err := collectRepoCredentials(); err != nil {
+func main() {
+	if err := runCLI(); err != nil {
 		log.Fatal(err)
-	}
-
-	var changedFiles []string
-	var err error
-
-	// There are valid cases when we want to compare a single file only
-	if fileToCompare != "" {
-		changedFiles = []string{fileToCompare}
-	} else {
-		if changedFiles, err = repo.getChangedFiles(utils.OsFileReader{}); err != nil {
-			log.Fatal(err)
-		}
-	}
-
-	if len(changedFiles) == 0 {
-		log.Info("No changed Application files found. Exiting...")
-	} else {
-		compareFiles(&utils.RealCmdRunner{}, changedFiles)
-	}
-
-	if err := printInvalidFilesList(&repo); err != nil {
-		os.Exit(1)
 	}
 }
