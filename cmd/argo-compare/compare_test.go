@@ -103,3 +103,27 @@ metadata:
 	// Compare the modified output with the expected output
 	assert.Equal(t, expectedOutput, string(modifiedData))
 }
+
+func TestProcessFiles(t *testing.T) {
+	compare := &Compare{}
+
+	files := []string{
+		"../../testdata/test.yaml",
+		"../../testdata/test-values.yaml",
+	}
+
+	expectedFiles := []File{
+		{
+			Name: "../../testdata/test.yaml",
+			Sha:  "e263e4264f5570000b3666d6d07749fb67d4b82a6a1e1c1736503adcb7942e5b",
+		},
+		{
+			Name: "../../testdata/test-values.yaml",
+			Sha:  "c22e6d877e8c49693306eb2d16affaa3a318fe602f36b6e733428e9c16ebfa32",
+		},
+	}
+
+	foundFiles := compare.processFiles(files, "src")
+
+	assert.Equal(t, expectedFiles, foundFiles)
+}
