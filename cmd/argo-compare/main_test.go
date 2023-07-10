@@ -111,3 +111,44 @@ func TestMainGetChangedFiles(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"file1"}, changedFiles)
 }
+
+func TestCliCommands(t *testing.T) {
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
+	testCases := []struct {
+		name             string
+		args             []string
+		expectedBranch   string
+		expectedAdded    bool
+		expectedRemoved  bool
+		expectedPreserve bool
+	}{
+		{"minimal input", []string{"cmd", "branch", "main"}, "main", false, false, false},
+		{"full output", []string{"cmd", "branch", "main", "--full-output"}, "main", true, true, false},
+		{"print added", []string{"cmd", "branch", "main", "--print-added-manifests"}, "main", true, false, false},
+		{"print removed", []string{"cmd", "branch", "main", "--print-removed-manifests"}, "main", false, true, false},
+		{"preserve helm labels", []string{"cmd", "branch", "main", "--preserve-helm-labels"}, "main", false, false, true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			os.Args = tc.args
+			err := parseCli()
+			assert.NoErrorf(t, err, "expected to get no error when parsing valid command")
+			assert.Equal(t, tc.expectedBranch, targetBranch)
+
+			updateConfigurations()
+
+			assert.Equal(t, tc.expectedAdded, printAddedManifests)
+			assert.Equal(t, tc.expectedRemoved, printRemovedManifests)
+			assert.Equal(t, tc.expectedPreserve, preserveHelmLabels)
+
+			// Reset global vars
+			targetBranch = ""
+			printAddedManifests = false
+			printRemovedManifests = false
+			preserveHelmLabels = false
+		})
+	}
+}

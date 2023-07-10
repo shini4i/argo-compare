@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"github.com/op/go-logging"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
@@ -102,4 +104,59 @@ metadata:
 
 	// Compare the modified output with the expected output
 	assert.Equal(t, expectedOutput, string(modifiedData))
+}
+
+func TestProcessFiles(t *testing.T) {
+	compare := &Compare{}
+
+	files := []string{
+		"../../testdata/test.yaml",
+		"../../testdata/test-values.yaml",
+	}
+
+	expectedFiles := []File{
+		{
+			Name: "../../testdata/test.yaml",
+			Sha:  "e263e4264f5570000b3666d6d07749fb67d4b82a6a1e1c1736503adcb7942e5b",
+		},
+		{
+			Name: "../../testdata/test-values.yaml",
+			Sha:  "c22e6d877e8c49693306eb2d16affaa3a318fe602f36b6e733428e9c16ebfa32",
+		},
+	}
+
+	foundFiles := compare.processFiles(files, "src")
+
+	assert.Equal(t, expectedFiles, foundFiles)
+}
+
+func TestPrintFilesStatus(t *testing.T) {
+	// Test case 1: No added, removed or changed files
+	var buf bytes.Buffer
+	backend := logging.NewLogBackend(&buf, "", 0)
+	logging.SetBackend(backend)
+
+	c := &Compare{}
+	c.printFilesStatus()
+
+	logs := buf.String()
+	assert.Contains(t, logs, "No diff was found in rendered manifests!")
+
+	// Test case 2: Found added and removed files, but no changed files
+	backend = logging.NewLogBackend(&buf, "", 0)
+
+	logging.SetBackend(backend)
+
+	c = &Compare{
+		addedFiles:   []File{{Name: "file1", Sha: "123"}},
+		removedFiles: []File{{Name: "file2", Sha: "456"}},
+		diffFiles:    []File{},
+	}
+
+	c.printFilesStatus()
+
+	logs = buf.String()
+	assert.Contains(t, logs, "The following 1 file/files would be added:")
+	assert.Contains(t, logs, "The following 1 file/files would be removed:")
+	assert.NotContains(t, logs, "The following 1 file/files would be changed:")
 }
