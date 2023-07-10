@@ -218,3 +218,38 @@ func TestRenderAppSource(t *testing.T) {
 	err = renderAppSource(mockCmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType)
 	assert.Errorf(t, err, "expected error, got %v", err)
 }
+
+func TestFindHelmRepoCredentials(t *testing.T) {
+	repoCreds := []RepoCredentials{
+		{Url: "https://charts.example.com", Username: "user", Password: "pass"},
+		{Url: "https://charts.test.com", Username: "testuser", Password: "testpass"},
+	}
+
+	tests := []struct {
+		name         string
+		url          string
+		expectedUser string
+		expectedPass string
+	}{
+		{
+			name:         "Credentials Found",
+			url:          "https://charts.example.com",
+			expectedUser: "user",
+			expectedPass: "pass",
+		},
+		{
+			name:         "Credentials Not Found",
+			url:          "https://charts.notfound.com",
+			expectedUser: "",
+			expectedPass: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			username, password := findHelmRepoCredentials(tt.url, repoCreds)
+			assert.Equal(t, tt.expectedUser, username)
+			assert.Equal(t, tt.expectedPass, password)
+		})
+	}
+}

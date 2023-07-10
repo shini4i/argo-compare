@@ -221,15 +221,7 @@ func downloadHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, cacheDi
 	}
 
 	if len(chartFileName) == 0 {
-		var username, password string
-
-		for _, repoCred := range repoCredentials {
-			if repoCred.Url == repoUrl {
-				username = repoCred.Username
-				password = repoCred.Password
-				break
-			}
-		}
+		username, password := findHelmRepoCredentials(repoUrl, repoCredentials)
 
 		log.Debugf("Downloading version [%s] of [%s] chart...",
 			cyan(targetRevision),
@@ -318,4 +310,16 @@ func extractHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, chartNam
 	}
 
 	return nil
+}
+
+// findHelmRepoCredentials scans the provided array of RepoCredentials for a match to the
+// provided repository URL, and returns the associated username and password.
+// If no matching credentials are found, it returns two empty strings.
+func findHelmRepoCredentials(url string, credentials []RepoCredentials) (string, string) {
+	for _, repoCred := range credentials {
+		if repoCred.Url == url {
+			return repoCred.Username, repoCred.Password
+		}
+	}
+	return "", ""
 }
