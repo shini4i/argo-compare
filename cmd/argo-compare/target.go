@@ -299,7 +299,9 @@ func extractHelmChart(cmdRunner utils.CmdRunner, globber utils.Globber, chartNam
 		"-C", fmt.Sprintf("%s/charts/%s", tmpDir, targetType),
 	)
 
-	log.Info(stdout)
+	if len(stdout) > 0 {
+		log.Info(stdout)
+	}
 
 	if len(stderr) > 0 {
 		log.Error(stderr)

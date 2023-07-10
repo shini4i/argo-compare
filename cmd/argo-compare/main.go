@@ -185,7 +185,7 @@ func runCLI() error {
 		return err
 	}
 
-	changedFiles, err := getChangedFiles(utils.OsFileReader{}, &repo, "")
+	changedFiles, err := getChangedFiles(utils.OsFileReader{}, &repo, fileToCompare)
 	if err != nil {
 		return err
 	}
