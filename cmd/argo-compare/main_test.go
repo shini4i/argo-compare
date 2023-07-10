@@ -113,58 +113,42 @@ func TestMainGetChangedFiles(t *testing.T) {
 }
 
 func TestCliCommands(t *testing.T) {
-	// Test case 1: minimal input provided
-	os.Args = []string{"cmd", "branch", "main"}
-	err := parseCli()
-	assert.NoErrorf(t, err, "expected to get no error when parsing valid command")
-	assert.Equal(t, "main", targetBranch)
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
 
-	// Test case 2: full output flag provided
-	os.Args = []string{"cmd", "branch", "main", "--full-output"}
-	err = parseCli()
-	assert.NoErrorf(t, err, "expected to get no error when parsing valid command")
-	assert.Equal(t, "main", targetBranch)
+	testCases := []struct {
+		name             string
+		args             []string
+		expectedBranch   string
+		expectedAdded    bool
+		expectedRemoved  bool
+		expectedPreserve bool
+	}{
+		{"minimal input", []string{"cmd", "branch", "main"}, "main", false, false, false},
+		{"full output", []string{"cmd", "branch", "main", "--full-output"}, "main", true, true, false},
+		{"print added", []string{"cmd", "branch", "main", "--print-added-manifests"}, "main", true, false, false},
+		{"print removed", []string{"cmd", "branch", "main", "--print-removed-manifests"}, "main", false, true, false},
+		{"preserve helm labels", []string{"cmd", "branch", "main", "--preserve-helm-labels"}, "main", false, false, true},
+	}
 
-	updateConfigurations()
-	assert.True(t, printAddedManifests)
-	assert.True(t, printRemovedManifests)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			os.Args = tc.args
+			err := parseCli()
+			assert.NoErrorf(t, err, "expected to get no error when parsing valid command")
+			assert.Equal(t, tc.expectedBranch, targetBranch)
 
-	// Test case 3: print added manifests flag provided
+			updateConfigurations()
 
-	// reset the configuration
-	printAddedManifests = false
-	printRemovedManifests = false
+			assert.Equal(t, tc.expectedAdded, printAddedManifests)
+			assert.Equal(t, tc.expectedRemoved, printRemovedManifests)
+			assert.Equal(t, tc.expectedPreserve, preserveHelmLabels)
 
-	os.Args = []string{"cmd", "branch", "main", "--print-added-manifests"}
-	err = parseCli()
-	assert.NoErrorf(t, err, "expected to get no error when parsing valid command")
-	assert.Equal(t, "main", targetBranch)
-
-	updateConfigurations()
-	assert.True(t, printAddedManifests)
-	assert.False(t, printRemovedManifests)
-
-	// Test case 4: print removed manifests flag provided
-
-	// reset the configuration
-	printAddedManifests = false
-	printRemovedManifests = false
-
-	os.Args = []string{"cmd", "branch", "main", "--print-removed-manifests"}
-	err = parseCli()
-	assert.NoErrorf(t, err, "expected to get no error when parsing valid command")
-	assert.Equal(t, "main", targetBranch)
-
-	updateConfigurations()
-	assert.False(t, printAddedManifests)
-	assert.True(t, printRemovedManifests)
-
-	// Test case 5: preserve helm labels flag provided
-	os.Args = []string{"cmd", "branch", "main", "--preserve-helm-labels"}
-	err = parseCli()
-	assert.NoErrorf(t, err, "expected to get no error when parsing valid command")
-	assert.Equal(t, "main", targetBranch)
-
-	updateConfigurations()
-	assert.True(t, preserveHelmLabels)
+			// Reset global vars
+			targetBranch = ""
+			printAddedManifests = false
+			printRemovedManifests = false
+			preserveHelmLabels = false
+		})
+	}
 }
