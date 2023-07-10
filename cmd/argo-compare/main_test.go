@@ -111,3 +111,60 @@ func TestMainGetChangedFiles(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"file1"}, changedFiles)
 }
+
+func TestCliCommands(t *testing.T) {
+	// Test case 1: minimal input provided
+	os.Args = []string{"cmd", "branch", "main"}
+	err := parseCli()
+	assert.NoErrorf(t, err, "expected to get no error when parsing valid command")
+	assert.Equal(t, "main", targetBranch)
+
+	// Test case 2: full output flag provided
+	os.Args = []string{"cmd", "branch", "main", "--full-output"}
+	err = parseCli()
+	assert.NoErrorf(t, err, "expected to get no error when parsing valid command")
+	assert.Equal(t, "main", targetBranch)
+
+	updateConfigurations()
+	assert.True(t, printAddedManifests)
+	assert.True(t, printRemovedManifests)
+
+	// Test case 3: print added manifests flag provided
+
+	// reset the configuration
+	printAddedManifests = false
+	printRemovedManifests = false
+
+	os.Args = []string{"cmd", "branch", "main", "--print-added-manifests"}
+	err = parseCli()
+	assert.NoErrorf(t, err, "expected to get no error when parsing valid command")
+	assert.Equal(t, "main", targetBranch)
+
+	updateConfigurations()
+	assert.True(t, printAddedManifests)
+	assert.False(t, printRemovedManifests)
+
+	// Test case 4: print removed manifests flag provided
+
+	// reset the configuration
+	printAddedManifests = false
+	printRemovedManifests = false
+
+	os.Args = []string{"cmd", "branch", "main", "--print-removed-manifests"}
+	err = parseCli()
+	assert.NoErrorf(t, err, "expected to get no error when parsing valid command")
+	assert.Equal(t, "main", targetBranch)
+
+	updateConfigurations()
+	assert.False(t, printAddedManifests)
+	assert.True(t, printRemovedManifests)
+
+	// Test case 5: preserve helm labels flag provided
+	os.Args = []string{"cmd", "branch", "main", "--preserve-helm-labels"}
+	err = parseCli()
+	assert.NoErrorf(t, err, "expected to get no error when parsing valid command")
+	assert.Equal(t, "main", targetBranch)
+
+	updateConfigurations()
+	assert.True(t, preserveHelmLabels)
+}

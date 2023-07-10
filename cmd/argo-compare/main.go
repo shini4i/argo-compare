@@ -167,8 +167,6 @@ func parseCli() error {
 	case "branch <name>":
 		targetBranch = CLI.Branch.Name
 		fileToCompare = CLI.Branch.File
-	default:
-		return errors.New("unknown command")
 	}
 
 	return nil
