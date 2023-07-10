@@ -38,6 +38,10 @@ func (d *DropCache) BeforeApply(app *kong.Kong) error {
 		return err
 	}
 
-	app.Exit(0)
+	// it is required to be able to unit test this function
+	if app != nil {
+		app.Exit(0)
+	}
+
 	return nil
 }
