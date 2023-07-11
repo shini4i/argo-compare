@@ -36,23 +36,17 @@ func checkFile(cmdRunner utils.CmdRunner, fileReader utils.FileReader, file stri
 	return true, nil
 }
 
-func (g *GitRepo) getChangedFiles(fileReader utils.FileReader) ([]string, error) {
-	stdout, stderr, err := g.CmdRunner.Run("git", "--no-pager", "diff", "--name-only", targetBranch)
-	if err != nil {
-		if stderr != "" {
-			log.Errorf("Error running git command: %s", stderr)
-		}
-		return nil, err
-	}
-
+func printChangeFile(files []string) {
 	log.Debug("===> Found the following changed files:")
-	for _, file := range strings.Split(stdout, "\n") {
+	for _, file := range files {
 		if file != "" {
 			log.Debugf("▶ %s", file)
 		}
 	}
+}
 
-	for _, file := range strings.Split(stdout, "\n") {
+func (g *GitRepo) sortChangedFiles(fileReader utils.FileReader, files []string) {
+	for _, file := range files {
 		if filepath.Ext(file) == ".yaml" {
 			if _, err := checkFile(g.CmdRunner, fileReader, file); errors.Is(err, invalidFileError) {
 				g.invalidFiles = append(g.invalidFiles, file)
@@ -67,6 +61,16 @@ func (g *GitRepo) getChangedFiles(fileReader utils.FileReader) ([]string, error)
 		for _, file := range g.changedFiles {
 			log.Infof("▶ %s", file)
 		}
+	}
+}
+
+func (g *GitRepo) getChangedFiles(fileReader utils.FileReader) ([]string, error) {
+	if stdout, stderr, err := g.CmdRunner.Run("git", "--no-pager", "diff", "--name-only", targetBranch); err != nil {
+		log.Errorf("Error running git command: %s", stderr)
+		return nil, err
+	} else {
+		printChangeFile(strings.Split(stdout, "\n"))
+		g.sortChangedFiles(fileReader, strings.Split(stdout, "\n"))
 	}
 
 	return g.changedFiles, nil
