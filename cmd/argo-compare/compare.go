@@ -106,27 +106,30 @@ func (c *Compare) compareFiles() {
 	c.diffFiles = diffFiles
 }
 
+// findNewOrRemovedFiles scans source and destination files to identify
+// newly added or removed files. It populates the addedFiles and removedFiles
+// fields of the Compare struct with the respective files. A file is considered
+// added if it exists in the source but not in the destination, and removed if
+// it exists in the destination but not in the source.
 func (c *Compare) findNewOrRemovedFiles() {
+	srcFileMap := make(map[string]File)
 	for _, srcFile := range c.srcFiles {
-		var found bool
-		for _, dstFile := range c.dstFiles {
-			if srcFile.Name == dstFile.Name {
-				found = true
-			}
-		}
-		if !found {
+		srcFileMap[srcFile.Name] = srcFile
+	}
+
+	dstFileMap := make(map[string]File)
+	for _, dstFile := range c.dstFiles {
+		dstFileMap[dstFile.Name] = dstFile
+	}
+
+	for fileName, srcFile := range srcFileMap {
+		if _, found := dstFileMap[fileName]; !found {
 			c.addedFiles = append(c.addedFiles, srcFile)
 		}
 	}
 
-	for _, dstFile := range c.dstFiles {
-		var found bool
-		for _, srcFile := range c.srcFiles {
-			if dstFile.Name == srcFile.Name {
-				found = true
-			}
-		}
-		if !found {
+	for fileName, dstFile := range dstFileMap {
+		if _, found := srcFileMap[fileName]; !found {
 			c.removedFiles = append(c.removedFiles, dstFile)
 		}
 	}
