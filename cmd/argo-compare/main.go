@@ -117,7 +117,9 @@ func compareFiles(cmdRunner utils.CmdRunner, changedFiles []string) {
 				}
 			}
 
-			comparer := Compare{}
+			comparer := Compare{
+				CmdRunner: &utils.RealCmdRunner{},
+			}
 			comparer.findFiles()
 			comparer.printFilesStatus()
 		}()

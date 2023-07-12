@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"github.com/codingsince1985/checksum"
 	"github.com/fatih/color"
-	"github.com/op/go-logging"
 	"github.com/sergi/go-diff/diffmatchpatch"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/helpers"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -21,6 +19,7 @@ type File struct {
 }
 
 type Compare struct {
+	CmdRunner    utils.CmdRunner
 	srcFiles     []File
 	dstFiles     []File
 	diffFiles    []File
@@ -186,18 +185,12 @@ func (c *Compare) processManifest(file File, fileType string) {
 func (c *Compare) printDiffFile(diffFile File) {
 	switch diffCommand {
 	case "built-in":
-		srcFile := c.readFile(fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name))
-		dstFile := c.readFile(fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name))
+		srcFile := string(helpers.ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name)))
+		dstFile := string(helpers.ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name)))
 		c.printBuiltInDiff(srcFile, dstFile)
 	default:
 		c.runCustomDiffCommand(diffFile)
 	}
-}
-
-// readFile reads a file from a given path and returns its content as a string.
-// It uses the helpers.ReadFile utility function to perform the reading operation.
-func (c *Compare) readFile(filePath string) string {
-	return string(helpers.ReadFile(filePath))
 }
 
 // printBuiltInDiff uses the built-in diff method to compare two files and prints
@@ -220,19 +213,15 @@ func (c *Compare) runCustomDiffCommand(diffFile File) {
 
 	log.Debugf("Using custom diff command: %s", cyan(command))
 
-	cmd := exec.Command("sh", "-c", command)
-	cmd.Stdout = os.Stdout
-
-	if logging.GetLevel(loggerName) == logging.DEBUG {
-		cmd.Stderr = os.Stderr
-	}
-
-	if err := cmd.Run(); err != nil {
+	stdout, stderr, err := c.CmdRunner.Run("sh", "-c", command)
+	if err != nil {
 		// In some cases custom diff command might return non-zero exit code which is not an error
 		// For example: diff -u file1 file2 returns 1 if files are different
 		// Hence we are not failing here
-		log.Debug(err.Error())
+		log.Error(stderr)
 	}
+
+	log.Info(stdout)
 }
 
 // findAndStripHelmLabels scans directory for YAML files, strips pre-defined Helm labels,

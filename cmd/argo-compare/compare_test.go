@@ -2,8 +2,12 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/op/go-logging"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	"os"
 	"testing"
 )
@@ -107,7 +111,9 @@ metadata:
 }
 
 func TestProcessFiles(t *testing.T) {
-	compare := &Compare{}
+	compare := &Compare{
+		CmdRunner: &utils.RealCmdRunner{},
+	}
 
 	files := []string{
 		"../../testdata/test.yaml",
@@ -136,7 +142,9 @@ func TestPrintFilesStatus(t *testing.T) {
 	backend := logging.NewLogBackend(&buf, "", 0)
 	logging.SetBackend(backend)
 
-	c := &Compare{}
+	c := &Compare{
+		CmdRunner: &utils.RealCmdRunner{},
+	}
 	c.printFilesStatus()
 
 	logs := buf.String()
@@ -159,4 +167,41 @@ func TestPrintFilesStatus(t *testing.T) {
 	assert.Contains(t, logs, "The following 1 file would be added:")
 	assert.Contains(t, logs, "The following 2 files would be removed:")
 	assert.NotContains(t, logs, "The following 1 file would be changed:")
+}
+
+// TestRunCustomDiffCommand tests the runCustomDiffCommand function.
+//
+// This test primarily validates the behavior of the function, ensuring
+// that it calls the Run method of CmdRunner with the correct parameters.
+//
+// It uses a mock CmdRunner to provide controlled responses and to record
+// the calls made to it. If the runCustomDiffCommand function doesn't make
+// the expected call to the Run method of the CmdRunner, this test will fail,
+// indicating that the function isn't behaving as we expect.
+//
+// This test isn't concerned with the actual output of the runCustomDiffCommand function,
+// because the function doesn't return any result; it only logs the output.
+//
+// So, the primary purpose of this test is to verify that the function
+// behaves correctly in terms of its interaction with the CmdRunner's Run method.
+func TestRunCustomDiffCommand(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+
+	compare := &Compare{
+		CmdRunner: mockCmdRunner,
+	}
+
+	diffFile := File{Name: "test"}
+
+	command := fmt.Sprintf(diffCommand,
+		fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name),
+		fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name),
+	)
+
+	mockCmdRunner.EXPECT().Run("sh", "-c", command).Return("stdout", "stderr", nil)
+
+	compare.runCustomDiffCommand(diffFile)
 }
