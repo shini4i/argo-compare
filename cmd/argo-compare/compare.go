@@ -181,38 +181,57 @@ func (c *Compare) processManifest(file File, fileType string) {
 	}
 }
 
+// printDiffFile determines the diff method (built-in or custom) to be used and then
+// performs the file difference operation.
 func (c *Compare) printDiffFile(diffFile File) {
 	switch diffCommand {
 	case "built-in":
-		differ := diffmatchpatch.New()
-
-		srcFile := string(helpers.ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name)))
-		dstFile := string(helpers.ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name)))
-
-		diffs := differ.DiffMain(dstFile, srcFile, false)
-
-		log.Info(differ.DiffPrettyText(diffs))
+		srcFile := c.readFile(fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name))
+		dstFile := c.readFile(fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name))
+		c.printBuiltInDiff(srcFile, dstFile)
 	default:
-		command := fmt.Sprintf(diffCommand,
-			fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name),
-			fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name),
-		)
+		c.runCustomDiffCommand(diffFile)
+	}
+}
 
-		log.Debugf("Using custom diff command: %s", cyan(command))
+// readFile reads a file from a given path and returns its content as a string.
+// It uses the helpers.ReadFile utility function to perform the reading operation.
+func (c *Compare) readFile(filePath string) string {
+	return string(helpers.ReadFile(filePath))
+}
 
-		cmd := exec.Command("sh", "-c", command)
-		cmd.Stdout = os.Stdout
+// printBuiltInDiff uses the built-in diff method to compare two files and prints
+// the diff result. The diff method is provided by the diffmatchpatch package.
+func (c *Compare) printBuiltInDiff(srcFile, dstFile string) {
+	differ := diffmatchpatch.New()
+	diffs := differ.DiffMain(dstFile, srcFile, false)
 
-		if logging.GetLevel(loggerName) == logging.DEBUG {
-			cmd.Stderr = os.Stderr
-		}
+	log.Info(differ.DiffPrettyText(diffs))
+}
 
-		if err := cmd.Run(); err != nil {
-			// In some cases custom diff command might return non-zero exit code which is not an error
-			// For example: diff -u file1 file2 returns 1 if files are different
-			// Hence we are not failing here
-			log.Debug(err.Error())
-		}
+// runCustomDiffCommand runs a custom diff command on two files and prints the
+// result. It creates and runs the command using the os/exec package.
+// If the command returns an error, it logs the error as a debug message.
+func (c *Compare) runCustomDiffCommand(diffFile File) {
+	command := fmt.Sprintf(diffCommand,
+		fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name),
+		fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name),
+	)
+
+	log.Debugf("Using custom diff command: %s", cyan(command))
+
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Stdout = os.Stdout
+
+	if logging.GetLevel(loggerName) == logging.DEBUG {
+		cmd.Stderr = os.Stderr
+	}
+
+	if err := cmd.Run(); err != nil {
+		// In some cases custom diff command might return non-zero exit code which is not an error
+		// For example: diff -u file1 file2 returns 1 if files are different
+		// Hence we are not failing here
+		log.Debug(err.Error())
 	}
 }
 
