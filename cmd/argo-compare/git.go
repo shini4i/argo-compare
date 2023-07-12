@@ -69,10 +69,10 @@ func (g *GitRepo) getChangedFiles(fileReader utils.FileReader) ([]string, error)
 		log.Errorf("Error running git command: %s", stderr)
 		return nil, err
 	} else {
-		printChangeFile(strings.Split(stdout, "\n"))
-		g.sortChangedFiles(fileReader, strings.Split(stdout, "\n"))
+		foundFiles := strings.Split(stdout, "\n")
+		printChangeFile(foundFiles)
+		g.sortChangedFiles(fileReader, foundFiles)
 	}
-
 	return g.changedFiles, nil
 }
 
