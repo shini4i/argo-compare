@@ -149,14 +149,14 @@ func TestPrintFilesStatus(t *testing.T) {
 
 	c = &Compare{
 		addedFiles:   []File{{Name: "file1", Sha: "123"}},
-		removedFiles: []File{{Name: "file2", Sha: "456"}},
+		removedFiles: []File{{Name: "file2", Sha: "456"}, {Name: "file3", Sha: "789"}},
 		diffFiles:    []File{},
 	}
 
 	c.printFilesStatus()
 
 	logs = buf.String()
-	assert.Contains(t, logs, "The following 1 file/files would be added:")
-	assert.Contains(t, logs, "The following 1 file/files would be removed:")
-	assert.NotContains(t, logs, "The following 1 file/files would be changed:")
+	assert.Contains(t, logs, "The following 1 file would be added:")
+	assert.Contains(t, logs, "The following 2 files would be removed:")
+	assert.NotContains(t, logs, "The following 1 file would be changed:")
 }
