@@ -38,7 +38,7 @@ func TestGenerateFilesStatus(t *testing.T) {
 	}
 
 	expectedAddedFiles := []File{{Name: file4, Sha: "7890"}}
-	expectedRemovedFiles := []File{{Name: file2, Sha: "90122"}}
+	expectedRemovedFiles := []File{{Name: file2, Sha: "9012"}}
 	expectedDiffFiles := []File{{Name: file1, Sha: "1234"}}
 
 	c.generateFilesStatus()
