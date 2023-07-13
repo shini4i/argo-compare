@@ -24,7 +24,7 @@ jobs:
         run: go install go.uber.org/mock/mockgen@latest
 
       - name: Install go-junit-report
-        run: github.com/jstemmer/go-junit-report/v2@latest
+        run: go install github.com/jstemmer/go-junit-report/v2@latest
 
       - name: Generate junit repot
         run: go test -v 2>&1 ./... | go-junit-report -set-exit-code > report.xml
