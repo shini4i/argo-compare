@@ -5,6 +5,12 @@ help: ## Print this help
 	@echo "Usage: make [target]"
 	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
+.PHONY: install-deps
+install-deps: ## Install dependencies
+	@echo "===> Installing dependencies"
+	@go install go.uber.org/mock/mockgen@latest
+	@go install github.com/jstemmer/go-junit-report@latest
+
 .PHONY: mocks
 mocks: ## Generate mocks
 	@echo "===> Generating mocks"
