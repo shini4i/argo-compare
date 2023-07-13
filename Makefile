@@ -22,7 +22,7 @@ test: mocks ## Run tests
 
 .PHONY: test-coverage
 test-coverage: mocks ## Run tests with coverage
-	@go test -v -coverprofile=coverage.out ./... -count=1 | go-junit-report -set-exit-code > report.xml
+	@go test -v 2>&1 -coverprofile=coverage.out ./... -count=1 | go-junit-report -set-exit-code > report.xml
 
 .PHONY: test-coverage-html
 test-coverage-html: test-coverage ## Run tests with coverage and open HTML report
