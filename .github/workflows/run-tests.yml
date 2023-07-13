@@ -26,8 +26,8 @@ jobs:
       - name: Install go-junit-report
         run: go install github.com/jstemmer/go-junit-report/v2@latest
 
-      - name: Generate junit repot
-        run: go test -v 2>&1 ./... | go-junit-report -set-exit-code > report.xml
+      - name: Run tests
+        run: make test-coverage
 
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action@v2
@@ -35,9 +35,6 @@ jobs:
         with:
           files: |
             test-results/**/*.xml
-
-      - name: Run tests
-        run: make test-coverage
 
       - name: SonarCloud Scan
         uses: sonarsource/sonarcloud-github-action@v1.9.1
