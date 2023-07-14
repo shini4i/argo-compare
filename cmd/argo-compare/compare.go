@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"github.com/codingsince1985/checksum"
 	"github.com/fatih/color"
-	"github.com/op/go-logging"
 	"github.com/sergi/go-diff/diffmatchpatch"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/helpers"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -21,6 +19,7 @@ type File struct {
 }
 
 type Compare struct {
+	CmdRunner    utils.CmdRunner
 	srcFiles     []File
 	dstFiles     []File
 	diffFiles    []File
@@ -135,30 +134,31 @@ func (c *Compare) findNewOrRemovedFiles() {
 	}
 }
 
+// printFilesStatus logs the status of the files processed during comparison.
+// It determines whether files have been added, removed or have differences,
+// and calls printFiles for each case.
 func (c *Compare) printFilesStatus() {
 	if len(c.addedFiles) == 0 && len(c.removedFiles) == 0 && len(c.diffFiles) == 0 {
 		log.Info("No diff was found in rendered manifests!")
 		return
 	}
 
-	if len(c.addedFiles) > 0 {
-		log.Infof("The following %d file/files would be added:", len(c.addedFiles))
-		for _, addedFile := range c.addedFiles {
-			c.processManifest(addedFile, "added")
-		}
-	}
+	c.printFiles(c.addedFiles, "added")
+	c.printFiles(c.removedFiles, "removed")
+	c.printFiles(c.diffFiles, "changed")
+}
 
-	if len(c.removedFiles) > 0 {
-		log.Infof("The following %d file/files would be removed:", len(c.removedFiles))
-		for _, removedFile := range c.removedFiles {
-			c.processManifest(removedFile, "removed")
+// printFiles logs the files that are subject to an operation (addition, removal, change).
+// It logs the number of affected files and processes each file according to the operation
+func (c *Compare) printFiles(files []File, operation string) {
+	if len(files) > 0 {
+		fileText := "file"
+		if len(files) > 1 {
+			fileText = "files"
 		}
-	}
-
-	if len(c.diffFiles) > 0 {
-		log.Infof("The following %d file/files would be changed:", len(c.diffFiles))
-		for _, diffFile := range c.diffFiles {
-			c.processManifest(diffFile, "changed")
+		log.Infof("The following %d %s would be %s:", len(files), fileText, operation)
+		for _, file := range files {
+			c.processManifest(file, operation)
 		}
 	}
 }
@@ -180,39 +180,48 @@ func (c *Compare) processManifest(file File, fileType string) {
 	}
 }
 
+// printDiffFile determines the diff method (built-in or custom) to be used and then
+// performs the file difference operation.
 func (c *Compare) printDiffFile(diffFile File) {
 	switch diffCommand {
 	case "built-in":
-		differ := diffmatchpatch.New()
-
 		srcFile := string(helpers.ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name)))
 		dstFile := string(helpers.ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name)))
-
-		diffs := differ.DiffMain(dstFile, srcFile, false)
-
-		log.Info(differ.DiffPrettyText(diffs))
+		c.printBuiltInDiff(srcFile, dstFile)
 	default:
-		command := fmt.Sprintf(diffCommand,
-			fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name),
-			fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name),
-		)
-
-		log.Debugf("Using custom diff command: %s", cyan(command))
-
-		cmd := exec.Command("sh", "-c", command)
-		cmd.Stdout = os.Stdout
-
-		if logging.GetLevel(loggerName) == logging.DEBUG {
-			cmd.Stderr = os.Stderr
-		}
-
-		if err := cmd.Run(); err != nil {
-			// In some cases custom diff command might return non-zero exit code which is not an error
-			// For example: diff -u file1 file2 returns 1 if files are different
-			// Hence we are not failing here
-			log.Debug(err.Error())
-		}
+		c.runCustomDiffCommand(diffFile)
 	}
+}
+
+// printBuiltInDiff uses the built-in diff method to compare two files and prints
+// the diff result. The diff method is provided by the diffmatchpatch package.
+func (c *Compare) printBuiltInDiff(srcFile, dstFile string) {
+	differ := diffmatchpatch.New()
+	diffs := differ.DiffMain(dstFile, srcFile, false)
+
+	log.Info(differ.DiffPrettyText(diffs))
+}
+
+// runCustomDiffCommand runs a custom diff command on two files and prints the
+// result. It creates and runs the command using the os/exec package.
+// If the command returns an error, it logs the error as a debug message.
+func (c *Compare) runCustomDiffCommand(diffFile File) {
+	command := fmt.Sprintf(diffCommand,
+		fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name),
+		fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name),
+	)
+
+	log.Debugf("Using custom diff command: %s", cyan(command))
+
+	stdout, stderr, err := c.CmdRunner.Run("sh", "-c", command)
+	if err != nil {
+		// In some cases custom diff command might return non-zero exit code which is not an error
+		// For example: diff -u file1 file2 returns 1 if files are different
+		// Hence we are not failing here
+		log.Error(stderr)
+	}
+
+	log.Info(stdout)
 }
 
 // findAndStripHelmLabels scans directory for YAML files, strips pre-defined Helm labels,

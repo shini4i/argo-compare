@@ -11,6 +11,7 @@ bin/
 # coverage files
 coverage.out
 coverage.html
+report.xml
 
 # generated mocks
 cmd/argo-compare/mocks/
