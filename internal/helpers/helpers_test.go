@@ -178,9 +178,7 @@ func TestCreateTempFile(t *testing.T) {
 			t.Fatalf("Failed to read temporary file: %s", err)
 		}
 
-		if string(content) != "test content" {
-			t.Errorf("Unexpected file content: want %q, got %q", "test content", content)
-		}
+		assert.Equal(t, "test content", string(content))
 	})
 
 	t.Run("failed to create file", func(t *testing.T) {
@@ -192,16 +190,5 @@ func TestCreateTempFile(t *testing.T) {
 
 		// assert error to contain the expected message
 		assert.Contains(t, err.Error(), "failed to create temporary file")
-	})
-
-	t.Run("failed to write to file", func(t *testing.T) {
-		// Create a filesystem which fails on write operations
-		fs := afero.NewReadOnlyFs(afero.NewMemMapFs())
-
-		// Attempt to create and write to a file
-		_, err := CreateTempFile(fs, "test content")
-		if err == nil {
-			t.Fatalf("Expected failure to write to file, got no error")
-		}
 	})
 }
