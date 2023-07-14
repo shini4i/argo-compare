@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"os"
@@ -158,4 +159,49 @@ func TestGetGitRepoRoot(t *testing.T) {
 	repoRoot, err = GetGitRepoRoot(mockCmdRunner)
 	assert.Emptyf(t, repoRoot, "expected repo root to be empty, but got [%s]", repoRoot)
 	assert.Errorf(t, err, "expected error to be returned, but got nil")
+}
+
+func TestCreateTempFile(t *testing.T) {
+	t.Run("create and write successful", func(t *testing.T) {
+		// Create a new in-memory filesystem
+		fs := afero.NewMemMapFs()
+
+		// Run the function to test
+		file, err := CreateTempFile(fs, "test content")
+		if err != nil {
+			t.Fatalf("Failed to create temporary file: %s", err)
+		}
+
+		// Check that the file contains the expected content
+		content, err := afero.ReadFile(fs, file.Name())
+		if err != nil {
+			t.Fatalf("Failed to read temporary file: %s", err)
+		}
+
+		if string(content) != "test content" {
+			t.Errorf("Unexpected file content: want %q, got %q", "test content", content)
+		}
+	})
+
+	t.Run("failed to create file", func(t *testing.T) {
+		// Create a read-only in-memory filesystem
+		fs := afero.NewReadOnlyFs(afero.NewMemMapFs())
+
+		// Run the function to test
+		_, err := CreateTempFile(fs, "test content")
+
+		// assert error to contain the expected message
+		assert.Contains(t, err.Error(), "failed to create temporary file")
+	})
+
+	t.Run("failed to write to file", func(t *testing.T) {
+		// Create a filesystem which fails on write operations
+		fs := afero.NewReadOnlyFs(afero.NewMemMapFs())
+
+		// Attempt to create and write to a file
+		_, err := CreateTempFile(fs, "test content")
+		if err == nil {
+			t.Fatalf("Expected failure to write to file, got no error")
+		}
+	})
 }

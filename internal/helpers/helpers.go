@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/mattn/go-zglob"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
+	"github.com/spf13/afero"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -115,8 +116,8 @@ func GetGitRepoRoot(cmdRunner utils.CmdRunner) (string, error) {
 // to this temporary file. The function returns a pointer to the created os.File if it
 // succeeds. If the function fails at any step, it returns an error wrapped with context
 // about what step of the process it failed at.
-func CreateTempFile(content string) (*os.File, error) {
-	tmpFile, err := os.CreateTemp("/tmp", "compare-*.yaml")
+func CreateTempFile(fs afero.Fs, content string) (afero.File, error) {
+	tmpFile, err := afero.TempFile(fs, "/tmp", "compare-*.yaml")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary file: %w", err)
 	}

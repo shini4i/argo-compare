@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/fatih/color"
 	"github.com/shini4i/argo-compare/internal/helpers"
+	"github.com/spf13/afero"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,7 +94,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) 
 		}
 	}
 
-	tmpFile, err := helpers.CreateTempFile(stdout)
+	tmpFile, err := helpers.CreateTempFile(afero.NewOsFs(), stdout)
 	if err != nil {
 		return models.Application{}, fmt.Errorf("failed to create temporary file: %w", err)
 	}
