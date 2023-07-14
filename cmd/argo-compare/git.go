@@ -2,7 +2,9 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"github.com/fatih/color"
+	"github.com/shini4i/argo-compare/internal/helpers"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,43 +79,35 @@ func (g *GitRepo) getChangedFiles(fileReader utils.FileReader) ([]string, error)
 }
 
 func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) (models.Application, error) {
-	var tmpFile *os.File
-
 	log.Debugf("Getting content of %s from %s", targetFile, targetBranch)
 
 	stdout, stderr, err := g.CmdRunner.Run("git", "--no-pager", "show", targetBranch+":"+targetFile)
 	if err != nil {
 		if strings.Contains(stderr, "exists on disk, but not in") {
 			color.Yellow("The requested file does not exist in target branch, assuming it is a new Application")
+			if !printAddedManifests {
+				return models.Application{}, gitFileDoesNotExist
+			}
 		} else {
-			return models.Application{}, err
-		}
-
-		// unless we want to print the added manifests, we stop here
-		if !printAddedManifests {
-			return models.Application{}, gitFileDoesNotExist
+			return models.Application{}, fmt.Errorf("failed to get the content of the file: %w", err)
 		}
 	}
 
-	// writing the content to a temporary file to be able to pass it to the parser
-	if tmpFile, err = os.CreateTemp("/tmp", "compare-*.yaml"); err != nil {
-		log.Fatal("Error creating temporary file")
-	}
-
-	if _, err = tmpFile.WriteString(stdout); err != nil {
-		log.Fatal(err.Error())
+	tmpFile, err := helpers.CreateTempFile(stdout)
+	if err != nil {
+		return models.Application{}, fmt.Errorf("failed to create temporary file: %w", err)
 	}
 
 	defer func(name string) {
 		err := os.Remove(name)
 		if err != nil {
-			log.Fatal(err.Error())
+			log.Error(fmt.Errorf("failed to remove temporary file: %w", err))
 		}
 	}(tmpFile.Name())
 
 	target := Target{CmdRunner: g.CmdRunner, FileReader: utils.OsFileReader{}, File: tmpFile.Name()}
 	if err := target.parse(); err != nil {
-		return models.Application{}, err
+		return models.Application{}, fmt.Errorf("failed to parse the application: %w", err)
 	}
 
 	return target.App, nil

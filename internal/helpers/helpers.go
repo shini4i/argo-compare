@@ -109,3 +109,21 @@ func GetGitRepoRoot(cmdRunner utils.CmdRunner) (string, error) {
 	}
 	return strings.TrimSpace(stdout), nil
 }
+
+// CreateTempFile creates a temporary file in the "/tmp" directory with a unique name
+// that has the prefix "compare-" and suffix ".yaml". It then writes the provided content
+// to this temporary file. The function returns a pointer to the created os.File if it
+// succeeds. If the function fails at any step, it returns an error wrapped with context
+// about what step of the process it failed at.
+func CreateTempFile(content string) (*os.File, error) {
+	tmpFile, err := os.CreateTemp("/tmp", "compare-*.yaml")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary file: %w", err)
+	}
+
+	if _, err = tmpFile.WriteString(content); err != nil {
+		return nil, fmt.Errorf("failed to write to temporary file: %w", err)
+	}
+
+	return tmpFile, nil
+}
