@@ -81,8 +81,8 @@ func StripHelmLabels(file string) ([]byte, error) {
 // It takes a file path and a byte slice of data as input.
 // The function writes the data to the file with the specified file permissions (0644).
 // It returns an error if there is an issue writing to the file.
-func WriteToFile(file string, data []byte) error {
-	if err := os.WriteFile(file, data, 0644); err != nil {
+func WriteToFile(fs afero.Fs, file string, data []byte) error {
+	if err := afero.WriteFile(fs, file, data, 0644); err != nil {
 		return err
 	}
 	return nil
@@ -122,7 +122,7 @@ func CreateTempFile(fs afero.Fs, content string) (afero.File, error) {
 		return nil, fmt.Errorf("failed to create temporary file: %w", err)
 	}
 
-	if _, err = tmpFile.WriteString(content); err != nil {
+	if err = WriteToFile(fs, tmpFile.Name(), []byte(content)); err != nil {
 		return nil, fmt.Errorf("failed to write to temporary file: %w", err)
 	}
 

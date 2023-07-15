@@ -113,16 +113,18 @@ func TestStripHelmLabels(t *testing.T) {
 }
 
 func TestWriteToFile(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
 	// Test case 1: Check the successful case
 	filePath := "../../testdata/dynamic/output.txt"
 
 	// Call the function to write data to file
-	if err := WriteToFile(filePath, []byte(expectedStrippedOutput)); err != nil {
+	if err := WriteToFile(fs, filePath, []byte(expectedStrippedOutput)); err != nil {
 		t.Fatalf("WriteToFile returned an error: %s", err)
 	}
 
 	// Read the written file
-	writtenData, err := os.ReadFile(filePath)
+	writtenData, err := afero.ReadFile(fs, filePath)
 	if err != nil {
 		t.Fatalf("Failed to read the written file: %s", err)
 	}
@@ -131,13 +133,15 @@ func TestWriteToFile(t *testing.T) {
 	assert.Equal(t, expectedStrippedOutput, string(writtenData))
 
 	// Cleanup: Remove the written file
-	if err := os.Remove(filePath); err != nil {
+	if err := fs.Remove(filePath); err != nil {
 		t.Fatalf("Failed to remove the written file: %s", err)
 	}
 
 	// Test case 2: Check the error case (we should get an error if the file cannot be written)
+	fs = afero.NewReadOnlyFs(fs)
+
 	filePath = "../../testdata/invalid/output.txt"
-	err = WriteToFile(filePath, []byte(expectedStrippedOutput))
+	err = WriteToFile(fs, filePath, []byte(expectedStrippedOutput))
 	assert.Error(t, err)
 }
 

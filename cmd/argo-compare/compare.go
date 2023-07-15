@@ -7,6 +7,7 @@ import (
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/helpers"
+	"github.com/spf13/afero"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -238,7 +239,7 @@ func (c *Compare) findAndStripHelmLabels() {
 		if desiredState, err := helpers.StripHelmLabels(helmFile); err != nil {
 			log.Fatal(err)
 		} else {
-			if err := helpers.WriteToFile(helmFile, desiredState); err != nil {
+			if err := helpers.WriteToFile(afero.NewOsFs(), helmFile, desiredState); err != nil {
 				log.Fatal(err)
 			}
 		}
