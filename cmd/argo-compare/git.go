@@ -100,9 +100,8 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) 
 	}
 
 	defer func(file afero.File) {
-		err := afero.Fs.Remove(g.FsType, file.Name())
-		if err != nil {
-			log.Error(fmt.Errorf("failed to remove temporary file: %w", err))
+		if err := afero.Fs.Remove(g.FsType, file.Name()); err != nil {
+			log.Errorf("Failed to remove temporary file [%s]: %s", file.Name(), err)
 		}
 	}(tmpFile)
 

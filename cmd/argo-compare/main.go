@@ -81,7 +81,7 @@ func processFiles(cmdRunner utils.CmdRunner, fileName string, fileType string, a
 	return nil
 }
 
-func compareFiles(cmdRunner utils.CmdRunner, changedFiles []string) {
+func compareFiles(fs afero.Fs, cmdRunner utils.CmdRunner, changedFiles []string) {
 	for _, file := range changedFiles {
 		// We want to make sure that the temporary directory is removed after each iteration
 		// whatever the result is, and not after the whole loop is finished, hence the anonymous function
@@ -90,16 +90,16 @@ func compareFiles(cmdRunner utils.CmdRunner, changedFiles []string) {
 
 			log.Infof("===> Processing changed application: [%s]", cyan(file))
 
-			if tmpDir, err = os.MkdirTemp("/tmp", "argo-compare-*"); err != nil {
+			if tmpDir, err = afero.TempDir(fs, "/tmp", "argo-compare-"); err != nil {
 				log.Panic(err)
 			}
 
-			defer func(path string) {
-				err := os.RemoveAll(path)
+			defer func(fs afero.Fs, path string) {
+				err := fs.RemoveAll(path)
 				if err != nil {
 					log.Panic(err)
 				}
-			}(tmpDir)
+			}(fs, tmpDir)
 
 			if err = processFiles(cmdRunner, file, "src", models.Application{}); err != nil {
 				log.Panicf("Could not process the source Application: %s", err)
@@ -118,13 +118,17 @@ func compareFiles(cmdRunner utils.CmdRunner, changedFiles []string) {
 				}
 			}
 
-			comparer := Compare{
-				CmdRunner: &utils.RealCmdRunner{},
-			}
-			comparer.findFiles()
-			comparer.printFilesStatus()
+			runComparison(cmdRunner)
 		}()
 	}
+}
+
+func runComparison(cmdRunner utils.CmdRunner) {
+	comparer := Compare{
+		CmdRunner: cmdRunner,
+	}
+	comparer.findFiles()
+	comparer.printFilesStatus()
 }
 
 func collectRepoCredentials() error {
@@ -196,7 +200,7 @@ func runCLI() error {
 	if len(changedFiles) == 0 {
 		log.Info("No changed Application files found. Exiting...")
 	} else {
-		compareFiles(&utils.RealCmdRunner{}, changedFiles)
+		compareFiles(afero.NewOsFs(), &utils.RealCmdRunner{}, changedFiles)
 	}
 
 	return printInvalidFilesList(&repo)
