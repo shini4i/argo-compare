@@ -5,6 +5,7 @@ import (
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/helpers"
+	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
@@ -138,6 +139,14 @@ func TestGetChangedFileContent(t *testing.T) {
 	repo = &GitRepo{FsType: afero.NewOsFs(), CmdRunner: mockCmdRunner}
 	_, err = repo.getChangedFileContent("main", appFile)
 	assert.ErrorIsf(t, err, os.ErrNotExist, "expected os.ErrNotExist, got %v", err)
+
+	// Test case 4: temporary file creation fails
+	mockCmdRunner.EXPECT().Run("git", "--no-pager", "show", gomock.Any()).Return(appFileContent, "", nil)
+	repo = &GitRepo{FsType: afero.NewReadOnlyFs(afero.NewMemMapFs()), CmdRunner: mockCmdRunner}
+	content, err = repo.getChangedFileContent("main", appFile)
+
+	assert.Equal(t, content, models.Application{}, "content should be empty")
+	assert.ErrorIsf(t, err, os.ErrPermission, "expected os.ErrPermission, got %v", err)
 }
 
 func TestCheckIfApp(t *testing.T) {
@@ -148,7 +157,7 @@ func TestCheckIfApp(t *testing.T) {
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
 
 	isApp, err := checkIfApp(mockCmdRunner, utils.OsFileReader{}, appFile)
-	if !isApp || err != nil {
-		t.Errorf("test.yaml should be detected as app")
-	}
+
+	assert.True(t, isApp, "expected true, got false")
+	assert.NoError(t, err, "expected no error, got %v", err)
 }

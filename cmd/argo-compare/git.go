@@ -96,7 +96,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) 
 
 	tmpFile, err := helpers.CreateTempFile(g.FsType, stdout)
 	if err != nil {
-		return models.Application{}, fmt.Errorf("failed to create temporary file: %w", err)
+		return models.Application{}, err
 	}
 
 	defer func(file afero.File) {
