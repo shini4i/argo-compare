@@ -6,7 +6,6 @@ import (
 	"github.com/fatih/color"
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/spf13/afero"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -16,6 +15,7 @@ import (
 
 type GitRepo struct {
 	CmdRunner    utils.CmdRunner
+	FsType       afero.Fs
 	changedFiles []string
 	invalidFiles []string
 }
@@ -94,17 +94,17 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) 
 		}
 	}
 
-	tmpFile, err := helpers.CreateTempFile(afero.NewOsFs(), stdout)
+	tmpFile, err := helpers.CreateTempFile(g.FsType, stdout)
 	if err != nil {
 		return models.Application{}, fmt.Errorf("failed to create temporary file: %w", err)
 	}
 
-	defer func(name string) {
-		err := os.Remove(name)
+	defer func(file afero.File) {
+		err := afero.Fs.Remove(g.FsType, file.Name())
 		if err != nil {
 			log.Error(fmt.Errorf("failed to remove temporary file: %w", err))
 		}
-	}(tmpFile.Name())
+	}(tmpFile)
 
 	target := Target{CmdRunner: g.CmdRunner, FileReader: utils.OsFileReader{}, File: tmpFile.Name()}
 	if err := target.parse(); err != nil {

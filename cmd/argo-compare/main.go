@@ -9,6 +9,7 @@ import (
 	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/shini4i/argo-compare/internal/models"
+	"github.com/spf13/afero"
 	"os"
 	"strings"
 
@@ -24,7 +25,7 @@ var (
 	cacheDir        = helpers.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
 	tmpDir          string
 	version         = "local"
-	repo            = GitRepo{CmdRunner: &utils.RealCmdRunner{}}
+	repo            = GitRepo{FsType: afero.NewOsFs(), CmdRunner: &utils.RealCmdRunner{}}
 	repoCredentials []RepoCredentials
 	diffCommand     = helpers.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
 )

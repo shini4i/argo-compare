@@ -5,6 +5,7 @@ import (
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/helpers"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"os"
@@ -66,7 +67,7 @@ func TestGetChangedFiles(t *testing.T) {
 	// Test case 1: valid yaml file
 	mockCmdRunner.EXPECT().Run("git", "--no-pager", "diff", "--name-only", gomock.Any()).Return("testdata/test.yaml\nfile2", "", nil)
 
-	repo := &GitRepo{CmdRunner: mockCmdRunner}
+	repo := &GitRepo{FsType: afero.NewOsFs(), CmdRunner: mockCmdRunner}
 
 	files, err := repo.getChangedFiles(utils.OsFileReader{})
 	if err != nil {
@@ -79,7 +80,7 @@ func TestGetChangedFiles(t *testing.T) {
 	// Test case 2: failed to run git command
 	mockCmdRunner.EXPECT().Run("git", "--no-pager", "diff", "--name-only", gomock.Any()).Return("", "some meaningful error", os.ErrNotExist)
 
-	repo = &GitRepo{CmdRunner: mockCmdRunner}
+	repo = &GitRepo{FsType: afero.NewOsFs(), CmdRunner: mockCmdRunner}
 
 	files, err = repo.getChangedFiles(utils.OsFileReader{})
 	// We expect to get an error if git command fails
@@ -94,7 +95,7 @@ func TestGetChangedFiles(t *testing.T) {
 		return nil
 	})
 
-	repo = &GitRepo{CmdRunner: mockCmdRunner}
+	repo = &GitRepo{FsType: afero.NewOsFs(), CmdRunner: mockCmdRunner}
 	files, err = repo.getChangedFiles(mockFileReader)
 
 	// invalid file should not produce an error, but should be skipped and added to the list of invalid files
@@ -115,7 +116,7 @@ func TestGetChangedFileContent(t *testing.T) {
 
 	// Test case 1: file exists and is Application
 	mockCmdRunner.EXPECT().Run("git", "--no-pager", "show", gomock.Any()).Return(appFileContent, "", nil)
-	repo := &GitRepo{CmdRunner: mockCmdRunner}
+	repo := &GitRepo{FsType: afero.NewOsFs(), CmdRunner: mockCmdRunner}
 	content, _ := repo.getChangedFileContent("main", appFile)
 	target := Target{CmdRunner: mockCmdRunner, FileReader: utils.OsFileReader{}, File: appFile}
 	if err := target.parse(); err != nil {
@@ -134,7 +135,7 @@ func TestGetChangedFileContent(t *testing.T) {
 
 	// Test case 3: we got an unexpected error
 	mockCmdRunner.EXPECT().Run("git", "--no-pager", "show", gomock.Any()).Return("", "some meaningful error", os.ErrNotExist)
-	repo = &GitRepo{CmdRunner: mockCmdRunner}
+	repo = &GitRepo{FsType: afero.NewOsFs(), CmdRunner: mockCmdRunner}
 	_, err = repo.getChangedFileContent("main", appFile)
 	assert.ErrorIsf(t, err, os.ErrNotExist, "expected os.ErrNotExist, got %v", err)
 }
