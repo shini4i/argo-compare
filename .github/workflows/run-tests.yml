@@ -23,6 +23,9 @@ jobs:
           go-version: ${{ env.GOLANG_VERSION }}
           cache: false
 
+      - name: Install project dependencies
+        run: make install-deps && make mocks
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
