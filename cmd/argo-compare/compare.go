@@ -150,7 +150,7 @@ func (c *Compare) printFilesStatus() {
 }
 
 // printFiles logs the files that are subject to an operation (addition, removal, change).
-// It logs the number of affected files and processes each file according to the operation
+// It logs the number of affected files and processes each file according to the operation.
 func (c *Compare) printFiles(files []File, operation string) {
 	if len(files) > 0 {
 		fileText := "file"

@@ -77,7 +77,7 @@ func (app *Application) Validate() error {
 	return nil
 }
 
-// Check if the Application structure is empty
+// Check if the Application structure is empty.
 func isEmpty(app *Application) bool {
 	return app.Kind == "" &&
 		app.Metadata.Name == "" &&
