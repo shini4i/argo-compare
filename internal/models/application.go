@@ -77,12 +77,12 @@ func (app *Application) Validate() error {
 	return nil
 }
 
-// Check if the Application structure is empty
+// Check if the Application structure is empty.
 func isEmpty(app *Application) bool {
 	return app.Kind == "" &&
 		app.Metadata.Name == "" &&
 		app.Metadata.Namespace == "" &&
 		app.Spec.Source == nil &&
 		len(app.Spec.Sources) == 0 &&
-		app.Spec.MultiSource == false
+		!app.Spec.MultiSource
 }

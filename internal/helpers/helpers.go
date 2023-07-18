@@ -59,7 +59,7 @@ func StripHelmLabels(file string) ([]byte, error) {
 		"app.kubernetes.io/version",
 	}
 
-	regex := fmt.Sprintf(`%s`, strings.Join(labels, "|"))
+	regex := strings.Join(labels, "|")
 
 	// remove helm labels as they are not needed for comparison
 	// it might be error-prone, as those labels are not always the same

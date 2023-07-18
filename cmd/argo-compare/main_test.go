@@ -95,7 +95,7 @@ func TestMainGetChangedFiles(t *testing.T) {
 
 	repo := GitRepo{FsType: afero.NewOsFs(), CmdRunner: mockCmdRunner}
 
-	changedFiles, err := getChangedFiles(utils.OsFileReader{}, &repo, "")
+	changedFiles, err := getChangedFiles(&repo, "")
 
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"testdata/test.yaml"}, changedFiles)
@@ -104,11 +104,11 @@ func TestMainGetChangedFiles(t *testing.T) {
 	mockCmdRunner.EXPECT().Run("git", "--no-pager", "diff", "--name-only", gomock.Any()).Return("", "", os.ErrPermission)
 
 	repo = GitRepo{FsType: afero.NewOsFs(), CmdRunner: mockCmdRunner}
-	_, err = getChangedFiles(utils.OsFileReader{}, &repo, "")
+	_, err = getChangedFiles(&repo, "")
 	assert.ErrorIsf(t, err, os.ErrPermission, "expected to get an error when running git diff")
 
 	// Test case 3: a specific file was provided
-	changedFiles, err = getChangedFiles(utils.OsFileReader{}, &repo, "file1")
+	changedFiles, err = getChangedFiles(&repo, "file1")
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"file1"}, changedFiles)
 }

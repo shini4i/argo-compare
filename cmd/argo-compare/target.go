@@ -13,12 +13,11 @@ import (
 )
 
 type Target struct {
-	CmdRunner     utils.CmdRunner
-	FileReader    utils.FileReader
-	File          string
-	Type          string // src or dst version
-	App           models.Application
-	chartLocation string
+	CmdRunner  utils.CmdRunner
+	FileReader utils.FileReader
+	File       string
+	Type       string // src or dst version
+	App        models.Application
 }
 
 // parse reads the YAML content from a file and unmarshals it into an Application model.

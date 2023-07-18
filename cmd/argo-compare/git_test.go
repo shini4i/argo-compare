@@ -83,7 +83,7 @@ func TestGetChangedFiles(t *testing.T) {
 
 	repo = &GitRepo{FsType: afero.NewOsFs(), CmdRunner: mockCmdRunner}
 
-	files, err = repo.getChangedFiles(utils.OsFileReader{})
+	_, err = repo.getChangedFiles(utils.OsFileReader{})
 	// We expect to get an error if git command fails
 	assert.ErrorIsf(t, err, os.ErrNotExist, "expected os.ErrNotExist, got %v", err)
 

@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -30,10 +29,8 @@ metadata:
 func TestGetEnv(t *testing.T) {
 	// Test case 1: Check if an existing environment variable is retrieved
 	expectedValue := "test value"
-	err := os.Setenv("TEST_KEY", expectedValue)
-	if err != nil {
-		t.Fatalf("error setting test environment variable: %v", err)
-	}
+	t.Setenv("TEST_KEY", expectedValue)
+
 	actualValue := GetEnv("TEST_KEY", "fallback")
 	if actualValue != expectedValue {
 		t.Errorf("expected value to be [%s], but got [%s]", expectedValue, actualValue)

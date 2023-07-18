@@ -33,7 +33,7 @@ var (
 var (
 	log = logging.MustGetLogger(loggerName)
 	// A bit weird, but it seems that it's the easiest way to implement log level support in CLI tool
-	// without printing the log level and timestamp in the output
+	// without printing the log level and timestamp in the output.
 	format = logging.MustStringFormatter(
 		`%{message}`,
 	)
@@ -185,7 +185,7 @@ func runCLI() error {
 		return err
 	}
 
-	changedFiles, err := getChangedFiles(utils.OsFileReader{}, &repo, fileToCompare)
+	changedFiles, err := getChangedFiles(&repo, fileToCompare)
 	if err != nil {
 		return err
 	}
@@ -199,14 +199,14 @@ func runCLI() error {
 	return printInvalidFilesList(&repo)
 }
 
-func getChangedFiles(fileReader utils.FileReader, repo *GitRepo, fileToCompare string) ([]string, error) {
+func getChangedFiles(repo *GitRepo, fileToCompare string) ([]string, error) {
 	var changedFiles []string
 	var err error
 
 	if fileToCompare != "" {
 		changedFiles = []string{fileToCompare}
 	} else {
-		changedFiles, err = repo.getChangedFiles(fileReader)
+		changedFiles, err = repo.getChangedFiles(utils.OsFileReader{})
 		if err != nil {
 			return nil, err
 		}
