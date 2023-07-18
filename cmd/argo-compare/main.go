@@ -83,43 +83,36 @@ func processFiles(cmdRunner utils.CmdRunner, fileName string, fileType string, a
 
 func compareFiles(fs afero.Fs, cmdRunner utils.CmdRunner, changedFiles []string) {
 	for _, file := range changedFiles {
-		// We want to make sure that the temporary directory is removed after each iteration
-		// whatever the result is, and not after the whole loop is finished, hence the anonymous function
-		func() {
-			var err error
+		var err error
 
-			log.Infof("===> Processing changed application: [%s]", cyan(file))
+		log.Infof("===> Processing changed application: [%s]", cyan(file))
 
-			if tmpDir, err = afero.TempDir(fs, "/tmp", "argo-compare-"); err != nil {
-				log.Panic(err)
+		if tmpDir, err = afero.TempDir(fs, "/tmp", "argo-compare-"); err != nil {
+			log.Panic(err)
+		}
+
+		if err = processFiles(cmdRunner, file, "src", models.Application{}); err != nil {
+			log.Panicf("Could not process the source Application: %s", err)
+		}
+
+		app, err := repo.getChangedFileContent(targetBranch, file)
+		if errors.Is(err, gitFileDoesNotExist) && !printAddedManifests {
+			return
+		} else if err != nil && !errors.Is(err, models.EmptyFileError) {
+			log.Errorf("Could not get the target Application from branch [%s]: %s", targetBranch, err)
+		}
+
+		if !errors.Is(err, models.EmptyFileError) {
+			if err = processFiles(cmdRunner, file, "dst", app); err != nil && !printAddedManifests {
+				log.Panicf("Could not process the destination Application: %s", err)
 			}
+		}
 
-			defer func(fs afero.Fs, path string) {
-				err := fs.RemoveAll(path)
-				if err != nil {
-					log.Panic(err)
-				}
-			}(fs, tmpDir)
+		runComparison(cmdRunner)
 
-			if err = processFiles(cmdRunner, file, "src", models.Application{}); err != nil {
-				log.Panicf("Could not process the source Application: %s", err)
-			}
-
-			app, err := repo.getChangedFileContent(targetBranch, file)
-			if errors.Is(err, gitFileDoesNotExist) && !printAddedManifests {
-				return
-			} else if err != nil && !errors.Is(err, models.EmptyFileError) {
-				log.Errorf("Could not get the target Application from branch [%s]: %s", targetBranch, err)
-			}
-
-			if !errors.Is(err, models.EmptyFileError) {
-				if err = processFiles(cmdRunner, file, "dst", app); err != nil && !printAddedManifests {
-					log.Panicf("Could not process the destination Application: %s", err)
-				}
-			}
-
-			runComparison(cmdRunner)
-		}()
+		if err := fs.RemoveAll(tmpDir); err != nil {
+			log.Panic(err)
+		}
 	}
 }
 
