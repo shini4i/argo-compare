@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"os"
@@ -112,16 +113,18 @@ func TestStripHelmLabels(t *testing.T) {
 }
 
 func TestWriteToFile(t *testing.T) {
+	fs := afero.NewMemMapFs()
+
 	// Test case 1: Check the successful case
 	filePath := "../../testdata/dynamic/output.txt"
 
 	// Call the function to write data to file
-	if err := WriteToFile(filePath, []byte(expectedStrippedOutput)); err != nil {
+	if err := WriteToFile(fs, filePath, []byte(expectedStrippedOutput)); err != nil {
 		t.Fatalf("WriteToFile returned an error: %s", err)
 	}
 
 	// Read the written file
-	writtenData, err := os.ReadFile(filePath)
+	writtenData, err := afero.ReadFile(fs, filePath)
 	if err != nil {
 		t.Fatalf("Failed to read the written file: %s", err)
 	}
@@ -130,13 +133,15 @@ func TestWriteToFile(t *testing.T) {
 	assert.Equal(t, expectedStrippedOutput, string(writtenData))
 
 	// Cleanup: Remove the written file
-	if err := os.Remove(filePath); err != nil {
+	if err := fs.Remove(filePath); err != nil {
 		t.Fatalf("Failed to remove the written file: %s", err)
 	}
 
 	// Test case 2: Check the error case (we should get an error if the file cannot be written)
+	fs = afero.NewReadOnlyFs(fs)
+
 	filePath = "../../testdata/invalid/output.txt"
-	err = WriteToFile(filePath, []byte(expectedStrippedOutput))
+	err = WriteToFile(fs, filePath, []byte(expectedStrippedOutput))
 	assert.Error(t, err)
 }
 
@@ -158,4 +163,36 @@ func TestGetGitRepoRoot(t *testing.T) {
 	repoRoot, err = GetGitRepoRoot(mockCmdRunner)
 	assert.Emptyf(t, repoRoot, "expected repo root to be empty, but got [%s]", repoRoot)
 	assert.Errorf(t, err, "expected error to be returned, but got nil")
+}
+
+func TestCreateTempFile(t *testing.T) {
+	t.Run("create and write successful", func(t *testing.T) {
+		// Create a new in-memory filesystem
+		fs := afero.NewMemMapFs()
+
+		// Run the function to test
+		file, err := CreateTempFile(fs, "test content")
+		if err != nil {
+			t.Fatalf("Failed to create temporary file: %s", err)
+		}
+
+		// Check that the file contains the expected content
+		content, err := afero.ReadFile(fs, file.Name())
+		if err != nil {
+			t.Fatalf("Failed to read temporary file: %s", err)
+		}
+
+		assert.Equal(t, "test content", string(content))
+	})
+
+	t.Run("failed to create file", func(t *testing.T) {
+		// Create a read-only in-memory filesystem
+		fs := afero.NewReadOnlyFs(afero.NewMemMapFs())
+
+		// Run the function to test
+		_, err := CreateTempFile(fs, "test content")
+
+		// assert error to contain the expected message
+		assert.Contains(t, err.Error(), "failed to create temporary file")
+	})
 }

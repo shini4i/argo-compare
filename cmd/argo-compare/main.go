@@ -9,6 +9,7 @@ import (
 	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/shini4i/argo-compare/internal/models"
+	"github.com/spf13/afero"
 	"os"
 	"strings"
 
@@ -24,7 +25,7 @@ var (
 	cacheDir        = helpers.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
 	tmpDir          string
 	version         = "local"
-	repo            = GitRepo{CmdRunner: &utils.RealCmdRunner{}}
+	repo            = GitRepo{FsType: afero.NewOsFs(), CmdRunner: &utils.RealCmdRunner{}}
 	repoCredentials []RepoCredentials
 	diffCommand     = helpers.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
 )
@@ -80,50 +81,47 @@ func processFiles(cmdRunner utils.CmdRunner, fileName string, fileType string, a
 	return nil
 }
 
-func compareFiles(cmdRunner utils.CmdRunner, changedFiles []string) {
+func compareFiles(fs afero.Fs, cmdRunner utils.CmdRunner, changedFiles []string) {
 	for _, file := range changedFiles {
-		// We want to make sure that the temporary directory is removed after each iteration
-		// whatever the result is, and not after the whole loop is finished, hence the anonymous function
-		func() {
-			var err error
+		var err error
 
-			log.Infof("===> Processing changed application: [%s]", cyan(file))
+		log.Infof("===> Processing changed application: [%s]", cyan(file))
 
-			if tmpDir, err = os.MkdirTemp("/tmp", "argo-compare-*"); err != nil {
-				log.Panic(err)
+		if tmpDir, err = afero.TempDir(fs, "/tmp", "argo-compare-"); err != nil {
+			log.Panic(err)
+		}
+
+		if err = processFiles(cmdRunner, file, "src", models.Application{}); err != nil {
+			log.Panicf("Could not process the source Application: %s", err)
+		}
+
+		app, err := repo.getChangedFileContent(targetBranch, file)
+		if errors.Is(err, gitFileDoesNotExist) && !printAddedManifests {
+			return
+		} else if err != nil && !errors.Is(err, models.EmptyFileError) {
+			log.Errorf("Could not get the target Application from branch [%s]: %s", targetBranch, err)
+		}
+
+		if !errors.Is(err, models.EmptyFileError) {
+			if err = processFiles(cmdRunner, file, "dst", app); err != nil && !printAddedManifests {
+				log.Panicf("Could not process the destination Application: %s", err)
 			}
+		}
 
-			defer func(path string) {
-				err := os.RemoveAll(path)
-				if err != nil {
-					log.Panic(err)
-				}
-			}(tmpDir)
+		runComparison(cmdRunner)
 
-			if err = processFiles(cmdRunner, file, "src", models.Application{}); err != nil {
-				log.Panicf("Could not process the source Application: %s", err)
-			}
-
-			app, err := repo.getChangedFileContent(targetBranch, file)
-			if errors.Is(err, gitFileDoesNotExist) && !printAddedManifests {
-				return
-			} else if err != nil && !errors.Is(err, models.EmptyFileError) {
-				log.Errorf("Could not get the target Application from branch [%s]: %s", targetBranch, err)
-			}
-
-			if !errors.Is(err, models.EmptyFileError) {
-				if err = processFiles(cmdRunner, file, "dst", app); err != nil && !printAddedManifests {
-					log.Panicf("Could not process the destination Application: %s", err)
-				}
-			}
-
-			comparer := Compare{
-				CmdRunner: &utils.RealCmdRunner{},
-			}
-			comparer.findFiles()
-			comparer.printFilesStatus()
-		}()
+		if err := fs.RemoveAll(tmpDir); err != nil {
+			log.Panic(err)
+		}
 	}
+}
+
+func runComparison(cmdRunner utils.CmdRunner) {
+	comparer := Compare{
+		CmdRunner: cmdRunner,
+	}
+	comparer.findFiles()
+	comparer.printFilesStatus()
 }
 
 func collectRepoCredentials() error {
@@ -195,7 +193,7 @@ func runCLI() error {
 	if len(changedFiles) == 0 {
 		log.Info("No changed Application files found. Exiting...")
 	} else {
-		compareFiles(&utils.RealCmdRunner{}, changedFiles)
+		compareFiles(afero.NewOsFs(), &utils.RealCmdRunner{}, changedFiles)
 	}
 
 	return printInvalidFilesList(&repo)

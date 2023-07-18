@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/mattn/go-zglob"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
+	"github.com/spf13/afero"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -80,8 +81,8 @@ func StripHelmLabels(file string) ([]byte, error) {
 // It takes a file path and a byte slice of data as input.
 // The function writes the data to the file with the specified file permissions (0644).
 // It returns an error if there is an issue writing to the file.
-func WriteToFile(file string, data []byte) error {
-	if err := os.WriteFile(file, data, 0644); err != nil {
+func WriteToFile(fs afero.Fs, file string, data []byte) error {
+	if err := afero.WriteFile(fs, file, data, 0644); err != nil {
 		return err
 	}
 	return nil
@@ -108,4 +109,22 @@ func GetGitRepoRoot(cmdRunner utils.CmdRunner) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(stdout), nil
+}
+
+// CreateTempFile creates a temporary file in the "/tmp" directory with a unique name
+// that has the prefix "compare-" and suffix ".yaml". It then writes the provided content
+// to this temporary file. The function returns a pointer to the created os.File if it
+// succeeds. If the function fails at any step, it returns an error wrapped with context
+// about what step of the process it failed at.
+func CreateTempFile(fs afero.Fs, content string) (afero.File, error) {
+	tmpFile, err := afero.TempFile(fs, "/tmp", "compare-*.yaml")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary file: %w", err)
+	}
+
+	if err = WriteToFile(fs, tmpFile.Name(), []byte(content)); err != nil {
+		return nil, fmt.Errorf("failed to write to temporary file: %w", err)
+	}
+
+	return tmpFile, nil
 }

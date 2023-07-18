@@ -20,6 +20,15 @@ jobs:
         with:
           go-version: '1.20.1'
 
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v1
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          SONAR_TOKEN: op://github-actions/sonarcloud/token
+          GITHUB_TOKEN: op://github-actions/github/token
+
       - name: Install project dependencies
         run: make install-deps
 
@@ -35,6 +44,3 @@ jobs:
 
       - name: SonarCloud Scan
         uses: sonarsource/sonarcloud-github-action@v1.9.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
