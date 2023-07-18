@@ -84,5 +84,5 @@ func isEmpty(app *Application) bool {
 		app.Metadata.Namespace == "" &&
 		app.Spec.Source == nil &&
 		len(app.Spec.Sources) == 0 &&
-		app.Spec.MultiSource == false
+		!app.Spec.MultiSource
 }
