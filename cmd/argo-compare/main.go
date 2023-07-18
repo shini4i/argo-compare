@@ -91,10 +91,16 @@ func compareFiles(fs afero.Fs, cmdRunner utils.CmdRunner, changedFiles []string)
 			log.Panic(err)
 		}
 
-		processFileAndHandleError(cmdRunner, file, "src", models.Application{})
+		if err = processFiles(cmdRunner, file, "src", models.Application{}); err != nil {
+			log.Panicf("Could not process the source Application: %s", err)
+		}
 
 		app, err := repo.getChangedFileContent(targetBranch, file)
-		handleFileContentError(err)
+		if errors.Is(err, gitFileDoesNotExist) && !printAddedManifests {
+			return
+		} else if err != nil && !errors.Is(err, models.EmptyFileError) {
+			log.Errorf("Could not get the target Application from branch [%s]: %s", targetBranch, err)
+		}
 
 		if !errors.Is(err, models.EmptyFileError) {
 			if err = processFiles(cmdRunner, file, "dst", app); err != nil && !printAddedManifests {
@@ -107,20 +113,6 @@ func compareFiles(fs afero.Fs, cmdRunner utils.CmdRunner, changedFiles []string)
 		if err := fs.RemoveAll(tmpDir); err != nil {
 			log.Panic(err)
 		}
-	}
-}
-
-func processFileAndHandleError(cmdRunner utils.CmdRunner, file, fileType string, application models.Application) {
-	if err := processFiles(cmdRunner, file, fileType, application); err != nil {
-		log.Panicf("Could not process the %s Application: %s", fileType, err)
-	}
-}
-
-func handleFileContentError(err error) {
-	if errors.Is(err, gitFileDoesNotExist) && !printAddedManifests {
-		return
-	} else if err != nil && !errors.Is(err, models.EmptyFileError) {
-		log.Errorf("Could not get the target Application from branch [%s]: %s", targetBranch, err)
 	}
 }
 
