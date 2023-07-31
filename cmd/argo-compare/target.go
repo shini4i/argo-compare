@@ -58,18 +58,19 @@ func (t *Target) parse() error {
 // generateValuesFiles generates Helm values files for the application's sources.
 // If the application uses multiple sources, a separate values file is created for each source.
 // Otherwise, a single values file is generated for the application's single source.
-func (t *Target) generateValuesFiles(vg utils.HelmValuesGenerator) {
+func (t *Target) generateValuesFiles(vg utils.HelmValuesGenerator) error {
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
 			if err := vg.GenerateValuesFile(source.Chart, tmpDir, t.Type, source.Helm.Values); err != nil {
-				log.Fatal(err)
+				return err
 			}
 		}
 	} else {
 		if err := vg.GenerateValuesFile(t.App.Spec.Source.Chart, tmpDir, t.Type, t.App.Spec.Source.Helm.Values); err != nil {
-			log.Fatal(err)
+			return err
 		}
 	}
+	return nil
 }
 
 // ensureHelmCharts downloads Helm charts for the application's sources.

@@ -238,7 +238,8 @@ func TestTarget_generateValuesFiles(t *testing.T) {
 	// Test case 1: Successful values file generation with single source Application
 	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("ingress-nginx", gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
-	app.generateValuesFiles(mockHelmValuesGenerator)
+	err = app.generateValuesFiles(mockHelmValuesGenerator)
+	assert.NoError(t, err)
 
 	// Test case 2: Successful values file generation with multiple source Applications
 	app2 := Target{
@@ -253,5 +254,16 @@ func TestTarget_generateValuesFiles(t *testing.T) {
 	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("kubed", gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("sealed-secrets", gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
-	app2.generateValuesFiles(mockHelmValuesGenerator)
+	err = app2.generateValuesFiles(mockHelmValuesGenerator)
+	assert.NoError(t, err)
+
+	// Test case 3: Failed values file generation with single source Application
+	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("ingress-nginx", gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("some unexpected error"))
+	err = app.generateValuesFiles(mockHelmValuesGenerator)
+	assert.ErrorContains(t, err, "some unexpected error")
+
+	// Test case 4: Failed values file generation with multiple source Applications
+	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("kubed", gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("multiple source apps error"))
+	err = app2.generateValuesFiles(mockHelmValuesGenerator)
+	assert.ErrorContains(t, err, "multiple source apps error")
 }
