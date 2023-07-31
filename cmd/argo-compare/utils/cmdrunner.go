@@ -14,9 +14,7 @@ func (r *RealCmdRunner) Run(cmd string, args ...string) (string, string, error) 
 	command.Stdout = &stdoutBuffer
 	command.Stderr = &stderrBuffer
 
-	if err := command.Run(); err != nil {
-		return stdoutBuffer.String(), stderrBuffer.String(), err
-	}
+	err := command.Run()
 
-	return stdoutBuffer.String(), stderrBuffer.String(), nil
+	return stdoutBuffer.String(), stderrBuffer.String(), err
 }
