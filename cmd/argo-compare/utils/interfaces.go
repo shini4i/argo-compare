@@ -18,3 +18,7 @@ type FileReader interface {
 type Globber interface {
 	Glob(pattern string) ([]string, error)
 }
+
+type HelmValuesGenerator interface {
+	GenerateValuesFile(chartName, tmpDir, targetType, values string) error
+}

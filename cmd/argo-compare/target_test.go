@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"os"
@@ -14,42 +15,6 @@ import (
 const (
 	testsDir = "../../testdata/disposable"
 )
-
-func TestGenerateValuesFile(t *testing.T) {
-	// Create a temporary directory
-	tmpDir, err := os.MkdirTemp(testsDir, "test-")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Delete the directory after the test finishes
-	defer func(path string) {
-		err := os.RemoveAll(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}(tmpDir)
-
-	chartName := "ingress-nginx"
-	targetType := "src"
-	values := "fullnameOverride: ingress-nginx\ncontroller:\n  kind: DaemonSet\n  service:\n    externalTrafficPolicy: Local\n    annotations:\n      fancyAnnotation: false\n"
-
-	// Test case 1: Everything works as expected
-	err = generateValuesFile(chartName, tmpDir, targetType, values)
-	assert.NoError(t, err, "expected no error, got %v", err)
-
-	// Read the generated file
-	generatedValues, err := os.ReadFile(tmpDir + "/" + chartName + "-values-" + targetType + ".yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	assert.Equal(t, values, string(generatedValues))
-
-	// Test case 2: Error when creating the file
-	err = generateValuesFile(chartName, "/non/existing/path", targetType, values)
-	assert.Error(t, err, "expected error, got nil")
-}
 
 func TestDownloadHelmChart(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -252,4 +217,41 @@ func TestFindHelmRepoCredentials(t *testing.T) {
 			assert.Equal(t, tt.expectedPass, password)
 		})
 	}
+}
+
+func TestTarget_generateValuesFiles(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Create an instance of the mock HelmValuesGenerator
+	mockHelmValuesGenerator := mocks.NewMockHelmValuesGenerator(ctrl)
+
+	app := Target{
+		CmdRunner:  &utils.RealCmdRunner{},
+		FileReader: &utils.OsFileReader{},
+		File:       appFile,
+	}
+
+	err := app.parse()
+	assert.NoError(t, err)
+
+	// Test case 1: Successful values file generation with single source Application
+	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("ingress-nginx", gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+
+	app.generateValuesFiles(mockHelmValuesGenerator)
+
+	// Test case 2: Successful values file generation with multiple source Applications
+	app2 := Target{
+		CmdRunner:  &utils.RealCmdRunner{},
+		FileReader: &utils.OsFileReader{},
+		File:       "testdata/test2.yaml",
+	}
+
+	err = app2.parse()
+	assert.NoError(t, err)
+
+	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("kubed", gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("sealed-secrets", gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+
+	app2.generateValuesFiles(mockHelmValuesGenerator)
 }

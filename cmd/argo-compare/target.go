@@ -58,15 +58,15 @@ func (t *Target) parse() error {
 // generateValuesFiles generates Helm values files for the application's sources.
 // If the application uses multiple sources, a separate values file is created for each source.
 // Otherwise, a single values file is generated for the application's single source.
-func (t *Target) generateValuesFiles() {
+func (t *Target) generateValuesFiles(vg utils.HelmValuesGenerator) {
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
-			if err := generateValuesFile(source.Chart, tmpDir, t.Type, source.Helm.Values); err != nil {
+			if err := vg.GenerateValuesFile(source.Chart, tmpDir, t.Type, source.Helm.Values); err != nil {
 				log.Fatal(err)
 			}
 		}
 	} else {
-		if err := generateValuesFile(t.App.Spec.Source.Chart, tmpDir, t.Type, t.App.Spec.Source.Helm.Values); err != nil {
+		if err := vg.GenerateValuesFile(t.App.Spec.Source.Chart, tmpDir, t.Type, t.App.Spec.Source.Helm.Values); err != nil {
 			log.Fatal(err)
 		}
 	}
@@ -175,24 +175,6 @@ func renderAppSource(cmdRunner utils.CmdRunner, releaseName, chartName, chartVer
 
 	if err != nil {
 		log.Error(stderr)
-		return err
-	}
-
-	return nil
-}
-
-// generateValuesFile creates a Helm values file for a given chart in a specified directory.
-// It takes a chart name, a temporary directory for storing the file, the target type categorizing the application,
-// and the content of the values file in string format.
-// The function first attempts to create the file. If an error occurs, it terminates the program.
-// Next, it writes the values string to the file. If an error occurs during this process, the program is also terminated.
-func generateValuesFile(chartName, tmpDir, targetType, values string) error {
-	yamlFile, err := os.Create(fmt.Sprintf("%s/%s-values-%s.yaml", tmpDir, chartName, targetType))
-	if err != nil {
-		return err
-	}
-
-	if _, err := yamlFile.WriteString(values); err != nil {
 		return err
 	}
 
