@@ -70,7 +70,7 @@ func processFiles(cmdRunner utils.CmdRunner, fileName string, fileType string, a
 		}
 	}
 
-	if err := target.generateValuesFiles(utils.RealHelmValuesGenerator{}); err != nil {
+	if err := target.generateValuesFiles(utils.RealHelmChartProcessor{}); err != nil {
 		return err
 	}
 

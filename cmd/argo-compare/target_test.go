@@ -223,8 +223,8 @@ func TestTarget_generateValuesFiles(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	// Create an instance of the mock HelmValuesGenerator
-	mockHelmValuesGenerator := mocks.NewMockHelmValuesGenerator(ctrl)
+	// Create an instance of the mock HelmChartsProcessor
+	mockHelmValuesGenerator := mocks.NewMockHelmChartsProcessor(ctrl)
 
 	app := Target{
 		CmdRunner:  &utils.RealCmdRunner{},

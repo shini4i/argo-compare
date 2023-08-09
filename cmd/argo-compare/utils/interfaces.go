@@ -19,6 +19,6 @@ type Globber interface {
 	Glob(pattern string) ([]string, error)
 }
 
-type HelmValuesGenerator interface {
+type HelmChartsProcessor interface {
 	GenerateValuesFile(chartName, tmpDir, targetType, values string) error
 }

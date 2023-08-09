@@ -11,7 +11,7 @@ const (
 )
 
 func TestGenerateValuesFile(t *testing.T) {
-	generator := RealHelmValuesGenerator{}
+	generator := RealHelmChartProcessor{}
 
 	// Create a temporary directory
 	tmpDir, err := os.MkdirTemp(testsDir, "test-")
