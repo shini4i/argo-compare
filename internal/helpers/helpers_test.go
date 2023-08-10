@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"testing"
@@ -127,4 +128,47 @@ func TestCreateTempFile(t *testing.T) {
 		// assert error to contain the expected message
 		assert.Contains(t, err.Error(), "failed to create temporary file")
 	})
+}
+
+func TestFindHelmRepoCredentials(t *testing.T) {
+	repoCreds := []models.RepoCredentials{
+		{
+			Url:      "https://charts.example.com",
+			Username: "user",
+			Password: "pass",
+		},
+		{
+			Url:      "https://charts.test.com",
+			Username: "testuser",
+			Password: "testpass",
+		},
+	}
+
+	tests := []struct {
+		name         string
+		url          string
+		expectedUser string
+		expectedPass string
+	}{
+		{
+			name:         "Credentials Found",
+			url:          "https://charts.example.com",
+			expectedUser: "user",
+			expectedPass: "pass",
+		},
+		{
+			name:         "Credentials Not Found",
+			url:          "https://charts.notfound.com",
+			expectedUser: "",
+			expectedPass: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			username, password := FindHelmRepoCredentials(tt.url, repoCreds)
+			assert.Equal(t, tt.expectedUser, username)
+			assert.Equal(t, tt.expectedPass, password)
+		})
+	}
 }
