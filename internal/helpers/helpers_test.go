@@ -27,30 +27,22 @@ func TestGetEnv(t *testing.T) {
 	t.Setenv("TEST_KEY", expectedValue)
 
 	actualValue := GetEnv("TEST_KEY", "fallback")
-	if actualValue != expectedValue {
-		t.Errorf("expected value to be [%s], but got [%s]", expectedValue, actualValue)
-	}
+	assert.Equal(t, expectedValue, actualValue)
 
 	// Test case 2: Check if a missing environment variable falls back to the default value
 	expectedValue = "fallback"
 	actualValue = GetEnv("MISSING_KEY", expectedValue)
-	if actualValue != expectedValue {
-		t.Errorf("expected value to be [%s], but got [%s]", expectedValue, actualValue)
-	}
+	assert.Equal(t, expectedValue, actualValue)
 }
 
 func TestContains(t *testing.T) {
 	// Test case 1: Check if an item is in a slice
 	slice1 := []string{"apple", "banana", "cherry"}
-	if !Contains(slice1, "banana") {
-		t.Errorf("expected to find 'banana' in slice, but didn't")
-	}
+	assert.True(t, Contains(slice1, "apple"))
 
 	// Test case 2: Check if an item is not in a slice
 	slice2 := []string{"apple", "banana", "cherry"}
-	if Contains(slice2, "orange") {
-		t.Errorf("expected not to find 'orange' in slice, but did")
-	}
+	assert.False(t, Contains(slice2, "orange"))
 }
 
 func TestStripHelmLabels(t *testing.T) {
@@ -72,23 +64,19 @@ func TestWriteToFile(t *testing.T) {
 	filePath := "../../testdata/dynamic/output.txt"
 
 	// Call the function to write data to file
-	if err := WriteToFile(fs, filePath, []byte(expectedStrippedOutput)); err != nil {
-		t.Fatalf("WriteToFile returned an error: %s", err)
-	}
+	err := WriteToFile(fs, filePath, []byte(expectedStrippedOutput))
+	assert.NoError(t, err)
 
 	// Read the written file
 	writtenData, err := afero.ReadFile(fs, filePath)
-	if err != nil {
-		t.Fatalf("Failed to read the written file: %s", err)
-	}
+	assert.NoError(t, err)
 
 	// Compare the written data with the test data
 	assert.Equal(t, expectedStrippedOutput, string(writtenData))
 
 	// Cleanup: Remove the written file
-	if err := fs.Remove(filePath); err != nil {
-		t.Fatalf("Failed to remove the written file: %s", err)
-	}
+	err = fs.Remove(filePath)
+	assert.NoError(t, err)
 
 	// Test case 2: Check the error case (we should get an error if the file cannot be written)
 	fs = afero.NewReadOnlyFs(fs)
@@ -105,16 +93,11 @@ func TestCreateTempFile(t *testing.T) {
 
 		// Run the function to test
 		file, err := CreateTempFile(fs, "test content")
-		if err != nil {
-			t.Fatalf("Failed to create temporary file: %s", err)
-		}
+		assert.NoError(t, err)
 
 		// Check that the file contains the expected content
 		content, err := afero.ReadFile(fs, file.Name())
-		if err != nil {
-			t.Fatalf("Failed to read temporary file: %s", err)
-		}
-
+		assert.NoError(t, err)
 		assert.Equal(t, "test content", string(content))
 	})
 

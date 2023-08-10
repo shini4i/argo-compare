@@ -74,7 +74,9 @@ func processFiles(cmdRunner interfaces.CmdRunner, fileName string, fileType stri
 		return err
 	}
 
-	target.renderAppSources()
+	if err := target.renderAppSources(helmChartProcessor); err != nil {
+		return err
+	}
 
 	return nil
 }

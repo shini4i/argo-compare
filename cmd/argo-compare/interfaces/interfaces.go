@@ -26,4 +26,5 @@ type HelmChartsProcessor interface {
 	GenerateValuesFile(chartName, tmpDir, targetType, values string) error
 	DownloadHelmChart(cmdRunner CmdRunner, globber Globber, cacheDir, repoUrl, chartName, targetRevision string, repoCredentials []models.RepoCredentials) error
 	ExtractHelmChart(cmdRunner CmdRunner, globber Globber, chartName, chartVersion, chartLocation, tmpDir, targetType string) error
+	RenderAppSource(cmdRunner CmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType string) error
 }

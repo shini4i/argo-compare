@@ -187,3 +187,47 @@ func TestExtractHelmChart(t *testing.T) {
 	err = helmChartProcessor.ExtractHelmChart(mockCmdRunner, mockGlobber, "ingress-nginx", "3.34.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
 	assert.Error(t, err, "expected error, got %v", err)
 }
+
+func TestRenderAppSource(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	helmChartProcessor := RealHelmChartProcessor{Log: logging.MustGetLogger("test")}
+
+	// Create an instance of the mock CmdRunner
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+
+	releaseName := "my-release"
+	chartName := "my-chart"
+	chartVersion := "1.2.3"
+	tmpDir := testsDir + "/tmp"
+	targetType := "src"
+
+	// Test case 1: Successful render
+	mockCmdRunner.EXPECT().Run("helm",
+		"template",
+		"--release-name", gomock.Any(),
+		gomock.Any(),
+		"--output-dir", gomock.Any(),
+		"--values", gomock.Any(),
+		"--values", gomock.Any()).Return("", "", nil)
+
+	// Call the function under test
+	err := helmChartProcessor.RenderAppSource(mockCmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType)
+	assert.NoError(t, err, "expected no error, got %v", err)
+
+	// Test case 2: Failed render
+	osErr := &exec.ExitError{
+		ProcessState: &os.ProcessState{},
+	}
+	mockCmdRunner.EXPECT().Run("helm",
+		"template",
+		"--release-name", gomock.Any(),
+		gomock.Any(),
+		"--output-dir", gomock.Any(),
+		"--values", gomock.Any(),
+		"--values", gomock.Any()).Return("", "", osErr)
+
+	err = helmChartProcessor.RenderAppSource(mockCmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType)
+	assert.Errorf(t, err, "expected error, got %v", err)
+}
