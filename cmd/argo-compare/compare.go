@@ -5,7 +5,7 @@ import (
 	"github.com/codingsince1985/checksum"
 	"github.com/fatih/color"
 	"github.com/sergi/go-diff/diffmatchpatch"
-	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
+	interfaces "github.com/shini4i/argo-compare/cmd/argo-compare/interfaces"
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/spf13/afero"
 	"path/filepath"
@@ -20,7 +20,7 @@ type File struct {
 }
 
 type Compare struct {
-	CmdRunner    utils.CmdRunner
+	CmdRunner    interfaces.CmdRunner
 	srcFiles     []File
 	dstFiles     []File
 	diffFiles    []File
@@ -46,7 +46,7 @@ func (c *Compare) findFiles() {
 
 	go func() {
 		defer wg.Done()
-		if srcFiles, err := helpers.FindYamlFiles(filepath.Join(tmpDir, "templates/src")); err == nil {
+		if srcFiles, err := FindYamlFiles(filepath.Join(tmpDir, "templates/src")); err == nil {
 			c.srcFiles = c.processFiles(srcFiles, "src")
 		} else {
 			log.Fatal(err)
@@ -55,7 +55,7 @@ func (c *Compare) findFiles() {
 
 	go func() {
 		defer wg.Done()
-		if dstFiles, err := helpers.FindYamlFiles(filepath.Join(tmpDir, "templates/dst")); err == nil {
+		if dstFiles, err := FindYamlFiles(filepath.Join(tmpDir, "templates/dst")); err == nil {
 			c.dstFiles = c.processFiles(dstFiles, "dst")
 		} else {
 			// we are no longer failing here, because we need to support the case where the destination
@@ -170,11 +170,11 @@ func (c *Compare) processManifest(file File, fileType string) {
 	switch fileType {
 	case "added":
 		if printAddedManifests {
-			color.Green(string(helpers.ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, file.Name))))
+			color.Green(string(ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, file.Name))))
 		}
 	case "removed":
 		if printRemovedManifests {
-			color.Red(string(helpers.ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, file.Name))))
+			color.Red(string(ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, file.Name))))
 		}
 	case "changed":
 		c.printDiffFile(file)
@@ -186,8 +186,8 @@ func (c *Compare) processManifest(file File, fileType string) {
 func (c *Compare) printDiffFile(diffFile File) {
 	switch diffCommand {
 	case "built-in":
-		srcFile := string(helpers.ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name)))
-		dstFile := string(helpers.ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name)))
+		srcFile := string(ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name)))
+		dstFile := string(ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name)))
 		c.printBuiltInDiff(srcFile, dstFile)
 	default:
 		c.runCustomDiffCommand(diffFile)
@@ -231,7 +231,7 @@ func (c *Compare) findAndStripHelmLabels() {
 	var helmFiles []string
 	var err error
 
-	if helmFiles, err = helpers.FindYamlFiles(tmpDir); err != nil {
+	if helmFiles, err = FindYamlFiles(tmpDir); err != nil {
 		log.Fatal(err)
 	}
 

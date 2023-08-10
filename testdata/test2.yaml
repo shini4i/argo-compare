@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ingress-nginx
+  namespace: argo-cd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.appscode.com/stable
+      chart: kubed
+      targetRevision: "v0.13.2"
+      helm:
+        values: |
+          fullnameOverride: kubed
+          enableAnalytics: false
+          config:
+            clusterName: example
+    - repoURL: https://bitnami-labs.github.io/sealed-secrets
+      chart: sealed-secrets
+      targetRevision: "2.10.0"
+      helm:
+        values: |
+          fullnameOverride: sealed-secrets
+          args: ["--key-renew-period=0", "--update-status"]
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: web
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
