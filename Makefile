@@ -14,7 +14,7 @@ install-deps: ## Install dependencies
 .PHONY: mocks
 mocks: ## Generate mocks
 	@echo "===> Generating mocks"
-	@mockgen --source=cmd/argo-compare/utils/interfaces.go --destination=cmd/argo-compare/mocks/interfaces.go --package=mocks
+	@mockgen --source=cmd/argo-compare/interfaces/interfaces.go --destination=cmd/argo-compare/mocks/interfaces.go --package=mocks
 
 .PHONY: test
 test: mocks ## Run tests

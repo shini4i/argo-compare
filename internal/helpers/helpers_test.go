@@ -1,14 +1,8 @@
 package helpers
 
 import (
-	"errors"
-	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
-	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/mock/gomock"
-	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -44,28 +38,6 @@ func TestGetEnv(t *testing.T) {
 	}
 }
 
-func TestReadFile(t *testing.T) {
-	// Set up test environment
-	repoRoot, err := GetGitRepoRoot(&utils.RealCmdRunner{})
-	if err != nil {
-		t.Fatalf("error finding git repo root: %v", err)
-	}
-
-	testFile := filepath.Join(repoRoot, "testdata/test.yaml")
-	expectedContents := "apiVersion: argoproj.io/v1alpha1"
-
-	// Test case 1: Check if a file is read successfully
-	actualContents := ReadFile(testFile)
-	if !strings.Contains(string(actualContents), expectedContents) {
-		t.Errorf("expected file contents to contain [%s], but got [%s]", expectedContents, string(actualContents))
-	}
-
-	// Test case 2: Check if a missing file is handled properly
-	missingFile := filepath.Join(repoRoot, "testdata/missing.yaml")
-	actualContents = ReadFile(missingFile)
-	assert.Nilf(t, actualContents, "expected file contents to be nil, but got [%s]", string(actualContents))
-}
-
 func TestContains(t *testing.T) {
 	// Test case 1: Check if an item is in a slice
 	slice1 := []string{"apple", "banana", "cherry"}
@@ -77,23 +49,6 @@ func TestContains(t *testing.T) {
 	slice2 := []string{"apple", "banana", "cherry"}
 	if Contains(slice2, "orange") {
 		t.Errorf("expected not to find 'orange' in slice, but did")
-	}
-}
-
-func TestFindYamlFiles(t *testing.T) {
-	testDir := "testdata"
-	repoRoot, err := GetGitRepoRoot(&utils.RealCmdRunner{})
-	if err != nil {
-		t.Fatalf("error finding git repo root: %v", err)
-	}
-
-	yamlFiles, err := FindYamlFiles(filepath.Join(repoRoot, testDir))
-	if err != nil {
-		t.Fatalf("error finding YAML files: %v", err)
-	}
-
-	if len(yamlFiles) == 0 {
-		t.Errorf("expected to find at least one YAML file in test directory [%s], but none were found", testDir)
 	}
 }
 
@@ -140,26 +95,6 @@ func TestWriteToFile(t *testing.T) {
 	filePath = "../../testdata/invalid/output.txt"
 	err = WriteToFile(fs, filePath, []byte(expectedStrippedOutput))
 	assert.Error(t, err)
-}
-
-func TestGetGitRepoRoot(t *testing.T) {
-	// Test case 1: Check if the git repo root is found
-	repoRoot, err := GetGitRepoRoot(&utils.RealCmdRunner{})
-	if err != nil {
-		t.Fatalf("error finding git repo root: %v", err)
-	}
-	assert.NotEmptyf(t, repoRoot, "expected repo root to be non-empty, but got [%s]", repoRoot)
-
-	// Test case 2: Check if the git repo root could not be found
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
-	mockCmdRunner.EXPECT().Run("git", "rev-parse", "--show-toplevel").Return("", "", errors.New("git not found"))
-
-	repoRoot, err = GetGitRepoRoot(mockCmdRunner)
-	assert.Emptyf(t, repoRoot, "expected repo root to be empty, but got [%s]", repoRoot)
-	assert.Errorf(t, err, "expected error to be returned, but got nil")
 }
 
 func TestCreateTempFile(t *testing.T) {

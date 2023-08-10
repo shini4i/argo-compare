@@ -4,8 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"github.com/fatih/color"
+	"github.com/mattn/go-zglob"
+	interfaces "github.com/shini4i/argo-compare/cmd/argo-compare/interfaces"
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/spf13/afero"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -14,7 +17,7 @@ import (
 )
 
 type GitRepo struct {
-	CmdRunner    utils.CmdRunner
+	CmdRunner    interfaces.CmdRunner
 	FsType       afero.Fs
 	changedFiles []string
 	invalidFiles []string
@@ -25,7 +28,7 @@ var (
 	gitFileDoesNotExist = errors.New("file does not exist in target branch")
 )
 
-func checkFile(cmdRunner utils.CmdRunner, fileReader utils.FileReader, file string) (bool, error) {
+func checkFile(cmdRunner interfaces.CmdRunner, fileReader interfaces.FileReader, file string) (bool, error) {
 	if _, err := checkIfApp(cmdRunner, fileReader, file); err != nil {
 		if errors.Is(err, models.NotApplicationError) {
 			log.Debugf("Skipping non-application file [%s]", file)
@@ -48,7 +51,7 @@ func printChangeFile(files []string) {
 	}
 }
 
-func (g *GitRepo) sortChangedFiles(fileReader utils.FileReader, files []string) {
+func (g *GitRepo) sortChangedFiles(fileReader interfaces.FileReader, files []string) {
 	for _, file := range files {
 		if filepath.Ext(file) == ".yaml" {
 			if _, err := checkFile(g.CmdRunner, fileReader, file); errors.Is(err, invalidFileError) {
@@ -67,7 +70,7 @@ func (g *GitRepo) sortChangedFiles(fileReader utils.FileReader, files []string) 
 	}
 }
 
-func (g *GitRepo) getChangedFiles(fileReader utils.FileReader) ([]string, error) {
+func (g *GitRepo) getChangedFiles(fileReader interfaces.FileReader) ([]string, error) {
 	if stdout, stderr, err := g.CmdRunner.Run("git", "--no-pager", "diff", "--name-only", targetBranch); err != nil {
 		log.Errorf("Error running git command: %s", stderr)
 		return nil, err
@@ -113,7 +116,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) 
 	return target.App, nil
 }
 
-func checkIfApp(cmdRunner utils.CmdRunner, fileReader utils.FileReader, file string) (bool, error) {
+func checkIfApp(cmdRunner interfaces.CmdRunner, fileReader interfaces.FileReader, file string) (bool, error) {
 	log.Debugf("===> Checking if [%s] is an Application", cyan(file))
 
 	target := Target{CmdRunner: cmdRunner, FileReader: fileReader, File: file}
@@ -122,4 +125,39 @@ func checkIfApp(cmdRunner utils.CmdRunner, fileReader utils.FileReader, file str
 		return false, err
 	}
 	return true, nil
+}
+
+// GetGitRepoRoot returns the root directory of the current Git repository.
+// It takes a cmdRunner as input, which is an interface for executing shell commands.
+// The function runs the "git rev-parse --show-toplevel" command to retrieve the root directory path.
+// It captures the standard output and standard error streams and returns them as strings.
+// If the command execution is successful, it trims the leading and trailing white spaces from the output and returns it as the repository root directory path.
+// If there is an error executing the command, the function prints the error message to standard error and returns an empty string and the error.
+func GetGitRepoRoot(cmdRunner interfaces.CmdRunner) (string, error) {
+	stdout, stderr, err := cmdRunner.Run("git", "rev-parse", "--show-toplevel")
+	if err != nil {
+		fmt.Println(stderr)
+		return "", err
+	}
+	return strings.TrimSpace(stdout), nil
+}
+
+// ReadFile reads the contents of the specified file and returns them as a byte slice.
+// If the file does not exist, it prints a message indicating that the file was removed in a source branch and returns nil.
+// The function handles the os.ErrNotExist error to detect if the file is missing.
+func ReadFile(file string) []byte {
+	if readFile, err := os.ReadFile(file); errors.Is(err, os.ErrNotExist) {
+		fmt.Printf("File [%s] was removed in a source branch, skipping...\n", file)
+		return nil
+	} else {
+		return readFile
+	}
+}
+
+// FindYamlFiles finds all YAML files recursively in the specified directory path.
+// It takes a directory path as input.
+// The function uses the zglob package to perform a glob pattern matching with the pattern "**/*.yaml".
+// It returns a slice of file paths for all found YAML files and an error if there is an issue during the search.
+func FindYamlFiles(dirPath string) ([]string, error) {
+	return zglob.Glob(filepath.Join(dirPath, "**", "*.yaml"))
 }

@@ -16,67 +16,6 @@ const (
 	testsDir = "../../testdata/disposable"
 )
 
-func TestDownloadHelmChart(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	// Create the mocks
-	mockGlobber := mocks.NewMockGlobber(ctrl)
-	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
-
-	// Test case 1: chart exists
-	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{testsDir + "/ingress-nginx-3.34.0.tgz"}, nil)
-	err := downloadHelmChart(mockCmdRunner,
-		mockGlobber,
-		testsDir+"/cache",
-		"https://chart.example.com",
-		"ingress-nginx",
-		"3.34.0",
-	)
-	assert.NoError(t, err, "expected no error, got %v", err)
-
-	// Test case 2: chart does not exist, and successfully downloaded
-	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{}, nil)
-	mockCmdRunner.EXPECT().Run("helm",
-		"pull",
-		"--destination", gomock.Any(),
-		"--username", gomock.Any(),
-		"--password", gomock.Any(),
-		"--repo", gomock.Any(),
-		gomock.Any(),
-		"--version", gomock.Any()).Return("", "", nil)
-	err = downloadHelmChart(mockCmdRunner,
-		mockGlobber,
-		testsDir+"/cache",
-		"https://chart.example.com",
-		"ingress-nginx",
-		"3.34.0",
-	)
-	assert.NoError(t, err, "expected no error, got %v", err)
-
-	// Test case 3: chart does not exist, and failed to download
-	osErr := &exec.ExitError{
-		ProcessState: &os.ProcessState{},
-	}
-	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{}, nil)
-	mockCmdRunner.EXPECT().Run("helm",
-		"pull",
-		"--destination", gomock.Any(),
-		"--username", gomock.Any(),
-		"--password", gomock.Any(),
-		"--repo", gomock.Any(),
-		gomock.Any(),
-		"--version", gomock.Any()).Return("", "dummy error message", osErr)
-	err = downloadHelmChart(mockCmdRunner,
-		mockGlobber,
-		testsDir+"/cache",
-		"https://chart.example.com",
-		"ingress-nginx",
-		"3.34.0",
-	)
-	assert.ErrorIsf(t, err, failedToDownloadChart, "expected error %v, got %v", failedToDownloadChart, err)
-}
-
 func TestExtractHelmChart(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -182,41 +121,6 @@ func TestRenderAppSource(t *testing.T) {
 
 	err = renderAppSource(mockCmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType)
 	assert.Errorf(t, err, "expected error, got %v", err)
-}
-
-func TestFindHelmRepoCredentials(t *testing.T) {
-	repoCreds := []RepoCredentials{
-		{Url: "https://charts.example.com", Username: "user", Password: "pass"},
-		{Url: "https://charts.test.com", Username: "testuser", Password: "testpass"},
-	}
-
-	tests := []struct {
-		name         string
-		url          string
-		expectedUser string
-		expectedPass string
-	}{
-		{
-			name:         "Credentials Found",
-			url:          "https://charts.example.com",
-			expectedUser: "user",
-			expectedPass: "pass",
-		},
-		{
-			name:         "Credentials Not Found",
-			url:          "https://charts.notfound.com",
-			expectedUser: "",
-			expectedPass: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			username, password := findHelmRepoCredentials(tt.url, repoCreds)
-			assert.Equal(t, tt.expectedUser, username)
-			assert.Equal(t, tt.expectedPass, password)
-		})
-	}
 }
 
 func TestTarget_generateValuesFiles(t *testing.T) {

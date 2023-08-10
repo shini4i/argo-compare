@@ -7,13 +7,14 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/fatih/color"
 	"github.com/op/go-logging"
-	"github.com/shini4i/argo-compare/internal/helpers"
-	"github.com/shini4i/argo-compare/internal/models"
+	interfaces "github.com/shini4i/argo-compare/cmd/argo-compare/interfaces"
 	"github.com/spf13/afero"
 	"os"
 	"strings"
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
+	"github.com/shini4i/argo-compare/internal/helpers"
+	"github.com/shini4i/argo-compare/internal/models"
 )
 
 const (
@@ -26,7 +27,7 @@ var (
 	tmpDir          string
 	version         = "local"
 	repo            = GitRepo{FsType: afero.NewOsFs(), CmdRunner: &utils.RealCmdRunner{}}
-	repoCredentials []RepoCredentials
+	repoCredentials []models.RepoCredentials
 	diffCommand     = helpers.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
 )
 
@@ -37,21 +38,12 @@ var (
 	format = logging.MustStringFormatter(
 		`%{message}`,
 	)
-)
-
-var (
-	failedToDownloadChart = errors.New("failed to download chart")
+	helmChartProcessor = utils.RealHelmChartProcessor{Log: log}
 )
 
 var (
 	cyan = color.New(color.FgCyan, color.Bold).SprintFunc()
 )
-
-type RepoCredentials struct {
-	Url      string `json:"url"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
 
 func loggingInit(level logging.Level) {
 	backend := logging.NewLogBackend(os.Stdout, "", 0)
@@ -60,7 +52,7 @@ func loggingInit(level logging.Level) {
 	logging.SetLevel(level, "")
 }
 
-func processFiles(cmdRunner utils.CmdRunner, fileName string, fileType string, application models.Application) error {
+func processFiles(cmdRunner interfaces.CmdRunner, fileName string, fileType string, application models.Application) error {
 	log.Debugf("Processing [%s] file: [%s]", cyan(fileType), cyan(fileName))
 
 	target := Target{CmdRunner: cmdRunner, FileReader: utils.OsFileReader{}, File: fileName, Type: fileType, App: application}
@@ -70,11 +62,11 @@ func processFiles(cmdRunner utils.CmdRunner, fileName string, fileType string, a
 		}
 	}
 
-	if err := target.generateValuesFiles(utils.RealHelmChartProcessor{}); err != nil {
+	if err := target.generateValuesFiles(helmChartProcessor); err != nil {
 		return err
 	}
 
-	if err := target.ensureHelmCharts(); err != nil {
+	if err := target.ensureHelmCharts(helmChartProcessor); err != nil {
 		return err
 	}
 
@@ -84,7 +76,7 @@ func processFiles(cmdRunner utils.CmdRunner, fileName string, fileType string, a
 	return nil
 }
 
-func compareFiles(fs afero.Fs, cmdRunner utils.CmdRunner, changedFiles []string) {
+func compareFiles(fs afero.Fs, cmdRunner interfaces.CmdRunner, changedFiles []string) {
 	for _, file := range changedFiles {
 		var err error
 
@@ -119,7 +111,7 @@ func compareFiles(fs afero.Fs, cmdRunner utils.CmdRunner, changedFiles []string)
 	}
 }
 
-func runComparison(cmdRunner utils.CmdRunner) {
+func runComparison(cmdRunner interfaces.CmdRunner) {
 	comparer := Compare{
 		CmdRunner: cmdRunner,
 	}
@@ -131,7 +123,7 @@ func collectRepoCredentials() error {
 	log.Debug("===> Collecting repo credentials")
 	for _, env := range os.Environ() {
 		if strings.HasPrefix(env, repoCredsPrefix) {
-			var repoCreds RepoCredentials
+			var repoCreds models.RepoCredentials
 			if err := json.Unmarshal([]byte(strings.SplitN(env, "=", 2)[1]), &repoCreds); err != nil {
 				return err
 			}
