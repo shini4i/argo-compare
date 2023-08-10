@@ -70,7 +70,10 @@ func processFiles(cmdRunner interfaces.CmdRunner, fileName string, fileType stri
 		return err
 	}
 
-	target.extractCharts()
+	if err := target.extractCharts(helmChartProcessor); err != nil {
+		return err
+	}
+
 	target.renderAppSources()
 
 	return nil

@@ -95,3 +95,61 @@ func (g RealHelmChartProcessor) DownloadHelmChart(cmdRunner interfaces.CmdRunner
 
 	return nil
 }
+
+// ExtractHelmChart extracts a specific version of a Helm chart from a cache directory
+// and stores it in a temporary directory. The function uses the provided CmdRunner to
+// execute the tar command and Globber to match the chart file in the cache.
+// If multiple files matching the pattern are found, an error is returned.
+// The function logs any output (standard or error) from the tar command.
+// Any critical error during these operations, like directory creation or extraction failure, terminates the program.
+func (g RealHelmChartProcessor) ExtractHelmChart(cmdRunner interfaces.CmdRunner, globber interfaces.Globber, chartName, chartVersion, chartLocation, tmpDir, targetType string) error {
+	g.Log.Debugf("Extracting [%s] chart version [%s] to %s/charts/%s...",
+		cyan(chartName),
+		cyan(chartVersion),
+		tmpDir, targetType)
+
+	path := fmt.Sprintf("%s/charts/%s/%s", tmpDir, targetType, chartName)
+	if err := os.MkdirAll(path, os.ModePerm); err != nil {
+		return err
+	}
+
+	searchPattern := fmt.Sprintf("%s/%s-%s*.tgz",
+		chartLocation,
+		chartName,
+		chartVersion)
+
+	chartFileName, err := globber.Glob(searchPattern)
+	if err != nil {
+		return err
+	}
+
+	if len(chartFileName) == 0 {
+		return errors.New("chart file not found")
+	}
+
+	// It's highly unlikely that we will have more than one file matching the pattern
+	// Nevertheless we need to handle this case, please submit an issue if you encounter this
+	if len(chartFileName) > 1 {
+		return errors.New("more than one chart file found, please check your cache directory")
+	}
+
+	stdout, stderr, err := cmdRunner.Run("tar",
+		"xf",
+		chartFileName[0],
+		"-C", fmt.Sprintf("%s/charts/%s", tmpDir, targetType),
+	)
+
+	if len(stdout) > 0 {
+		g.Log.Info(stdout)
+	}
+
+	if len(stderr) > 0 {
+		g.Log.Error(stderr)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

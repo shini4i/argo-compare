@@ -1,12 +1,10 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	interfaces "github.com/shini4i/argo-compare/cmd/argo-compare/interfaces"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"gopkg.in/yaml.v3"
-	"os"
 	"strings"
 
 	"github.com/shini4i/argo-compare/internal/models"
@@ -97,22 +95,23 @@ func (t *Target) ensureHelmCharts(helmChartProcessor interfaces.HelmChartsProces
 // For applications with multiple sources, each chart is extracted separately.
 // For single-source applications, only the corresponding chart is extracted.
 // If an error occurs during extraction, the program is terminated.
-func (t *Target) extractCharts() {
+func (t *Target) extractCharts(helmChartProcessor interfaces.HelmChartsProcessor) error {
 	// We have a separate function for this and not using helm to extract the content of the chart
 	// because we don't want to re-download the chart if the TargetRevision is the same
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
-			err := extractHelmChart(t.CmdRunner, utils.CustomGlobber{}, source.Chart, source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, source.RepoURL), tmpDir, t.Type)
+			err := helmChartProcessor.ExtractHelmChart(t.CmdRunner, utils.CustomGlobber{}, source.Chart, source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, source.RepoURL), tmpDir, t.Type)
 			if err != nil {
-				log.Fatal(err)
+				return err
 			}
 		}
 	} else {
-		err := extractHelmChart(t.CmdRunner, utils.CustomGlobber{}, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, t.App.Spec.Source.RepoURL), tmpDir, t.Type)
+		err := helmChartProcessor.ExtractHelmChart(t.CmdRunner, utils.CustomGlobber{}, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, t.App.Spec.Source.RepoURL), tmpDir, t.Type)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 	}
+	return nil
 }
 
 // renderAppSources uses Helm to render chart templates for the application's sources.
@@ -176,64 +175,6 @@ func renderAppSource(cmdRunner interfaces.CmdRunner, releaseName, chartName, cha
 
 	if err != nil {
 		log.Error(stderr)
-		return err
-	}
-
-	return nil
-}
-
-// extractHelmChart extracts a specific version of a Helm chart from a cache directory
-// and stores it in a temporary directory. The function uses the provided CmdRunner to
-// execute the tar command and Globber to match the chart file in the cache.
-// If multiple files matching the pattern are found, an error is returned.
-// The function logs any output (standard or error) from the tar command.
-// Any critical error during these operations, like directory creation or extraction failure, terminates the program.
-func extractHelmChart(cmdRunner interfaces.CmdRunner, globber interfaces.Globber, chartName, chartVersion, chartLocation, tmpDir, targetType string) error {
-	log.Debugf("Extracting [%s] chart version [%s] to %s/charts/%s...",
-		cyan(chartName),
-		cyan(chartVersion),
-		tmpDir, targetType)
-
-	path := fmt.Sprintf("%s/charts/%s/%s", tmpDir, targetType, chartName)
-	if err := os.MkdirAll(path, os.ModePerm); err != nil {
-		return err
-	}
-
-	searchPattern := fmt.Sprintf("%s/%s-%s*.tgz",
-		chartLocation,
-		chartName,
-		chartVersion)
-
-	chartFileName, err := globber.Glob(searchPattern)
-	if err != nil {
-		return err
-	}
-
-	if len(chartFileName) == 0 {
-		return errors.New("chart file not found")
-	}
-
-	// It's highly unlikely that we will have more than one file matching the pattern
-	// Nevertheless we need to handle this case, please submit an issue if you encounter this
-	if len(chartFileName) > 1 {
-		return errors.New("more than one chart file found, please check your cache directory")
-	}
-
-	stdout, stderr, err := cmdRunner.Run("tar",
-		"xf",
-		chartFileName[0],
-		"-C", fmt.Sprintf("%s/charts/%s", tmpDir, targetType),
-	)
-
-	if len(stdout) > 0 {
-		log.Info(stdout)
-	}
-
-	if len(stderr) > 0 {
-		log.Error(stderr)
-	}
-
-	if err != nil {
 		return err
 	}
 

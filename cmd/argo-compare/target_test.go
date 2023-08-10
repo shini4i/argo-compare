@@ -16,71 +16,6 @@ const (
 	testsDir = "../../testdata/disposable"
 )
 
-func TestExtractHelmChart(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	// Create the mocks
-	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
-	mockGlobber := mocks.NewMockGlobber(ctrl)
-
-	// Set up the expected behavior for the mocks
-
-	// Test case 1: Single chart file found
-	expectedChartFileName := testsDir + "/charts/ingress-nginx/ingress-nginx-3.34.0.tgz"
-	expectedChartLocation := testsDir + "/cache"
-	expectedTmpDir := testsDir + "/tmp"
-	expectedTargetType := "target"
-
-	// Mock the behavior of the globber
-	mockGlobber.EXPECT().Glob(testsDir+"/cache/ingress-nginx-3.34.0*.tgz").Return([]string{expectedChartFileName}, nil)
-
-	// Mock the behavior of the cmdRunner
-	mockCmdRunner.EXPECT().Run("tar",
-		"xf",
-		expectedChartFileName,
-		"-C",
-		fmt.Sprintf("%s/charts/%s", expectedTmpDir, expectedTargetType),
-	).Return("", "", nil)
-
-	err := extractHelmChart(mockCmdRunner, mockGlobber, "ingress-nginx", "3.34.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
-
-	assert.NoError(t, err, "expected no error, got %v", err)
-
-	// Test case 2: Multiple chart files found, error expected
-	expectedChartFilesNames := []string{testsDir + "/charts/sonarqube/sonarqube-4.0.0+315.tgz",
-		testsDir + "/charts/sonarqube/sonarqube-4.0.0+316.tgz"}
-
-	mockGlobber.EXPECT().Glob(testsDir+"/cache/sonarqube-4.0.0*.tgz").Return(expectedChartFilesNames, nil)
-
-	err = extractHelmChart(mockCmdRunner, mockGlobber, "sonarqube", "4.0.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
-	assert.Error(t, err, "expected error, got %v", err)
-
-	// Test case 3: Chart file found, but failed to extract
-	mockGlobber.EXPECT().Glob(testsDir+"/cache/ingress-nginx-3.34.0*.tgz").Return([]string{expectedChartFileName}, nil)
-	mockCmdRunner.EXPECT().Run("tar",
-		"xf",
-		expectedChartFileName,
-		"-C",
-		fmt.Sprintf("%s/charts/%s", expectedTmpDir, expectedTargetType),
-	).Return("", "some unexpected error", errors.New("some unexpected error"))
-
-	err = extractHelmChart(mockCmdRunner, mockGlobber, "ingress-nginx", "3.34.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
-	assert.Error(t, err, "expected error, got %v", err)
-
-	// Test case 4: zglob failed to run
-	mockGlobber.EXPECT().Glob(testsDir+"/cache/ingress-nginx-3.34.0*.tgz").Return([]string{}, os.ErrPermission)
-
-	err = extractHelmChart(mockCmdRunner, mockGlobber, "ingress-nginx", "3.34.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
-	assert.Error(t, err, "expected error, got %v", err)
-
-	// Test case 5: Failed to find chart file
-	mockGlobber.EXPECT().Glob(testsDir+"/cache/ingress-nginx-3.34.0*.tgz").Return([]string{}, nil)
-
-	err = extractHelmChart(mockCmdRunner, mockGlobber, "ingress-nginx", "3.34.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
-	assert.Error(t, err, "expected error, got %v", err)
-}
-
 func TestRenderAppSource(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -220,4 +155,54 @@ func TestTarget_ensureHelmCharts(t *testing.T) {
 
 	err = app2.ensureHelmCharts(mockHelmChartProcessor)
 	assert.ErrorContains(t, err, "multiple download error")
+}
+
+func TestTarget_extractCharts(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Create an instance of the mock HelmChartsProcessor
+	mockHelmChartProcessor := mocks.NewMockHelmChartsProcessor(ctrl)
+
+	// Test case 1: Single source chart extraction success
+	app := Target{
+		CmdRunner:  &utils.RealCmdRunner{},
+		FileReader: &utils.OsFileReader{},
+		File:       appFile,
+	}
+	err := app.parse()
+	assert.NoError(t, err)
+
+	mockHelmChartProcessor.EXPECT().ExtractHelmChart(app.CmdRunner, utils.CustomGlobber{}, app.App.Spec.Source.Chart, app.App.Spec.Source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, app.App.Spec.Source.RepoURL), tmpDir, app.Type).Return(nil)
+
+	err = app.extractCharts(mockHelmChartProcessor)
+	assert.NoError(t, err)
+
+	// Test case 2: Multiple source chart extractions success
+	app2 := Target{
+		CmdRunner:  &utils.RealCmdRunner{},
+		FileReader: &utils.OsFileReader{},
+		File:       "testdata/test2.yaml",
+	}
+	err = app2.parse()
+	assert.NoError(t, err)
+
+	for _, source := range app2.App.Spec.Sources {
+		mockHelmChartProcessor.EXPECT().ExtractHelmChart(app2.CmdRunner, utils.CustomGlobber{}, source.Chart, source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, source.RepoURL), tmpDir, app2.Type).Return(nil)
+	}
+
+	err = app2.extractCharts(mockHelmChartProcessor)
+	assert.NoError(t, err)
+
+	// Test case 3: Single source chart extraction failure
+	mockHelmChartProcessor.EXPECT().ExtractHelmChart(app.CmdRunner, utils.CustomGlobber{}, app.App.Spec.Source.Chart, app.App.Spec.Source.TargetRevision, fmt.Sprintf("%s/%s", cacheDir, app.App.Spec.Source.RepoURL), tmpDir, app.Type).Return(errors.New("some extraction error"))
+
+	err = app.extractCharts(mockHelmChartProcessor)
+	assert.ErrorContains(t, err, "some extraction error")
+
+	// Test case 4: Multiple source chart extractions failure
+	mockHelmChartProcessor.EXPECT().ExtractHelmChart(app2.CmdRunner, utils.CustomGlobber{}, app2.App.Spec.Sources[0].Chart, app2.App.Spec.Sources[0].TargetRevision, fmt.Sprintf("%s/%s", cacheDir, app2.App.Spec.Sources[0].RepoURL), tmpDir, app2.Type).Return(errors.New("multiple extraction error"))
+
+	err = app2.extractCharts(mockHelmChartProcessor)
+	assert.ErrorContains(t, err, "multiple extraction error")
 }
