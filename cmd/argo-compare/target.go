@@ -77,7 +77,7 @@ func (t *Target) generateValuesFiles(helmChartProcessor interfaces.HelmChartsPro
 // If the application uses multiple sources, each chart is downloaded separately.
 // If the application has a single source, only the respective chart is downloaded.
 // In case of any error during download, the error is returned immediately.
-func (t *Target) ensureHelmCharts(helmChartProcessor utils.RealHelmChartProcessor) error {
+func (t *Target) ensureHelmCharts(helmChartProcessor interfaces.HelmChartsProcessor) error {
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
 			if err := helmChartProcessor.DownloadHelmChart(t.CmdRunner, utils.CustomGlobber{}, cacheDir, source.RepoURL, source.Chart, source.TargetRevision, repoCredentials); err != nil {

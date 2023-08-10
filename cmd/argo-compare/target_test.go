@@ -171,3 +171,53 @@ func TestTarget_generateValuesFiles(t *testing.T) {
 	err = app2.generateValuesFiles(mockHelmValuesGenerator)
 	assert.ErrorContains(t, err, "multiple source apps error")
 }
+
+func TestTarget_ensureHelmCharts(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Create an instance of the mock HelmChartProcessor
+	mockHelmChartProcessor := mocks.NewMockHelmChartsProcessor(ctrl)
+
+	// Test case 1: Single source chart download success
+	app := Target{
+		CmdRunner:  &utils.RealCmdRunner{},
+		FileReader: &utils.OsFileReader{},
+		File:       appFile,
+	}
+	err := app.parse()
+	assert.NoError(t, err)
+
+	mockHelmChartProcessor.EXPECT().DownloadHelmChart(app.CmdRunner, utils.CustomGlobber{}, cacheDir, app.App.Spec.Source.RepoURL, app.App.Spec.Source.Chart, app.App.Spec.Source.TargetRevision, repoCredentials).Return(nil)
+
+	err = app.ensureHelmCharts(mockHelmChartProcessor)
+	assert.NoError(t, err)
+
+	// Test case 2: Multiple source chart downloads success
+	app2 := Target{
+		CmdRunner:  &utils.RealCmdRunner{},
+		FileReader: &utils.OsFileReader{},
+		File:       "testdata/test2.yaml",
+	}
+	err = app2.parse()
+	assert.NoError(t, err)
+
+	for _, source := range app2.App.Spec.Sources {
+		mockHelmChartProcessor.EXPECT().DownloadHelmChart(app2.CmdRunner, utils.CustomGlobber{}, cacheDir, source.RepoURL, source.Chart, source.TargetRevision, repoCredentials).Return(nil)
+	}
+
+	err = app2.ensureHelmCharts(mockHelmChartProcessor)
+	assert.NoError(t, err)
+
+	// Test case 3: Single source chart download failure
+	mockHelmChartProcessor.EXPECT().DownloadHelmChart(app.CmdRunner, utils.CustomGlobber{}, cacheDir, app.App.Spec.Source.RepoURL, app.App.Spec.Source.Chart, app.App.Spec.Source.TargetRevision, repoCredentials).Return(errors.New("some download error"))
+
+	err = app.ensureHelmCharts(mockHelmChartProcessor)
+	assert.ErrorContains(t, err, "some download error")
+
+	// Test case 4: Multiple source chart downloads failure
+	mockHelmChartProcessor.EXPECT().DownloadHelmChart(app2.CmdRunner, utils.CustomGlobber{}, cacheDir, app2.App.Spec.Sources[0].RepoURL, app2.App.Spec.Sources[0].Chart, app2.App.Spec.Sources[0].TargetRevision, repoCredentials).Return(errors.New("multiple download error"))
+
+	err = app2.ensureHelmCharts(mockHelmChartProcessor)
+	assert.ErrorContains(t, err, "multiple download error")
+}
