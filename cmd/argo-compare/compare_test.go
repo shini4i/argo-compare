@@ -89,9 +89,7 @@ func TestFindAndStripHelmLabels(t *testing.T) {
 
 	// Read the modified file
 	modifiedData, err := os.ReadFile(testFile)
-	if err != nil {
-		t.Fatalf("Failed to read the modified file: %s", err)
-	}
+	assert.NoError(t, err)
 
 	// Define the expected modified content
 	expectedOutput := `# for testing purpose we need only limited fields
@@ -228,8 +226,6 @@ func TestPrintBuiltInDiff(t *testing.T) {
 
 	for _, test := range tests {
 		actualDiff := c.printBuiltInDiff(test.srcFile, test.dstFile)
-		if actualDiff != test.expectedDiff {
-			t.Errorf("expected: %q, got: %q", test.expectedDiff, actualDiff)
-		}
+		assert.Equal(t, test.expectedDiff, actualDiff)
 	}
 }
