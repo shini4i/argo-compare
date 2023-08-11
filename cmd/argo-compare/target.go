@@ -119,7 +119,7 @@ func (t *Target) extractCharts(helmChartProcessor interfaces.HelmChartsProcessor
 // If the application has multiple sources, each source is rendered individually.
 // If the application has only one source, the source is rendered accordingly.
 // If there's any error during rendering, it will lead to a fatal error, and the program will exit.
-func (t *Target) renderAppSources() {
+func (t *Target) renderAppSources(helmChartProcessor interfaces.HelmChartsProcessor) error {
 	var releaseName string
 
 	// We are providing release name to the helm template command to cover some corner cases
@@ -139,42 +139,14 @@ func (t *Target) renderAppSources() {
 			} else {
 				releaseName = t.App.Metadata.Name
 			}
-			if err := renderAppSource(&utils.RealCmdRunner{}, releaseName, source.Chart, source.TargetRevision, tmpDir, t.Type); err != nil {
-				log.Fatal(err)
+			if err := helmChartProcessor.RenderAppSource(&utils.RealCmdRunner{}, releaseName, source.Chart, source.TargetRevision, tmpDir, t.Type); err != nil {
+				return err
 			}
 		}
-		return
+		return nil
 	}
 
-	if err := renderAppSource(&utils.RealCmdRunner{}, releaseName, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision, tmpDir, t.Type); err != nil {
-		log.Fatal(err)
-	}
-}
-
-// renderAppSource uses the Helm CLI to render the templates of a given chart.
-// It takes a cmdRunner to run the Helm command, a release name for the Helm release,
-// the chart name and version, a temporary directory for storing intermediate files,
-// and the target type which categorizes the application.
-// The function constructs the Helm command with the provided arguments, runs it, and checks for any errors.
-// If there are any errors, it returns them. Otherwise, it returns nil.
-func renderAppSource(cmdRunner interfaces.CmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType string) error {
-	log.Debugf("Rendering [%s] chart's version [%s] templates using release name [%s]",
-		cyan(chartName),
-		cyan(chartVersion),
-		cyan(releaseName))
-
-	_, stderr, err := cmdRunner.Run(
-		"helm",
-		"template",
-		"--release-name", releaseName,
-		fmt.Sprintf("%s/charts/%s/%s", tmpDir, targetType, chartName),
-		"--output-dir", fmt.Sprintf("%s/templates/%s", tmpDir, targetType),
-		"--values", fmt.Sprintf("%s/charts/%s/%s/values.yaml", tmpDir, targetType, chartName),
-		"--values", fmt.Sprintf("%s/%s-values-%s.yaml", tmpDir, chartName, targetType),
-	)
-
-	if err != nil {
-		log.Error(stderr)
+	if err := helmChartProcessor.RenderAppSource(&utils.RealCmdRunner{}, releaseName, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision, tmpDir, t.Type); err != nil {
 		return err
 	}
 

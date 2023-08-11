@@ -7,56 +7,12 @@ import (
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
-	"os"
-	"os/exec"
 	"testing"
 )
 
 const (
 	testsDir = "../../testdata/disposable"
 )
-
-func TestRenderAppSource(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	// Create an instance of the mock CmdRunner
-	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
-
-	releaseName := "my-release"
-	chartName := "my-chart"
-	chartVersion := "1.2.3"
-	tmpDir := testsDir + "/tmp"
-	targetType := "src"
-
-	// Test case 1: Successful render
-	mockCmdRunner.EXPECT().Run("helm",
-		"template",
-		"--release-name", gomock.Any(),
-		gomock.Any(),
-		"--output-dir", gomock.Any(),
-		"--values", gomock.Any(),
-		"--values", gomock.Any()).Return("", "", nil)
-
-	// Call the function under test
-	err := renderAppSource(mockCmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType)
-	assert.NoError(t, err, "expected no error, got %v", err)
-
-	// Test case 2: Failed render
-	osErr := &exec.ExitError{
-		ProcessState: &os.ProcessState{},
-	}
-	mockCmdRunner.EXPECT().Run("helm",
-		"template",
-		"--release-name", gomock.Any(),
-		gomock.Any(),
-		"--output-dir", gomock.Any(),
-		"--values", gomock.Any(),
-		"--values", gomock.Any()).Return("", "", osErr)
-
-	err = renderAppSource(mockCmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType)
-	assert.Errorf(t, err, "expected error, got %v", err)
-}
 
 func TestTarget_generateValuesFiles(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -205,4 +161,54 @@ func TestTarget_extractCharts(t *testing.T) {
 
 	err = app2.extractCharts(mockHelmChartProcessor)
 	assert.ErrorContains(t, err, "multiple extraction error")
+}
+
+func TestTarget_renderAppSources(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Create a mock HelmChartsProcessor
+	mockHelmChartProcessor := mocks.NewMockHelmChartsProcessor(ctrl)
+
+	// Test case 1: Single source rendering success
+	app := Target{
+		CmdRunner:  &utils.RealCmdRunner{},
+		FileReader: &utils.OsFileReader{},
+		File:       appFile,
+	}
+	err := app.parse()
+	assert.NoError(t, err)
+
+	mockHelmChartProcessor.EXPECT().RenderAppSource(app.CmdRunner, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+
+	err = app.renderAppSources(mockHelmChartProcessor)
+	assert.NoError(t, err)
+
+	// Test case 2: Multiple source rendering success
+	app2 := Target{
+		CmdRunner:  &utils.RealCmdRunner{},
+		FileReader: &utils.OsFileReader{},
+		File:       "testdata/test2.yaml",
+	}
+	err = app2.parse()
+	assert.NoError(t, err)
+
+	for _, source := range app2.App.Spec.Sources {
+		mockHelmChartProcessor.EXPECT().RenderAppSource(app2.CmdRunner, gomock.Any(), source.Chart, source.TargetRevision, gomock.Any(), gomock.Any()).Return(nil)
+	}
+
+	err = app2.renderAppSources(mockHelmChartProcessor)
+	assert.NoError(t, err)
+
+	// Test case 3: Single source rendering failure
+	mockHelmChartProcessor.EXPECT().RenderAppSource(app.CmdRunner, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("some rendering error"))
+
+	err = app.renderAppSources(mockHelmChartProcessor)
+	assert.ErrorContains(t, err, "some rendering error")
+
+	// Test case 4: Multiple source rendering failure
+	mockHelmChartProcessor.EXPECT().RenderAppSource(app2.CmdRunner, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("multiple rendering error"))
+
+	err = app2.renderAppSources(mockHelmChartProcessor)
+	assert.ErrorContains(t, err, "multiple rendering error")
 }

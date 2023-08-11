@@ -89,9 +89,7 @@ func TestFindAndStripHelmLabels(t *testing.T) {
 
 	// Read the modified file
 	modifiedData, err := os.ReadFile(testFile)
-	if err != nil {
-		t.Fatalf("Failed to read the modified file: %s", err)
-	}
+	assert.NoError(t, err)
 
 	// Define the expected modified content
 	expectedOutput := `# for testing purpose we need only limited fields
@@ -204,4 +202,30 @@ func TestRunCustomDiffCommand(t *testing.T) {
 	mockCmdRunner.EXPECT().Run("sh", "-c", command).Return("stdout", "stderr", nil)
 
 	compare.runCustomDiffCommand(diffFile)
+}
+
+func TestPrintBuiltInDiff(t *testing.T) {
+	c := &Compare{}
+
+	tests := []struct {
+		srcFile      string
+		dstFile      string
+		expectedDiff string
+	}{
+		{
+			srcFile:      "apple\nbanana\ncherry\n",
+			dstFile:      "apple\nbanana\nkiwi\n",
+			expectedDiff: "apple\nbanana\n\x1b[31mkiwi\x1b[0m\x1b[32mcherry\x1b[0m\n",
+		},
+		{
+			srcFile:      "apple\nbanana\ncherry\n",
+			dstFile:      "apple\nbanana\ncherry\n",
+			expectedDiff: "apple\nbanana\ncherry\n",
+		},
+	}
+
+	for _, test := range tests {
+		actualDiff := c.printBuiltInDiff(test.srcFile, test.dstFile)
+		assert.Equal(t, test.expectedDiff, actualDiff)
+	}
 }

@@ -188,7 +188,7 @@ func (c *Compare) printDiffFile(diffFile File) {
 	case "built-in":
 		srcFile := string(ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name)))
 		dstFile := string(ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name)))
-		c.printBuiltInDiff(srcFile, dstFile)
+		log.Info(c.printBuiltInDiff(srcFile, dstFile))
 	default:
 		c.runCustomDiffCommand(diffFile)
 	}
@@ -196,11 +196,11 @@ func (c *Compare) printDiffFile(diffFile File) {
 
 // printBuiltInDiff uses the built-in diff method to compare two files and prints
 // the diff result. The diff method is provided by the diffmatchpatch package.
-func (c *Compare) printBuiltInDiff(srcFile, dstFile string) {
+func (c *Compare) printBuiltInDiff(srcFile, dstFile string) string {
 	differ := diffmatchpatch.New()
 	diffs := differ.DiffMain(dstFile, srcFile, false)
 
-	log.Info(differ.DiffPrettyText(diffs))
+	return differ.DiffPrettyText(diffs)
 }
 
 // runCustomDiffCommand runs a custom diff command on two files and prints the

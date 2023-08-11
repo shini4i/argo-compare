@@ -153,3 +153,33 @@ func (g RealHelmChartProcessor) ExtractHelmChart(cmdRunner interfaces.CmdRunner,
 
 	return nil
 }
+
+// RenderAppSource uses the Helm CLI to render the templates of a given chart.
+// It takes a cmdRunner to run the Helm command, a release name for the Helm release,
+// the chart name and version, a temporary directory for storing intermediate files,
+// and the target type which categorizes the application.
+// The function constructs the Helm command with the provided arguments, runs it, and checks for any errors.
+// If there are any errors, it returns them. Otherwise, it returns nil.
+func (g RealHelmChartProcessor) RenderAppSource(cmdRunner interfaces.CmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType string) error {
+	g.Log.Debugf("Rendering [%s] chart's version [%s] templates using release name [%s]",
+		cyan(chartName),
+		cyan(chartVersion),
+		cyan(releaseName))
+
+	_, stderr, err := cmdRunner.Run(
+		"helm",
+		"template",
+		"--release-name", releaseName,
+		fmt.Sprintf("%s/charts/%s/%s", tmpDir, targetType, chartName),
+		"--output-dir", fmt.Sprintf("%s/templates/%s", tmpDir, targetType),
+		"--values", fmt.Sprintf("%s/charts/%s/%s/values.yaml", tmpDir, targetType, chartName),
+		"--values", fmt.Sprintf("%s/%s-values-%s.yaml", tmpDir, chartName, targetType),
+	)
+
+	if err != nil {
+		g.Log.Error(stderr)
+		return err
+	}
+
+	return nil
+}
