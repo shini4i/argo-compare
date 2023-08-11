@@ -205,3 +205,31 @@ func TestRunCustomDiffCommand(t *testing.T) {
 
 	compare.runCustomDiffCommand(diffFile)
 }
+
+func TestPrintBuiltInDiff(t *testing.T) {
+	c := &Compare{}
+
+	tests := []struct {
+		srcFile      string
+		dstFile      string
+		expectedDiff string
+	}{
+		{
+			srcFile:      "apple\nbanana\ncherry\n",
+			dstFile:      "apple\nbanana\nkiwi\n",
+			expectedDiff: "apple\nbanana\n\x1b[31mkiwi\x1b[0m\x1b[32mcherry\x1b[0m\n",
+		},
+		{
+			srcFile:      "apple\nbanana\ncherry\n",
+			dstFile:      "apple\nbanana\ncherry\n",
+			expectedDiff: "apple\nbanana\ncherry\n",
+		},
+	}
+
+	for _, test := range tests {
+		actualDiff := c.printBuiltInDiff(test.srcFile, test.dstFile)
+		if actualDiff != test.expectedDiff {
+			t.Errorf("expected: %q, got: %q", test.expectedDiff, actualDiff)
+		}
+	}
+}
