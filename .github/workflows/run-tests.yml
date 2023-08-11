@@ -40,6 +40,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+      - name: Fetch target branch
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}:${{ github.event.pull_request.base.ref }}
 
       - uses: actions/setup-go@v3
         with:
