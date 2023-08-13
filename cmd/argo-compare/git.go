@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/fatih/color"
-	"github.com/mattn/go-zglob"
 	interfaces "github.com/shini4i/argo-compare/cmd/argo-compare/interfaces"
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/spf13/afero"
@@ -152,12 +151,4 @@ func ReadFile(file string) []byte {
 	} else {
 		return readFile
 	}
-}
-
-// FindYamlFiles finds all YAML files recursively in the specified directory path.
-// It takes a directory path as input.
-// The function uses the zglob package to perform a glob pattern matching with the pattern "**/*.yaml".
-// It returns a slice of file paths for all found YAML files and an error if there is an issue during the search.
-func FindYamlFiles(dirPath string) ([]string, error) {
-	return zglob.Glob(filepath.Join(dirPath, "**", "*.yaml"))
 }
