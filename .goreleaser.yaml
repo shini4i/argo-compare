@@ -18,12 +18,6 @@ builds:
     mod_timestamp: '{{ .CommitTimestamp }}'
     main: ./cmd/argo-compare
 
-archives:
-  - replacements:
-      darwin: Darwin
-      linux: Linux
-      amd64: x86_64
-
 brews:
   - tap:
       owner: shini4i
@@ -36,7 +30,7 @@ brews:
     license: "MIT"
 
 dockers:
-  - image_templates: ["ghcr.io/shini4i/{{ .ProjectName }}:{{ .Version }}"]
+  - image_templates: ["ghcr.io/shini4i/{{ .ProjectName }}:{{ .Version }}-amd64"]
     dockerfile: Dockerfile
     use: buildx
     build_flag_templates:
@@ -46,5 +40,36 @@ dockers:
       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
       - "--label=org.opencontainers.image.version={{.Version}}"
       - "--label=org.opencontainers.image.licenses=MIT"
+    goos: linux
+    goarch: amd64
     extra_files:
       - patch/diff-so-fancy.patch
+  - image_templates: ["ghcr.io/shini4i/{{ .ProjectName }}:{{ .Version }}-arm64"]
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+    goos: linux
+    goarch: arm64
+    extra_files:
+      - patch/diff-so-fancy.patch
+
+
+docker_manifests:
+  - name_template: 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Version }}'
+    image_templates:
+      - 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Version }}-amd64'
+      - 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Version }}-arm64'
+
+changelog:
+  use:
+    github-native
+
+release:
+  prerelease: auto
+  draft: false
