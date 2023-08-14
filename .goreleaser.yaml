@@ -13,8 +13,6 @@ builds:
     goarch:
       - amd64
       - arm64
-    ldflags:
-      - -s -w
     mod_timestamp: '{{ .CommitTimestamp }}'
     main: ./cmd/argo-compare
 
