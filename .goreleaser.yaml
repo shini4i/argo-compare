@@ -63,6 +63,9 @@ docker_manifests:
       - 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Version }}-amd64'
       - 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Version }}-arm64'
 
+snapshot:
+  name_template: '{{ incpatch .Version }}-dev'
+
 changelog:
   use:
     github-native
