@@ -3,6 +3,7 @@
 
 # build artifacts
 bin/
+dist/
 
 # local env files
 .env

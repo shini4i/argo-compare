@@ -14,12 +14,12 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X main.version={{ .Env.GITHUB_REF_NAME }}
+      - -s -w
     mod_timestamp: '{{ .CommitTimestamp }}'
     main: ./cmd/argo-compare
 
 brews:
-  - tap:
+  - repository:
       owner: shini4i
       name: homebrew-tap
     folder: Formula
@@ -30,7 +30,7 @@ brews:
     license: "MIT"
 
 dockers:
-  - image_templates: ["ghcr.io/shini4i/{{ .ProjectName }}:{{ .Version }}-amd64"]
+  - image_templates: [ "ghcr.io/shini4i/{{ .ProjectName }}:{{ .Version }}-amd64" ]
     dockerfile: Dockerfile
     use: buildx
     build_flag_templates:
@@ -44,7 +44,7 @@ dockers:
     goarch: amd64
     extra_files:
       - patch/diff-so-fancy.patch
-  - image_templates: ["ghcr.io/shini4i/{{ .ProjectName }}:{{ .Version }}-arm64"]
+  - image_templates: [ "ghcr.io/shini4i/{{ .ProjectName }}:{{ .Version }}-arm64" ]
     dockerfile: Dockerfile
     use: buildx
     build_flag_templates:
@@ -59,7 +59,6 @@ dockers:
     extra_files:
       - patch/diff-so-fancy.patch
 
-
 docker_manifests:
   - name_template: 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Version }}'
     image_templates:
@@ -73,3 +72,7 @@ changelog:
 release:
   prerelease: auto
   draft: false
+
+  footer: |
+    ## Docker Images
+    - `ghcr.io/shini4i/{{ .ProjectName }}:{{ .Version }}`
