@@ -204,20 +204,3 @@ func TestReadFile(t *testing.T) {
 	actualContents = ReadFile(missingFile)
 	assert.Nilf(t, actualContents, "expected file contents to be nil, but got [%s]", string(actualContents))
 }
-
-func TestFindYamlFiles(t *testing.T) {
-	testDir := "testdata"
-	repoRoot, err := GetGitRepoRoot(&utils.RealCmdRunner{})
-	if err != nil {
-		t.Fatalf("error finding git repo root: %v", err)
-	}
-
-	yamlFiles, err := FindYamlFiles(filepath.Join(repoRoot, testDir))
-	if err != nil {
-		t.Fatalf("error finding YAML files: %v", err)
-	}
-
-	if len(yamlFiles) == 0 {
-		t.Errorf("expected to find at least one YAML file in test directory [%s], but none were found", testDir)
-	}
-}

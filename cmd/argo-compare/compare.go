@@ -6,6 +6,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	interfaces "github.com/shini4i/argo-compare/cmd/argo-compare/interfaces"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/spf13/afero"
 	"path/filepath"
@@ -21,6 +22,7 @@ type File struct {
 
 type Compare struct {
 	CmdRunner    interfaces.CmdRunner
+	Globber      utils.CustomGlobber
 	srcFiles     []File
 	dstFiles     []File
 	diffFiles    []File
@@ -46,21 +48,23 @@ func (c *Compare) findFiles() {
 
 	go func() {
 		defer wg.Done()
-		if srcFiles, err := FindYamlFiles(filepath.Join(tmpDir, "templates/src")); err == nil {
-			c.srcFiles = c.processFiles(srcFiles, "src")
-		} else {
+		globPattern := filepath.Join(filepath.Join(filepath.Join(tmpDir, "templates/src"), "**", "*.yaml"))
+		srcFiles, err := c.Globber.Glob(globPattern)
+		if err != nil {
 			log.Fatal(err)
 		}
+		c.srcFiles = c.processFiles(srcFiles, "src")
 	}()
 
 	go func() {
 		defer wg.Done()
-		if dstFiles, err := FindYamlFiles(filepath.Join(tmpDir, "templates/dst")); err == nil {
-			c.dstFiles = c.processFiles(dstFiles, "dst")
-		} else {
+		globPattern := filepath.Join(filepath.Join(filepath.Join(tmpDir, "templates/dst"), "**", "*.yaml"))
+		if dstFiles, err := c.Globber.Glob(globPattern); err != nil {
 			// we are no longer failing here, because we need to support the case where the destination
 			// branch does not have the Application yet
 			log.Debugf("Error while finding files in %s: %s", filepath.Join(tmpDir, "templates/dst"), err)
+		} else {
+			c.dstFiles = c.processFiles(dstFiles, "dst")
 		}
 	}()
 
@@ -231,7 +235,7 @@ func (c *Compare) findAndStripHelmLabels() {
 	var helmFiles []string
 	var err error
 
-	if helmFiles, err = FindYamlFiles(tmpDir); err != nil {
+	if helmFiles, err = c.Globber.Glob(filepath.Join(tmpDir, "**", "*.yaml")); err != nil {
 		log.Fatal(err)
 	}
 
