@@ -71,9 +71,6 @@ jobs:
           files: |
             report.xml
 
-      - name: SonarCloud Scan
-        uses: sonarsource/sonarcloud-github-action@v1.9.1
-
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
         with:
