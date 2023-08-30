@@ -17,9 +17,12 @@ COPY argo-compare /bin/argo-compare
 # from source and destination branches to different directories.
 COPY patch/diff-so-fancy.patch /tmp/diff-so-fancy.patch
 
-RUN cd /usr/local/bin \
- && patch < /tmp/diff-so-fancy.patch \
+WORKDIR /usr/local/bin
+
+RUN patch < /tmp/diff-so-fancy.patch \
  && rm /tmp/diff-so-fancy.patch
+
+WORKDIR /
 
 ENTRYPOINT ["/bin/argo-compare"]
 CMD ["--help"]

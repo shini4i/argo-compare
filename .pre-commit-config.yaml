@@ -5,8 +5,19 @@ repos:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-yaml
-  - repo: https://github.com/tekwizely/pre-commit-golang
-    rev: v1.0.0-rc.1
+      - id: check-added-large-files
+      - id: no-commit-to-branch
+        args:
+          - --branch=main
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
     hooks:
-      - id: go-mod-tidy
+      - id: hadolint
+        args:
+          - --ignore=DL3018
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
       - id: go-fmt
+      - id: go-mod-tidy
+      - id: golangci-lint
