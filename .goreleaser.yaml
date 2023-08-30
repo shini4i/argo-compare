@@ -2,6 +2,7 @@ project_name: argo-compare
 
 before:
   hooks:
+    - make install-deps mocks
     - go mod tidy
 
 builds:
