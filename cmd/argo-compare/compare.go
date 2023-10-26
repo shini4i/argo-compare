@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"github.com/codingsince1985/checksum"
-	"github.com/fatih/color"
 	"github.com/hexops/gotextdiff"
 	"github.com/hexops/gotextdiff/myers"
 	"github.com/hexops/gotextdiff/span"
@@ -165,26 +164,15 @@ func (c *Compare) printFiles(files []File, operation string) {
 		}
 		log.Infof("The following %d %s would be %s:", len(files), fileText, operation)
 		for _, file := range files {
-			c.processManifest(file, operation)
+			c.processManifest(file)
 		}
 	}
 }
 
-func (c *Compare) processManifest(file File, fileType string) {
+func (c *Compare) processManifest(file File) {
 	log.Infof(currentFilePrintPattern, file.Name)
 
-	switch fileType {
-	case "added":
-		if printAddedManifests {
-			color.Green(string(ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, file.Name))))
-		}
-	case "removed":
-		if printRemovedManifests {
-			color.Red(string(ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, file.Name))))
-		}
-	case "changed":
-		c.printDiffFile(file)
-	}
+	c.printDiffFile(file)
 }
 
 func (c *Compare) printDiffFile(diffFile File) {
