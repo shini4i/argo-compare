@@ -163,29 +163,3 @@ func TestPrintFilesStatus(t *testing.T) {
 	assert.Contains(t, logs, "The following 2 files would be removed:")
 	assert.NotContains(t, logs, "The following 1 file would be changed:")
 }
-
-//func TestPrintBuiltInDiff(t *testing.T) {
-//	c := &Compare{}
-//
-//	tests := []struct {
-//		srcFile      string
-//		dstFile      string
-//		expectedDiff string
-//	}{
-//		{
-//			srcFile:      "apple\nbanana\ncherry\n",
-//			dstFile:      "apple\nbanana\nkiwi\n",
-//			expectedDiff: "apple\nbanana\n\x1b[31mkiwi\x1b[0m\x1b[32mcherry\x1b[0m\n",
-//		},
-//		{
-//			srcFile:      "apple\nbanana\ncherry\n",
-//			dstFile:      "apple\nbanana\ncherry\n",
-//			expectedDiff: "apple\nbanana\ncherry\n",
-//		},
-//	}
-//
-//	for _, test := range tests {
-//		actualDiff := c.printBuiltInDiff(test.srcFile, test.dstFile)
-//		assert.Equal(t, test.expectedDiff, actualDiff)
-//	}
-//}
