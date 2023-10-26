@@ -28,7 +28,6 @@ var (
 	version         = "local"
 	repo            = GitRepo{FsType: afero.NewOsFs(), CmdRunner: &utils.RealCmdRunner{}}
 	repoCredentials []models.RepoCredentials
-	diffCommand     = helpers.GetEnv("ARGO_COMPARE_DIFF_COMMAND", "built-in")
 )
 
 var (

@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"github.com/codingsince1985/checksum"
 	"github.com/fatih/color"
-	"github.com/sergi/go-diff/diffmatchpatch"
+	"github.com/hexops/gotextdiff"
+	"github.com/hexops/gotextdiff/myers"
+	"github.com/hexops/gotextdiff/span"
 	interfaces "github.com/shini4i/argo-compare/cmd/argo-compare/interfaces"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/helpers"
@@ -185,48 +187,16 @@ func (c *Compare) processManifest(file File, fileType string) {
 	}
 }
 
-// printDiffFile determines the diff method (built-in or custom) to be used and then
-// performs the file difference operation.
 func (c *Compare) printDiffFile(diffFile File) {
-	switch diffCommand {
-	case "built-in":
-		srcFile := string(ReadFile(fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name)))
-		dstFile := string(ReadFile(fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name)))
-		log.Info(c.printBuiltInDiff(srcFile, dstFile))
-	default:
-		c.runCustomDiffCommand(diffFile)
-	}
-}
+	dstFilePath := fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name)
+	srcFilePath := fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name)
 
-// printBuiltInDiff uses the built-in diff method to compare two files and prints
-// the diff result. The diff method is provided by the diffmatchpatch package.
-func (c *Compare) printBuiltInDiff(srcFile, dstFile string) string {
-	differ := diffmatchpatch.New()
-	diffs := differ.DiffMain(dstFile, srcFile, false)
+	srcFile := string(ReadFile(srcFilePath))
+	dstFile := string(ReadFile(dstFilePath))
 
-	return differ.DiffPrettyText(diffs)
-}
+	edits := myers.ComputeEdits(span.URIFromPath(srcFilePath), dstFile, srcFile)
 
-// runCustomDiffCommand runs a custom diff command on two files and prints the
-// result. It creates and runs the command using the os/exec package.
-// If the command returns an error, it logs the error as a debug message.
-func (c *Compare) runCustomDiffCommand(diffFile File) {
-	command := fmt.Sprintf(diffCommand,
-		fmt.Sprintf(dstPathPattern, tmpDir, diffFile.Name),
-		fmt.Sprintf(srcPathPattern, tmpDir, diffFile.Name),
-	)
-
-	log.Debugf("Using custom diff command: %s", cyan(command))
-
-	stdout, stderr, err := c.CmdRunner.Run("sh", "-c", command)
-	if err != nil {
-		// In some cases custom diff command might return non-zero exit code which is not an error
-		// For example: diff -u file1 file2 returns 1 if files are different
-		// Hence we are not failing here
-		log.Error(stderr)
-	}
-
-	log.Info(stdout)
+	fmt.Println(fmt.Sprint(gotextdiff.ToUnified(srcFilePath, dstFilePath, dstFile, edits)))
 }
 
 // findAndStripHelmLabels scans directory for YAML files, strips pre-defined Helm labels,
