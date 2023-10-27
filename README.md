@@ -57,7 +57,12 @@ argo-compare branch <target-branch> --print-removed-manifests
 argo-compare branch <target-branch> --full-output
 ```
 
-Additionally, you can try it with docker:
+To use an external diff tool, you can set `EXTERNAL_DIFF_TOOL` environment variable. Each file diff will be passed in a pipe to the external tool.
+```bash
+EXTERNAL_DIFF_TOOL=diff-so-fancy argo-compare branch <target-branch>
+```
+
+Additionally, you can try this tool using docker container:
 ```bash
 docker run -it --mount type=bind,source="$(pwd)",target=/apps ghcr.io/shini4i/argo-compare:<version> branch <target-branch>
 ```
