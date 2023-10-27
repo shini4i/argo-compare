@@ -23,11 +23,12 @@ const (
 )
 
 var (
-	cacheDir        = helpers.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
-	tmpDir          string
-	version         = "local"
-	repo            = GitRepo{FsType: afero.NewOsFs(), CmdRunner: &utils.RealCmdRunner{}}
-	repoCredentials []models.RepoCredentials
+	cacheDir         = helpers.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
+	tmpDir           string
+	version          = "local"
+	repo             = GitRepo{FsType: afero.NewOsFs(), CmdRunner: &utils.RealCmdRunner{}}
+	repoCredentials  []models.RepoCredentials
+	externalDiffTool = os.Getenv("EXTERNAL_DIFF_TOOL")
 )
 
 var (
@@ -117,7 +118,8 @@ func compareFiles(fs afero.Fs, cmdRunner interfaces.CmdRunner, changedFiles []st
 
 func runComparison(cmdRunner interfaces.CmdRunner) {
 	comparer := Compare{
-		CmdRunner: cmdRunner,
+		CmdRunner:        cmdRunner,
+		externalDiffTool: externalDiffTool,
 	}
 	comparer.findFiles()
 	comparer.printFilesStatus()
