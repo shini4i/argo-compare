@@ -20,7 +20,7 @@ Example output of `argo-compare` with `diff-so-fancy`
 
 
 > **WARNING**
-Starting from version `0.3.0` support for custom diff tool was dropped. Now application produces diff in unified format and can be piped to a tool like `diff-so-fancy`
+Starting from version `0.3.0` support for `ARGO_COMPARE_DIFF_COMMAND` was dropped. Now application produces diff in unified format and can be piped to a tool like `diff-so-fancy`
 
 This tool will show what would be changed in the manifests rendered by helm after changes to the specific Application
 are merged into the target branch.
