@@ -164,15 +164,10 @@ func (c *Compare) printFiles(files []File, operation string) {
 		}
 		log.Infof("The following %d %s would be %s:", len(files), fileText, operation)
 		for _, file := range files {
-			c.processManifest(file)
+			log.Infof(currentFilePrintPattern, file.Name)
+			c.printDiffFile(file)
 		}
 	}
-}
-
-func (c *Compare) processManifest(file File) {
-	log.Infof(currentFilePrintPattern, file.Name)
-
-	c.printDiffFile(file)
 }
 
 func (c *Compare) printDiffFile(diffFile File) {

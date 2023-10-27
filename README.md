@@ -18,6 +18,10 @@ Example output of `argo-compare` with `diff-so-fancy`
 
 ## General information
 
+
+> **WARNING**
+Starting from version `0.3.0` support for custom diff tool was dropped. Now application produces diff in unified format and can be piped to a tool like `diff-so-fancy`
+
 This tool will show what would be changed in the manifests rendered by helm after changes to the specific Application
 are merged into the target branch.
 
@@ -51,12 +55,6 @@ argo-compare branch <target-branch> --print-added-manifests
 argo-compare branch <target-branch> --print-removed-manifests
 # Print all changed, added and removed manifests
 argo-compare branch <target-branch> --full-output
-```
-
-If you want to use a custom diff tool, you can use the following approach:
-
-```bash
-ARGO_COMPARE_DIFF_COMMAND="/usr/bin/diff -u %s %s | diff-so-fancy" argo-compare branch <target-branch>
 ```
 
 Additionally, you can try it with docker:
