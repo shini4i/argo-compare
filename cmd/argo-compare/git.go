@@ -146,7 +146,6 @@ func GetGitRepoRoot(cmdRunner interfaces.CmdRunner) (string, error) {
 // The function handles the os.ErrNotExist error to detect if the file is missing.
 func ReadFile(file string) []byte {
 	if readFile, err := os.ReadFile(file); errors.Is(err, os.ErrNotExist) {
-		fmt.Printf("File [%s] was removed in a source branch, skipping...\n", file)
 		return nil
 	} else {
 		return readFile

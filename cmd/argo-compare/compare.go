@@ -10,6 +10,7 @@ import (
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/spf13/afero"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -22,13 +23,14 @@ type File struct {
 }
 
 type Compare struct {
-	CmdRunner    interfaces.CmdRunner
-	Globber      utils.CustomGlobber
-	srcFiles     []File
-	dstFiles     []File
-	diffFiles    []File
-	addedFiles   []File
-	removedFiles []File
+	CmdRunner        interfaces.CmdRunner
+	Globber          utils.CustomGlobber
+	externalDiffTool string
+	srcFiles         []File
+	dstFiles         []File
+	diffFiles        []File
+	addedFiles       []File
+	removedFiles     []File
 }
 
 const (
@@ -164,15 +166,10 @@ func (c *Compare) printFiles(files []File, operation string) {
 		}
 		log.Infof("The following %d %s would be %s:", len(files), fileText, operation)
 		for _, file := range files {
-			c.processManifest(file)
+			log.Infof(currentFilePrintPattern, file.Name)
+			c.printDiffFile(file)
 		}
 	}
-}
-
-func (c *Compare) processManifest(file File) {
-	log.Infof(currentFilePrintPattern, file.Name)
-
-	c.printDiffFile(file)
 }
 
 func (c *Compare) printDiffFile(diffFile File) {
@@ -184,7 +181,25 @@ func (c *Compare) printDiffFile(diffFile File) {
 
 	edits := myers.ComputeEdits(span.URIFromPath(srcFilePath), dstFile, srcFile)
 
-	fmt.Println(fmt.Sprint(gotextdiff.ToUnified(srcFilePath, dstFilePath, dstFile, edits)))
+	output := fmt.Sprint(gotextdiff.ToUnified(srcFilePath, dstFilePath, dstFile, edits))
+
+	if c.externalDiffTool != "" {
+		cmd := exec.Command(c.externalDiffTool)
+
+		// Set the external program's stdin to read from a pipe
+		cmd.Stdin = strings.NewReader(output)
+
+		// Capture the output of the external program
+		cmdOutput, err := cmd.CombinedOutput()
+		if err != nil {
+			fmt.Println("Error running external program:", err)
+		}
+
+		// Print the external program's output
+		fmt.Println(string(cmdOutput))
+	} else {
+		fmt.Println(output)
+	}
 }
 
 // findAndStripHelmLabels scans directory for YAML files, strips pre-defined Helm labels,
