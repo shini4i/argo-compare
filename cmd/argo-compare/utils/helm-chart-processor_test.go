@@ -3,14 +3,15 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"testing"
+
 	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
-	"os"
-	"os/exec"
-	"testing"
 )
 
 const (

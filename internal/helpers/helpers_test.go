@@ -1,10 +1,11 @@
 package helpers
 
 import (
+	"testing"
+
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 const (

@@ -1,8 +1,9 @@
 package utils
 
 import (
-	"github.com/shini4i/argo-compare/internal/models"
 	"os"
+
+	"github.com/shini4i/argo-compare/internal/models"
 )
 
 type CmdRunner interface {

@@ -2,11 +2,12 @@ package helpers
 
 import (
 	"fmt"
-	"github.com/shini4i/argo-compare/internal/models"
-	"github.com/spf13/afero"
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/shini4i/argo-compare/internal/models"
+	"github.com/spf13/afero"
 )
 
 // GetEnv retrieves the value of an environment variable specified by the given key.

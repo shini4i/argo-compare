@@ -3,11 +3,12 @@ package main
 import (
 	"errors"
 	"fmt"
+	"testing"
+
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
-	"testing"
 )
 
 const (

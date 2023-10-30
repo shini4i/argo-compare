@@ -1,14 +1,15 @@
 package main
 
 import (
+	"os"
+	"testing"
+
 	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
-	"os"
-	"testing"
 )
 
 func TestCollectRepoCredentials(t *testing.T) {

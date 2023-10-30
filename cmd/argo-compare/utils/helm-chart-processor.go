@@ -3,10 +3,11 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"os"
+
 	"github.com/fatih/color"
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"gopkg.in/yaml.v3"
-	"os"
 
 	"github.com/op/go-logging"
 
