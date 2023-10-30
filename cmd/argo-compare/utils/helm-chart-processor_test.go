@@ -39,7 +39,7 @@ func TestGenerateValuesFile(t *testing.T) {
 	values := "fullnameOverride: ingress-nginx\ncontroller:\n  kind: DaemonSet\n  service:\n    externalTrafficPolicy: Local\n    annotations:\n      fancyAnnotation: false\n"
 
 	// Test case 1: Everything works as expected
-	err = helmChartProcessor.GenerateValuesFile(chartName, tmpDir, targetType, values)
+	err = helmChartProcessor.GenerateValuesFile(chartName, tmpDir, targetType, values, nil)
 	assert.NoError(t, err, "expected no error, got %v", err)
 
 	// Read the generated file
@@ -51,7 +51,7 @@ func TestGenerateValuesFile(t *testing.T) {
 	assert.Equal(t, values, string(generatedValues))
 
 	// Test case 2: Error when creating the file
-	err = helmChartProcessor.GenerateValuesFile(chartName, "/non/existing/path", targetType, values)
+	err = helmChartProcessor.GenerateValuesFile(chartName, "/non/existing/path", targetType, values, nil)
 	assert.Error(t, err, "expected error, got nil")
 }
 
