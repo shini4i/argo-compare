@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
+	"strings"
+
 	interfaces "github.com/shini4i/argo-compare/cmd/argo-compare/interfaces"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"gopkg.in/yaml.v3"
-	"strings"
 
 	"github.com/shini4i/argo-compare/internal/models"
 )
@@ -59,12 +60,12 @@ func (t *Target) parse() error {
 func (t *Target) generateValuesFiles(helmChartProcessor interfaces.HelmChartsProcessor) error {
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
-			if err := helmChartProcessor.GenerateValuesFile(source.Chart, tmpDir, t.Type, source.Helm.Values); err != nil {
+			if err := helmChartProcessor.GenerateValuesFile(source.Chart, tmpDir, t.Type, source.Helm.Values, source.Helm.ValuesObject); err != nil {
 				return err
 			}
 		}
 	} else {
-		if err := helmChartProcessor.GenerateValuesFile(t.App.Spec.Source.Chart, tmpDir, t.Type, t.App.Spec.Source.Helm.Values); err != nil {
+		if err := helmChartProcessor.GenerateValuesFile(t.App.Spec.Source.Chart, tmpDir, t.Type, t.App.Spec.Source.Helm.Values, t.App.Spec.Source.Helm.ValuesObject); err != nil {
 			return err
 		}
 	}

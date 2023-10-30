@@ -2,8 +2,9 @@ package models
 
 import (
 	"errors"
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestApplication_Validate(t *testing.T) {
@@ -139,9 +140,10 @@ func TestIsEmpty(t *testing.T) {
 				TargetRevision: "main",
 				Path:           "/path/to/app",
 				Helm: struct {
-					ReleaseName string   `yaml:"releaseName,omitempty"`
-					Values      string   `yaml:"values,omitempty"`
-					ValueFiles  []string `yaml:"valueFiles,omitempty"`
+					ReleaseName  string                 `yaml:"releaseName,omitempty"`
+					Values       string                 `yaml:"values,omitempty"`
+					ValueFiles   []string               `yaml:"valueFiles,omitempty"`
+					ValuesObject map[string]interface{} `yaml:"valuesObject,omitempty"`
 				}{
 					ReleaseName: "example-release",
 					Values:      "values.yaml",

@@ -2,11 +2,12 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"testing"
+
 	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/stretchr/testify/assert"
-	"os"
-	"testing"
 )
 
 const (

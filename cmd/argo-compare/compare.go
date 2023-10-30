@@ -2,6 +2,12 @@ package main
 
 import (
 	"fmt"
+	"os/exec"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
+
 	"github.com/codingsince1985/checksum"
 	"github.com/hexops/gotextdiff"
 	"github.com/hexops/gotextdiff/myers"
@@ -10,11 +16,6 @@ import (
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/spf13/afero"
-	"os/exec"
-	"path/filepath"
-	"reflect"
-	"strings"
-	"sync"
 )
 
 type File struct {

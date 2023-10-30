@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
+
 	"github.com/alecthomas/kong"
 	"github.com/fatih/color"
 	"github.com/op/go-logging"
 	interfaces "github.com/shini4i/argo-compare/cmd/argo-compare/interfaces"
 	"github.com/spf13/afero"
-	"os"
-	"strings"
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/helpers"

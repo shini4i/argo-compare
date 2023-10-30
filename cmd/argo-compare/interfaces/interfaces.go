@@ -1,8 +1,9 @@
 package utils
 
 import (
-	"github.com/shini4i/argo-compare/internal/models"
 	"os"
+
+	"github.com/shini4i/argo-compare/internal/models"
 )
 
 type CmdRunner interface {
@@ -23,7 +24,7 @@ type Globber interface {
 }
 
 type HelmChartsProcessor interface {
-	GenerateValuesFile(chartName, tmpDir, targetType, values string) error
+	GenerateValuesFile(chartName, tmpDir, targetType, values string, valuesObject map[string]interface{}) error
 	DownloadHelmChart(cmdRunner CmdRunner, globber Globber, cacheDir, repoUrl, chartName, targetRevision string, repoCredentials []models.RepoCredentials) error
 	ExtractHelmChart(cmdRunner CmdRunner, globber Globber, chartName, chartVersion, chartLocation, tmpDir, targetType string) error
 	RenderAppSource(cmdRunner CmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType string) error

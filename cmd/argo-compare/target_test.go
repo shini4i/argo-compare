@@ -3,11 +3,12 @@ package main
 import (
 	"errors"
 	"fmt"
+	"testing"
+
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
-	"testing"
 )
 
 const (
@@ -31,7 +32,7 @@ func TestTarget_generateValuesFiles(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Test case 1: Successful values file generation with single source Application
-	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("ingress-nginx", gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("ingress-nginx", gomock.Any(), gomock.Any(), gomock.Any(), nil).Return(nil)
 
 	err = app.generateValuesFiles(mockHelmValuesGenerator)
 	assert.NoError(t, err)
@@ -46,19 +47,19 @@ func TestTarget_generateValuesFiles(t *testing.T) {
 	err = app2.parse()
 	assert.NoError(t, err)
 
-	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("kubed", gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("sealed-secrets", gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("kubed", gomock.Any(), gomock.Any(), gomock.Any(), nil).Return(nil)
+	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("sealed-secrets", gomock.Any(), gomock.Any(), gomock.Any(), nil).Return(nil)
 
 	err = app2.generateValuesFiles(mockHelmValuesGenerator)
 	assert.NoError(t, err)
 
 	// Test case 3: Failed values file generation with single source Application
-	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("ingress-nginx", gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("some unexpected error"))
+	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("ingress-nginx", gomock.Any(), gomock.Any(), gomock.Any(), nil).Return(errors.New("some unexpected error"))
 	err = app.generateValuesFiles(mockHelmValuesGenerator)
 	assert.ErrorContains(t, err, "some unexpected error")
 
 	// Test case 4: Failed values file generation with multiple source Applications
-	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("kubed", gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("multiple source apps error"))
+	mockHelmValuesGenerator.EXPECT().GenerateValuesFile("kubed", gomock.Any(), gomock.Any(), gomock.Any(), nil).Return(errors.New("multiple source apps error"))
 	err = app2.generateValuesFiles(mockHelmValuesGenerator)
 	assert.ErrorContains(t, err, "multiple source apps error")
 }

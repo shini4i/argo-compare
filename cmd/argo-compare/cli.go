@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/alecthomas/kong"
 	"os"
+
+	"github.com/alecthomas/kong"
 )
 
 var CLI struct {

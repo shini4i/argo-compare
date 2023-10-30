@@ -3,9 +3,11 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"os"
+
 	"github.com/fatih/color"
 	"github.com/shini4i/argo-compare/internal/helpers"
-	"os"
+	"gopkg.in/yaml.v3"
 
 	"github.com/op/go-logging"
 
@@ -27,13 +29,34 @@ type RealHelmChartProcessor struct {
 // and the content of the values file in string format.
 // The function first attempts to create the file. If an error occurs, it terminates the program.
 // Next, it writes the values string to the file. If an error occurs during this process, the program is also terminated.
-func (g RealHelmChartProcessor) GenerateValuesFile(chartName, tmpDir, targetType, values string) error {
+func (g RealHelmChartProcessor) GenerateValuesFile(chartName, tmpDir, targetType, values string, valuesObject map[string]interface{}) error {
 	yamlFile, err := os.Create(fmt.Sprintf("%s/%s-values-%s.yaml", tmpDir, chartName, targetType))
 	if err != nil {
 		return err
 	}
 
-	if _, err := yamlFile.WriteString(values); err != nil {
+	defer func(yamlFile *os.File) {
+		err := yamlFile.Close()
+		if err != nil {
+			g.Log.Fatal(err)
+		}
+	}(yamlFile)
+
+	var data []byte
+	if values != "" {
+		// Write the 'values' field if it is provided
+		data = []byte(values)
+	} else if valuesObject != nil {
+		// Serialize the 'valuesObject' if it is provided
+		data, err = yaml.Marshal(valuesObject)
+		if err != nil {
+			return err
+		}
+	} else {
+		return errors.New("either 'values' or 'valuesObject' must be provided")
+	}
+
+	if _, err := yamlFile.Write(data); err != nil {
 		return err
 	}
 
