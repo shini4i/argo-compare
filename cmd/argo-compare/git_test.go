@@ -26,39 +26,6 @@ func init() {
 	loggingInit(logging.CRITICAL)
 }
 
-func TestCheckFile(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	// Create the mocks
-	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
-	mockFileReader := mocks.NewMockFileReader(ctrl)
-
-	// Test case 1: file exists and is Application
-	mockFileReader.EXPECT().ReadFile(gomock.Any()).DoAndReturn(func(path string) []byte {
-		if strings.HasSuffix(path, appFile) {
-			return ReadFile("../../" + appFile)
-		}
-		return nil
-	})
-	isApp, err := checkFile(mockCmdRunner, mockFileReader, appFile)
-
-	assert.True(t, isApp, "expected true, got false")
-	assert.NoError(t, err, "expected no error, got %v", err)
-
-	// Test case 2: file exists and is not Application
-	mockFileReader.EXPECT().ReadFile(gomock.Any()).DoAndReturn(func(path string) []byte {
-		if strings.HasSuffix(path, appFile) {
-			return []byte("test")
-		}
-		return nil
-	})
-	isApp, err = checkFile(mockCmdRunner, mockFileReader, appFile)
-
-	assert.False(t, isApp, "expected false, got true")
-	assert.ErrorIsf(t, err, invalidFileError, "expected invalidFileError, got %v", err)
-}
-
 func TestGetChangedFiles(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

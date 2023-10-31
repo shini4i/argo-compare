@@ -24,23 +24,8 @@ type GitRepo struct {
 }
 
 var (
-	invalidFileError    = errors.New("invalid yaml file")
 	gitFileDoesNotExist = errors.New("file does not exist in target branch")
 )
-
-func checkFile(cmdRunner interfaces.CmdRunner, fileReader interfaces.FileReader, file string) (bool, error) {
-	if _, err := checkIfApp(cmdRunner, fileReader, file); err != nil {
-		if errors.Is(err, models.NotApplicationError) {
-			log.Debugf("Skipping non-application file [%s]", file)
-		} else if errors.Is(err, models.UnsupportedAppConfigurationError) {
-			log.Warningf("Skipping unsupported application configuration [%s]", file)
-		} else if errors.Is(err, models.EmptyFileError) {
-			log.Debugf("Skipping empty file [%s]", file)
-		}
-		return false, invalidFileError
-	}
-	return true, nil
-}
 
 func printChangeFile(files []string) {
 	log.Debug("===> Found the following changed files:")
@@ -54,9 +39,17 @@ func printChangeFile(files []string) {
 func (g *GitRepo) sortChangedFiles(fileReader interfaces.FileReader, files []string) {
 	for _, file := range files {
 		if filepath.Ext(file) == ".yaml" {
-			if _, err := checkFile(g.CmdRunner, fileReader, file); errors.Is(err, invalidFileError) {
+			switch isApp, err := checkIfApp(g.CmdRunner, fileReader, file); {
+			case errors.Is(err, models.NotApplicationError):
+				log.Debugf("Skipping non-application file [%s]", file)
+			case errors.Is(err, models.UnsupportedAppConfigurationError):
+				log.Warningf("Skipping unsupported application configuration [%s]", file)
+			case errors.Is(err, models.EmptyFileError):
+				log.Debugf("Skipping empty file [%s]", file)
+			case err != nil:
+				log.Errorf("Error checking if [%s] is an Application: %s", file, err)
 				g.invalidFiles = append(g.invalidFiles, file)
-			} else {
+			case isApp:
 				g.changedFiles = append(g.changedFiles, file)
 			}
 		}
