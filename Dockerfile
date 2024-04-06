@@ -1,4 +1,4 @@
-FROM alpine/helm:3.12.3
+FROM alpine/helm:3.14.3
 
 ENV DIFF_SO_FANCY_VERSION=1.4.3
 
