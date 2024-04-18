@@ -54,9 +54,10 @@ func StripHelmLabels(file string) ([]byte, error) {
 	var fileData []byte
 	var err error
 
+	// #nosec G304
 	if fileData, err = os.ReadFile(file); err != nil {
 		return nil, err
-	} // #nosec G304
+	}
 
 	strippedFileData := re.ReplaceAll(fileData, []byte(""))
 
