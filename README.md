@@ -19,8 +19,8 @@ Example output of `argo-compare` with `diff-so-fancy`
 ## General information
 
 
-> **WARNING**
-Starting from version `0.3.0` support for `ARGO_COMPARE_DIFF_COMMAND` was removed in favor of `EXTERNAL_DIFF_TOOL`
+> [!CAUTION]
+> Starting from version `0.3.0` support for `ARGO_COMPARE_DIFF_COMMAND` was removed in favor of `EXTERNAL_DIFF_TOOL`
 
 This tool will show what would be changed in the manifests rendered by helm after changes to the specific Application
 are merged into the target branch.
@@ -109,3 +109,6 @@ Argo Compare will look for all `REPO_CREDS_*` environment variables and use them
 - [ ] Add support for Application using git as a source of helm chart
 - [x] Add support for providing credentials for password protected helm repositories
 - [ ] Add support for posting diff as a comment to PR (GitHub)/MR(GitLab)
+
+## Contributing
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.

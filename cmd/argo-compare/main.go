@@ -20,7 +20,7 @@ import (
 
 const (
 	loggerName      = "argo-compare"
-	repoCredsPrefix = "REPO_CREDS_"
+	repoCredsPrefix = "REPO_CREDS_" // #nosec G101
 )
 
 var (
