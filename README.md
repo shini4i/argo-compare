@@ -109,3 +109,6 @@ Argo Compare will look for all `REPO_CREDS_*` environment variables and use them
 - [ ] Add support for Application using git as a source of helm chart
 - [x] Add support for providing credentials for password protected helm repositories
 - [ ] Add support for posting diff as a comment to PR (GitHub)/MR(GitLab)
+
+## Contributing
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.

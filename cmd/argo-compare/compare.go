@@ -185,7 +185,7 @@ func (c *Compare) printDiffFile(diffFile File) {
 	output := fmt.Sprint(gotextdiff.ToUnified(srcFilePath, dstFilePath, dstFile, edits))
 
 	if c.externalDiffTool != "" {
-		cmd := exec.Command(c.externalDiffTool)
+		cmd := exec.Command(c.externalDiffTool) // #nosec G204
 
 		// Set the external program's stdin to read from a pipe
 		cmd.Stdin = strings.NewReader(output)
