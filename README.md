@@ -19,8 +19,8 @@ Example output of `argo-compare` with `diff-so-fancy`
 ## General information
 
 
-> **WARNING**
-Starting from version `0.3.0` support for `ARGO_COMPARE_DIFF_COMMAND` was removed in favor of `EXTERNAL_DIFF_TOOL`
+> [!CAUTION]
+> Starting from version `0.3.0` support for `ARGO_COMPARE_DIFF_COMMAND` was removed in favor of `EXTERNAL_DIFF_TOOL`
 
 This tool will show what would be changed in the manifests rendered by helm after changes to the specific Application
 are merged into the target branch.
