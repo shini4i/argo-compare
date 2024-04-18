@@ -54,7 +54,7 @@ func StripHelmLabels(file string) ([]byte, error) {
 	var fileData []byte
 	var err error
 
-	if fileData, err = os.ReadFile(file); err != nil { /* #nosec G304 */
+	if fileData, err = os.ReadFile(file); err != nil /* #nosec G304 */ {
 		return nil, err
 	}
 
