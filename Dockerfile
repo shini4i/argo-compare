@@ -1,4 +1,4 @@
-FROM alpine:3.19 as downloader
+FROM alpine:3.19 AS downloader
 
 ENV HELM_VERSION=3.15.0
 
