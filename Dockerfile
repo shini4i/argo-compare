@@ -1,4 +1,21 @@
-FROM alpine/helm:3.14.3
+FROM alpine:3.19 AS downloader
+
+ENV HELM_VERSION=3.15.0
+
+WORKDIR /tmp
+
+RUN ARCH="" && \
+    case `uname -m` in \
+        x86_64)  ARCH='amd64'; ;; \
+        aarch64) ARCH='arm64'; ;; \
+        *) echo "unsupported architecture"; exit 1 ;; \
+    esac \
+    && apk add --no-cache wget \
+    && wget --progress=dot:giga -O helm.tar.gz "https://get.helm.sh/helm-v${HELM_VERSION}-linux-${ARCH}.tar.gz" \
+    && tar -xf helm.tar.gz "linux-${ARCH}/helm" \
+    && mv "linux-${ARCH}/helm" /usr/bin/helm
+
+FROM alpine:3.19
 
 ENV DIFF_SO_FANCY_VERSION=1.4.3
 
@@ -9,6 +26,8 @@ RUN git clone -b v${DIFF_SO_FANCY_VERSION} https://github.com/so-fancy/diff-so-f
  && mv /diff-so-fancy/lib /usr/local/bin \
  && rm -rf /diff-so-fancy \
  && chmod +x /usr/local/bin/diff-so-fancy
+
+COPY --from=downloader /usr/bin/helm /usr/bin/helm
 
 COPY argo-compare /bin/argo-compare
 
