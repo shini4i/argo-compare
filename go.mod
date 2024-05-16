@@ -5,7 +5,7 @@ go 1.22
 require (
 	github.com/alecthomas/kong v0.9.0
 	github.com/codingsince1985/checksum v1.3.0
-	github.com/fatih/color v1.16.0
+	github.com/fatih/color v1.17.0
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/mattn/go-zglob v0.0.4
 	github.com/op/go-logging v0.0.0-20160315200505-970db520ece7
@@ -22,7 +22,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/crypto v0.17.0 // indirect
-	golang.org/x/sys v0.15.0 // indirect
+	golang.org/x/sys v0.18.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 )

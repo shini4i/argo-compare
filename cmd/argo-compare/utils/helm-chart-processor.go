@@ -72,7 +72,7 @@ func (g RealHelmChartProcessor) GenerateValuesFile(chartName, tmpDir, targetType
 func (g RealHelmChartProcessor) DownloadHelmChart(cmdRunner interfaces.CmdRunner, globber interfaces.Globber, cacheDir, repoUrl, chartName, targetRevision string, repoCredentials []models.RepoCredentials) error {
 	chartLocation := fmt.Sprintf("%s/%s", cacheDir, repoUrl)
 
-	if err := os.MkdirAll(chartLocation, os.ModePerm); err != nil {
+	if err := os.MkdirAll(chartLocation, 0750); err != nil {
 		g.Log.Fatal(err)
 	}
 
@@ -132,7 +132,7 @@ func (g RealHelmChartProcessor) ExtractHelmChart(cmdRunner interfaces.CmdRunner,
 		tmpDir, targetType)
 
 	path := fmt.Sprintf("%s/charts/%s/%s", tmpDir, targetType, chartName)
-	if err := os.MkdirAll(path, os.ModePerm); err != nil {
+	if err := os.MkdirAll(path, 0750); err != nil {
 		return err
 	}
 
