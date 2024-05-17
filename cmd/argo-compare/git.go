@@ -66,36 +66,26 @@ func (g *GitRepo) sortChangedFiles(fileReader interfaces.FileReader, files []str
 }
 
 func (g *GitRepo) getChangedFiles(fileReader interfaces.FileReader) ([]string, error) {
-	repoRoot, err := GetGitRepoRoot()
-	if err != nil {
-		return nil, err
-	}
-
-	repo, err := git.PlainOpen(repoRoot)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open repository: %v", err)
-	}
-
 	// Retrieve the target branch reference.
-	targetBranch := "refs/heads/main" // Replace with your target branch name
-	targetRef, err := repo.Reference(plumbing.ReferenceName(targetBranch), true)
+	targetBranch := fmt.Sprintf("refs/heads/%s", "main")
+	targetRef, err := g.Repo.Reference(plumbing.ReferenceName(targetBranch), true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve target branch %s: %v", targetBranch, err)
 	}
 
 	// Retrieve the current branch reference.
-	headRef, err := repo.Head()
+	headRef, err := g.Repo.Head()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get HEAD: %v", err)
 	}
 
 	// Get the commit objects for the target branch and the current branch.
-	targetCommit, err := repo.CommitObject(targetRef.Hash())
+	targetCommit, err := g.Repo.CommitObject(targetRef.Hash())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get commit object for target branch %s: %v", targetBranch, err)
 	}
 
-	headCommit, err := repo.CommitObject(headRef.Hash())
+	headCommit, err := g.Repo.CommitObject(headRef.Hash())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get commit object for current branch: %v", err)
 	}
@@ -132,25 +122,14 @@ func (g *GitRepo) getChangedFiles(fileReader interfaces.FileReader) ([]string, e
 func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) (models.Application, error) {
 	log.Debugf("Getting content of %s from %s", targetFile, targetBranch)
 
-	repoPath, err := GetGitRepoRoot()
-	if err != nil {
-		return models.Application{}, err
-	}
-
-	// Open the repository located at the specified path.
-	repo, err := git.PlainOpen(repoPath)
-	if err != nil {
-		return models.Application{}, fmt.Errorf("failed to open repository: %v", err)
-	}
-
 	// Retrieve the target branch reference.
-	targetRef, err := repo.Reference(plumbing.ReferenceName("refs/heads/"+targetBranch), true)
+	targetRef, err := g.Repo.Reference(plumbing.ReferenceName("refs/heads/"+targetBranch), true)
 	if err != nil {
 		return models.Application{}, fmt.Errorf("failed to resolve target branch %s: %v", targetBranch, err)
 	}
 
 	// Get the commit object for the target branch.
-	targetCommit, err := repo.CommitObject(targetRef.Hash())
+	targetCommit, err := g.Repo.CommitObject(targetRef.Hash())
 	if err != nil {
 		return models.Application{}, fmt.Errorf("failed to get commit object for target branch %s: %v", targetBranch, err)
 	}
@@ -247,4 +226,23 @@ func ReadFile(file string) []byte {
 	} else {
 		return readFile
 	}
+}
+
+func NewGitRepo(fs afero.Fs, cmdRunner interfaces.CmdRunner) (*GitRepo, error) {
+	repoRoot, err := GetGitRepoRoot()
+	if err != nil {
+		return nil, err
+	}
+
+	gitRepo := &GitRepo{
+		FsType:    fs,
+		CmdRunner: cmdRunner,
+	}
+
+	gitRepo.Repo, err = git.PlainOpen(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open repository: %v", err)
+	}
+
+	return gitRepo, nil
 }
