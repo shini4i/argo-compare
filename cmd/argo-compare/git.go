@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
-	"github.com/fatih/color"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	interfaces "github.com/shini4i/argo-compare/cmd/argo-compare/interfaces"
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/spf13/afero"
@@ -17,6 +18,7 @@ import (
 )
 
 type GitRepo struct {
+	Repo         *git.Repository
 	CmdRunner    interfaces.CmdRunner
 	FsType       afero.Fs
 	changedFiles []string
@@ -64,33 +66,119 @@ func (g *GitRepo) sortChangedFiles(fileReader interfaces.FileReader, files []str
 }
 
 func (g *GitRepo) getChangedFiles(fileReader interfaces.FileReader) ([]string, error) {
-	if stdout, stderr, err := g.CmdRunner.Run("git", "--no-pager", "diff", "--name-only", targetBranch); err != nil {
-		log.Errorf("Error running git command: %s", stderr)
+	repoRoot, err := GetGitRepoRoot()
+	if err != nil {
 		return nil, err
-	} else {
-		foundFiles := strings.Split(stdout, "\n")
-		printChangeFile(foundFiles)
-		g.sortChangedFiles(fileReader, foundFiles)
 	}
-	return g.changedFiles, nil
+
+	repo, err := git.PlainOpen(repoRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open repository: %v", err)
+	}
+
+	// Retrieve the target branch reference.
+	targetBranch := "refs/heads/main" // Replace with your target branch name
+	targetRef, err := repo.Reference(plumbing.ReferenceName(targetBranch), true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve target branch %s: %v", targetBranch, err)
+	}
+
+	// Retrieve the current branch reference.
+	headRef, err := repo.Head()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get HEAD: %v", err)
+	}
+
+	// Get the commit objects for the target branch and the current branch.
+	targetCommit, err := repo.CommitObject(targetRef.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get commit object for target branch %s: %v", targetBranch, err)
+	}
+
+	headCommit, err := repo.CommitObject(headRef.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get commit object for current branch: %v", err)
+	}
+
+	// Get the tree objects for the target commit and the current commit.
+	targetTree, err := targetCommit.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tree for target commit: %v", err)
+	}
+
+	headTree, err := headCommit.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tree for head commit: %v", err)
+	}
+
+	// Get the diff between the two trees.
+	changes, err := object.DiffTree(targetTree, headTree)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get diff between trees: %v", err)
+	}
+
+	// Collect all the changed files
+	var foundFiles []string
+	for _, change := range changes {
+		foundFiles = append(foundFiles, change.To.Name)
+	}
+
+	printChangeFile(foundFiles)
+	g.sortChangedFiles(fileReader, foundFiles)
+
+	return foundFiles, nil
 }
 
 func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) (models.Application, error) {
 	log.Debugf("Getting content of %s from %s", targetFile, targetBranch)
 
-	stdout, stderr, err := g.CmdRunner.Run("git", "--no-pager", "show", targetBranch+":"+targetFile)
+	repoPath, err := GetGitRepoRoot()
 	if err != nil {
-		if strings.Contains(stderr, "exists on disk, but not in") {
-			color.Yellow("The requested file does not exist in target branch, assuming it is a new Application")
-			if !printAddedManifests {
-				return models.Application{}, gitFileDoesNotExist
-			}
-		} else {
-			return models.Application{}, fmt.Errorf("failed to get the content of the file: %w", err)
-		}
+		return models.Application{}, err
 	}
 
-	tmpFile, err := helpers.CreateTempFile(g.FsType, stdout)
+	// Open the repository located at the specified path.
+	repo, err := git.PlainOpen(repoPath)
+	if err != nil {
+		return models.Application{}, fmt.Errorf("failed to open repository: %v", err)
+	}
+
+	// Retrieve the target branch reference.
+	targetRef, err := repo.Reference(plumbing.ReferenceName("refs/heads/"+targetBranch), true)
+	if err != nil {
+		return models.Application{}, fmt.Errorf("failed to resolve target branch %s: %v", targetBranch, err)
+	}
+
+	// Get the commit object for the target branch.
+	targetCommit, err := repo.CommitObject(targetRef.Hash())
+	if err != nil {
+		return models.Application{}, fmt.Errorf("failed to get commit object for target branch %s: %v", targetBranch, err)
+	}
+
+	// Get the tree object for the target commit.
+	targetTree, err := targetCommit.Tree()
+	if err != nil {
+		return models.Application{}, fmt.Errorf("failed to get tree for target commit: %v", err)
+	}
+
+	// Find the file entry in the tree.
+	fileEntry, err := targetTree.File(targetFile)
+	if err != nil {
+		if errors.Is(err, object.ErrFileNotFound) {
+			log.Warningf("The requested file %s does not exist in target branch %s, assuming it is a new Application", targetFile, targetBranch)
+			return models.Application{}, gitFileDoesNotExist
+		}
+		return models.Application{}, fmt.Errorf("failed to find file %s in target branch %s: %v", targetFile, targetBranch, err)
+	}
+
+	// Get the file content.
+	fileContent, err := fileEntry.Contents()
+	if err != nil {
+		return models.Application{}, fmt.Errorf("failed to get contents of file %s: %v", targetFile, err)
+	}
+
+	// Create a temporary file with the content.
+	tmpFile, err := helpers.CreateTempFile(g.FsType, fileContent)
 	if err != nil {
 		return models.Application{}, err
 	}
@@ -101,6 +189,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) 
 		}
 	}(tmpFile)
 
+	// Create a Target object and parse the application.
 	target := Target{CmdRunner: g.CmdRunner, FileReader: utils.OsFileReader{}, File: tmpFile.Name()}
 	if err := target.parse(); err != nil {
 		return models.Application{}, fmt.Errorf("failed to parse the application: %w", err)
@@ -126,20 +215,33 @@ func checkIfApp(cmdRunner interfaces.CmdRunner, fileReader interfaces.FileReader
 // It captures the standard output and standard error streams and returns them as strings.
 // If the command execution is successful, it trims the leading and trailing white spaces from the output and returns it as the repository root directory path.
 // If there is an error executing the command, the function prints the error message to standard error and returns an empty string and the error.
-func GetGitRepoRoot(cmdRunner interfaces.CmdRunner) (string, error) {
-	stdout, stderr, err := cmdRunner.Run("git", "rev-parse", "--show-toplevel")
+func GetGitRepoRoot() (string, error) {
+	dir, err := os.Getwd()
 	if err != nil {
-		fmt.Println(stderr)
-		return "", err
+		return "", fmt.Errorf("failed to get current working directory: %v", err)
 	}
-	return strings.TrimSpace(stdout), nil
+
+	for {
+		_, err := git.PlainOpen(dir)
+		if err == nil {
+			return dir, nil
+		}
+
+		parentDir := filepath.Dir(dir)
+		if parentDir == dir {
+			break
+		}
+
+		dir = parentDir
+	}
+
+	return "", fmt.Errorf("no git repository found")
 }
 
 // ReadFile reads the contents of the specified file and returns them as a byte slice.
 // If the file does not exist, it prints a message indicating that the file was removed in a source branch and returns nil.
 // The function handles the os.ErrNotExist error to detect if the file is missing.
 func ReadFile(file string) []byte {
-
 	if readFile, err := os.ReadFile(file); errors.Is(err, os.ErrNotExist) /* #nosec G304 */ {
 		return nil
 	} else {
