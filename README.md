@@ -20,7 +20,7 @@ Example output of `argo-compare` with `diff-so-fancy`
 
 
 > [!CAUTION]
-> Starting from version `0.3.0` support for `ARGO_COMPARE_DIFF_COMMAND` was removed in favor of `EXTERNAL_DIFF_TOOL`
+> Starting from version `0.3.0` the variable `ARGO_COMPARE_DIFF_COMMAND` was replaced with `EXTERNAL_DIFF_TOOL`
 
 This tool will show what would be changed in the manifests rendered by helm after changes to the specific Application
 are merged into the target branch.
@@ -64,7 +64,7 @@ EXTERNAL_DIFF_TOOL=diff-so-fancy argo-compare branch <target-branch>
 
 Additionally, you can try this tool using docker container:
 ```bash
-docker run -it --mount type=bind,source="$(pwd)",target=/apps ghcr.io/shini4i/argo-compare:<version> branch <target-branch>
+docker run -it --mount type=bind,source="$(pwd)",target=/apps --env EXTERNAL_DIFF_TOOL=diff-so-fancy --workdir /apps ghcr.io/shini4i/argo-compare:<version> branch <target-branch> --full-output
 ```
 
 #### Password Protected Repositories
