@@ -31,11 +31,17 @@ var (
 
 // printChangeFile logs the names of the changed files found in the provided slice
 // if they are not empty strings, prefixed with a debug level message.
-func printChangeFile(files []string) {
+func printChangeFile(addedFiles, Removed []string) {
 	log.Debug("===> Found the following changed files:")
-	for _, file := range files {
+	for _, file := range addedFiles {
 		if file != "" {
 			log.Debugf("▶ %s", file)
+		}
+	}
+	log.Debug("===> Found the following removed files:")
+	for _, file := range Removed {
+		if file != "" {
+			log.Debugf("▶ %s", red(file))
 		}
 	}
 }
@@ -65,7 +71,7 @@ func (g *GitRepo) sortChangedFiles(fileReader interfaces.FileReader, files []str
 	if len(g.changedFiles) > 0 {
 		log.Info("===> Found the following changed Application files")
 		for _, file := range g.changedFiles {
-			log.Infof("▶ %s", file)
+			log.Infof("▶ %s", yellow(file))
 		}
 	}
 }
@@ -115,16 +121,16 @@ func (g *GitRepo) getChangedFiles(fileReader interfaces.FileReader) ([]string, e
 	}
 
 	// Collect all the changed files
-	var foundFiles []string
+	var foundFiles, removedFiles []string
 	for _, change := range changes {
 		if change.To.Name == "" {
-			log.Debugf("Skipping removed file [%s]", change.From.Name)
+			removedFiles = append(removedFiles, change.From.Name)
 			continue
 		}
 		foundFiles = append(foundFiles, change.To.Name)
 	}
 
-	printChangeFile(foundFiles)
+	printChangeFile(foundFiles, removedFiles)
 	g.sortChangedFiles(fileReader, foundFiles)
 
 	return foundFiles, nil
