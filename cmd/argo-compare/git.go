@@ -159,7 +159,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) 
 	fileEntry, err := targetTree.File(targetFile)
 	if err != nil {
 		if errors.Is(err, object.ErrFileNotFound) {
-			log.Warningf("The requested file %s does not exist in target branch %s, assuming it is a new Application", targetFile, targetBranch)
+			log.Warningf("\u001B[33mThe requested file %s does not exist in target branch %s, assuming it is a new Application\u001B[0m", targetFile, targetBranch)
 			if !printAddedManifests {
 				return models.Application{}, gitFileDoesNotExist
 			}
