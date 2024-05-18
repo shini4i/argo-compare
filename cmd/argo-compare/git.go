@@ -29,6 +29,8 @@ var (
 	gitFileDoesNotExist = errors.New("file does not exist in target branch")
 )
 
+// printChangeFile logs the names of the changed files found in the provided slice
+// if they are not empty strings, prefixed with a debug level message.
 func printChangeFile(files []string) {
 	log.Debug("===> Found the following changed files:")
 	for _, file := range files {
@@ -38,6 +40,9 @@ func printChangeFile(files []string) {
 	}
 }
 
+// sortChangedFiles inspects each provided .yaml file and classifies them as an application,
+// invalid or otherwise. Non-application and unsupported files are logged and skipped, while
+// valid application files are added to 'changedFiles' for further processing.
 func (g *GitRepo) sortChangedFiles(fileReader interfaces.FileReader, files []string) {
 	for _, file := range files {
 		if filepath.Ext(file) == ".yaml" {
@@ -65,10 +70,12 @@ func (g *GitRepo) sortChangedFiles(fileReader interfaces.FileReader, files []str
 	}
 }
 
+// getChangedFiles returns a list of files changed between the target branch and current HEAD.
+// It retrieves commit objects for the target and current branch, calculates the diff between trees and collects changed files.
+// If errors occur during these steps, they are returned.
+// It also triggers the logging and sorting processes for the changed files.
 func (g *GitRepo) getChangedFiles(fileReader interfaces.FileReader) ([]string, error) {
-	// Retrieve the target branch reference.
-	targetBranch := fmt.Sprintf("refs/heads/%s", "main")
-	targetRef, err := g.Repo.Reference(plumbing.ReferenceName(targetBranch), true)
+	targetRef, err := g.Repo.Reference(plumbing.ReferenceName(fmt.Sprintf("refs/heads/%s", targetBranch)), true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve target branch %s: %v", targetBranch, err)
 	}
@@ -119,6 +126,10 @@ func (g *GitRepo) getChangedFiles(fileReader interfaces.FileReader) ([]string, e
 	return foundFiles, nil
 }
 
+// getChangedFileContent retrieves the content of a given targetFile in the provided targetBranch.
+// It retrieves the branch reference, commit and tree objects; locates the file entry and retrieves its content.
+// The function returns an Application model if successful.
+// If the file doesn't exist in the target branch, it is assumed to be a new Application.
 func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) (models.Application, error) {
 	log.Debugf("Getting content of %s from %s", targetFile, targetBranch)
 
@@ -177,6 +188,8 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) 
 	return target.App, nil
 }
 
+// checkIfApp attempts to parse the provided file as an Application.
+// Returns true if the parsing is successful, indicating the file is an Application.
 func checkIfApp(cmdRunner interfaces.CmdRunner, fileReader interfaces.FileReader, file string) (bool, error) {
 	log.Debugf("===> Checking if [%s] is an Application", cyan(file))
 
@@ -228,6 +241,9 @@ func ReadFile(file string) []byte {
 	}
 }
 
+// NewGitRepo initializes and returns a GitRepo structure, opening a Git repository at the root location.
+// It takes an afero.Fs filesystem and a CmdRunner for shell commands as arguments.
+// In case of an error detecting the root of the Git repository or opening it, it returns an error.
 func NewGitRepo(fs afero.Fs, cmdRunner interfaces.CmdRunner) (*GitRepo, error) {
 	repoRoot, err := GetGitRepoRoot()
 	if err != nil {
