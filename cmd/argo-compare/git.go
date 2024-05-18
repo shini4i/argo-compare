@@ -117,6 +117,10 @@ func (g *GitRepo) getChangedFiles(fileReader interfaces.FileReader) ([]string, e
 	// Collect all the changed files
 	var foundFiles []string
 	for _, change := range changes {
+		if change.To.Name == "" {
+			log.Debugf("Skipping removed file [%s]", change.From.Name)
+			continue
+		}
 		foundFiles = append(foundFiles, change.To.Name)
 	}
 
