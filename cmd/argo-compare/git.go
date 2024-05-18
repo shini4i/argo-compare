@@ -156,15 +156,22 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) 
 	if err != nil {
 		if errors.Is(err, object.ErrFileNotFound) {
 			log.Warningf("The requested file %s does not exist in target branch %s, assuming it is a new Application", targetFile, targetBranch)
-			return models.Application{}, gitFileDoesNotExist
+			if !printAddedManifests {
+				return models.Application{}, gitFileDoesNotExist
+			}
+		} else {
+			return models.Application{}, fmt.Errorf("failed to find file %s in target branch %s: %v", targetFile, targetBranch, err)
 		}
-		return models.Application{}, fmt.Errorf("failed to find file %s in target branch %s: %v", targetFile, targetBranch, err)
 	}
 
-	// Get the file content.
-	fileContent, err := fileEntry.Contents()
-	if err != nil {
-		return models.Application{}, fmt.Errorf("failed to get contents of file %s: %v", targetFile, err)
+	var fileContent string
+	if fileEntry == nil {
+		fileContent = ""
+	} else {
+		fileContent, err = fileEntry.Contents()
+		if err != nil {
+			return models.Application{}, fmt.Errorf("failed to get contents of file %s: %v", targetFile, err)
+		}
 	}
 
 	// Create a temporary file with the content.
