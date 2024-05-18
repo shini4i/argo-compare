@@ -6,7 +6,7 @@ ENV DIFF_SO_FANCY_VERSION=1.4.4
 WORKDIR /tmp
 
 RUN ARCH="" && \
-    case `uname -m` in \
+    case $(uname -m) in \
         x86_64)  ARCH='amd64'; ;; \
         aarch64) ARCH='arm64'; ;; \
         *) echo "unsupported architecture"; exit 1 ;; \
@@ -32,13 +32,16 @@ RUN patch < /tmp/diff-so-fancy.patch
 
 FROM alpine:3.19
 
-RUN apk add --no-cache perl ncurses
+RUN apk add --no-cache perl ncurses \
+ && adduser --disabled-password --gecos '' app
 
 COPY --from=downloader /usr/bin/helm /usr/bin/helm
 COPY --from=downloader /usr/local/bin/lib /usr/local/bin/lib
 COPY --from=downloader /usr/local/bin/diff-so-fancy /usr/local/bin/diff-so-fancy
 
 COPY argo-compare /bin/argo-compare
+
+USER app
 
 ENTRYPOINT ["/bin/argo-compare"]
 CMD ["--help"]
