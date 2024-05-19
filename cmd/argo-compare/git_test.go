@@ -1,7 +1,13 @@
 package main
 
 import (
+	"os"
 	"testing"
+
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/stretchr/testify/require"
 
 	"github.com/spf13/afero"
 
@@ -47,4 +53,49 @@ func TestNewGitRepo(t *testing.T) {
 	assert.NotNil(t, repo.Repo)
 	assert.IsType(t, fs, repo.FsType)
 	assert.IsType(t, mockCmdRunner, repo.CmdRunner)
+}
+
+func TestGetChangedFiles(t *testing.T) {
+	// Create temporary directory for cloning
+	tempDir, err := os.MkdirTemp("", "gitTest")
+	assert.NoError(t, err)
+
+	defer os.RemoveAll(tempDir) // clean up
+
+	// Clone the bare repo to our temporary directory
+	repo, err := git.PlainClone(tempDir, false, &git.CloneOptions{
+		URL:          "../../testdata/repo.git",
+		SingleBranch: false,
+	})
+	require.NoError(t, err, "Failed to clone repository")
+
+	err = repo.Fetch(&git.FetchOptions{
+		RefSpecs: []config.RefSpec{"refs/*:refs/*", "HEAD:refs/heads/HEAD"},
+	})
+	assert.NoError(t, err, "Failed to fetch")
+
+	// Switch to the "feature" branch
+	w, err := repo.Worktree()
+
+	require.NoError(t, err, "Failed to get worktree")
+
+	branchRef := plumbing.NewBranchReferenceName("feature-branch")
+
+	err = w.Checkout(&git.CheckoutOptions{
+		Branch: branchRef,
+	})
+	require.NoError(t, err, "Failed to checkout feature branch")
+
+	// Initialize GitRepo with cloned repo and proceed with testing
+	target := GitRepo{
+		Repo:      repo,
+		FsType:    afero.NewOsFs(),
+		CmdRunner: &utils.RealCmdRunner{},
+	}
+
+	targetBranch = "main"
+
+	changedFiles, err := target.getChangedFiles(utils.OsFileReader{})
+	assert.Equal(t, []string{"cluster-state/web/ingress-nginx.yaml"}, changedFiles)
+	assert.NoError(t, err, "Failed to get changed files")
 }
