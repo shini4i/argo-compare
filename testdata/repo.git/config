@@ -5,4 +5,4 @@
 	ignorecase = true
 	precomposeunicode = true
 [remote "origin"]
-	url = /Users/v.gedzs/git/github.com/shini4i/argo-compare/testdata/repo
+	url = /Users/ci/git/github.com/shini4i/argo-compare/testdata/repo
