@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
@@ -62,12 +61,6 @@ func TestGetChangedFiles(t *testing.T) {
 	assert.NoError(t, err)
 
 	defer os.RemoveAll(tempDir) // clean up
-
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Errorf("Error getting current working directory: %v", err)
-	}
-	fmt.Println(dir)
 
 	// Clone the bare repo to our temporary directory
 	repo, err := git.PlainClone(tempDir, false, &git.CloneOptions{
