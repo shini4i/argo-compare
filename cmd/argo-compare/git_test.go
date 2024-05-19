@@ -4,6 +4,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/shini4i/argo-compare/internal/models"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -55,7 +57,7 @@ func TestNewGitRepo(t *testing.T) {
 	assert.IsType(t, mockCmdRunner, repo.CmdRunner)
 }
 
-func TestGetChangedFiles(t *testing.T) {
+func TestGitInteraction(t *testing.T) {
 	// Create temporary directory for cloning
 	tempDir, err := os.MkdirTemp("", "gitTest")
 	assert.NoError(t, err)
@@ -95,7 +97,35 @@ func TestGetChangedFiles(t *testing.T) {
 
 	targetBranch = "main"
 
-	changedFiles, err := target.getChangedFiles(utils.OsFileReader{})
-	assert.Equal(t, []string{"cluster-state/web/ingress-nginx.yaml"}, changedFiles)
-	assert.NoError(t, err, "Failed to get changed files")
+	t.Run("get changed files", func(t *testing.T) {
+		changedFiles, err := target.getChangedFiles(utils.OsFileReader{})
+		assert.Equal(t, []string{"cluster-state/web/ingress-nginx.yaml"}, changedFiles)
+		assert.NoError(t, err, "Failed to get changed files")
+	})
+
+	t.Run("get changed file content", func(t *testing.T) {
+		fileContent, err := target.getChangedFileContent("main", "cluster-state/web/ingress-nginx.yaml")
+		expectedApp := models.Application{
+			Kind: "Application",
+			Metadata: struct {
+				Name      string `yaml:"name"`
+				Namespace string `yaml:"namespace"`
+			}{
+				Name:      "ingress-nginx",
+				Namespace: "argo-cd",
+			},
+			Spec: struct {
+				Source      *models.Source   `yaml:"source"`
+				Sources     []*models.Source `yaml:"sources"`
+				MultiSource bool             `yaml:"-"`
+			}{
+				Source: &models.Source{
+					TargetRevision: "4.9.1",
+				},
+			},
+		}
+		assert.NoError(t, err)
+		assert.Equal(t, expectedApp.Metadata.Name, fileContent.Metadata.Name)
+		assert.Equal(t, expectedApp.Spec.Source.TargetRevision, fileContent.Spec.Source.TargetRevision)
+	})
 }
