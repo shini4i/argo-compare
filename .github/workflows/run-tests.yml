@@ -45,13 +45,6 @@ jobs:
       - name: Run tests
         run: make test-coverage
 
-      - name: Publish Test Results
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        if: always()
-        with:
-          files: |
-            report.xml
-
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
         with:

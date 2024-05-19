@@ -27,7 +27,6 @@ var (
 	cacheDir         = helpers.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
 	tmpDir           string
 	version          = "local"
-	repo             = GitRepo{FsType: afero.NewOsFs(), CmdRunner: &utils.RealCmdRunner{}}
 	repoCredentials  []models.RepoCredentials
 	externalDiffTool = os.Getenv("EXTERNAL_DIFF_TOOL")
 )
@@ -43,7 +42,9 @@ var (
 )
 
 var (
-	cyan = color.New(color.FgCyan, color.Bold).SprintFunc()
+	cyan   = color.New(color.FgCyan, color.Bold).SprintFunc()
+	red    = color.New(color.FgRed, color.Bold).SprintFunc()
+	yellow = color.New(color.FgYellow, color.Bold).SprintFunc()
 )
 
 func loggingInit(level logging.Level) {
@@ -82,7 +83,7 @@ func processFiles(cmdRunner interfaces.CmdRunner, fileName string, fileType stri
 	return nil
 }
 
-func compareFiles(fs afero.Fs, cmdRunner interfaces.CmdRunner, changedFiles []string) {
+func compareFiles(fs afero.Fs, cmdRunner interfaces.CmdRunner, repo *GitRepo, changedFiles []string) {
 	for _, file := range changedFiles {
 		var err error
 
@@ -181,13 +182,18 @@ func runCLI() error {
 
 	updateConfigurations()
 
+	repo, err := NewGitRepo(afero.NewOsFs(), &utils.RealCmdRunner{})
+	if err != nil {
+		return err
+	}
+
 	log.Infof("===> Running Argo Compare version [%s]", cyan(version))
 
 	if err := collectRepoCredentials(); err != nil {
 		return err
 	}
 
-	changedFiles, err := getChangedFiles(&repo, fileToCompare)
+	changedFiles, err := getChangedFiles(repo, fileToCompare)
 	if err != nil {
 		return err
 	}
@@ -195,10 +201,10 @@ func runCLI() error {
 	if len(changedFiles) == 0 {
 		log.Info("No changed Application files found. Exiting...")
 	} else {
-		compareFiles(afero.NewOsFs(), &utils.RealCmdRunner{}, changedFiles)
+		compareFiles(afero.NewOsFs(), &utils.RealCmdRunner{}, repo, changedFiles)
 	}
 
-	return printInvalidFilesList(&repo)
+	return printInvalidFilesList(repo)
 }
 
 func getChangedFiles(repo *GitRepo, fileToCompare string) ([]string, error) {
