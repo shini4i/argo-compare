@@ -2,6 +2,8 @@ module github.com/shini4i/argo-compare
 
 go 1.22
 
+toolchain go1.22.2
+
 require (
 	github.com/alecthomas/kong v0.9.0
 	github.com/codingsince1985/checksum v1.3.0
