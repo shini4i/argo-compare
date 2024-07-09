@@ -1,6 +1,6 @@
-FROM alpine:3.19 AS downloader
+FROM alpine:3.20 AS downloader
 
-ENV HELM_VERSION=3.15.0
+ENV HELM_VERSION=3.15.2
 ENV DIFF_SO_FANCY_VERSION=1.4.4
 
 WORKDIR /tmp
@@ -30,7 +30,7 @@ WORKDIR /usr/local/bin
 
 RUN patch < /tmp/diff-so-fancy.patch
 
-FROM alpine:3.19
+FROM alpine:3.20
 
 RUN apk add --no-cache perl ncurses \
  && adduser --disabled-password --gecos '' app
