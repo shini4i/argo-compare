@@ -92,7 +92,7 @@ func (g RealHelmChartProcessor) DownloadHelmChart(cmdRunner interfaces.CmdRunner
 			cyan(chartName))
 
 		// we assume that if repoUrl does not have protocol, it is an OCI helm registry
-		// hence we mutate the content on chartName and remove content of repoUrl
+		// hence we mutate the content of chartName and remove content of repoUrl
 		if !strings.Contains(repoUrl, "http") {
 			chartName = fmt.Sprintf("oci://%s/%s", repoUrl, chartName)
 			repoUrl = ""
