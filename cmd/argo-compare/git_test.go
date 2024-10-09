@@ -60,7 +60,7 @@ func TestNewGitRepo(t *testing.T) {
 func TestGitInteraction(t *testing.T) {
 	// Create temporary directory for cloning
 	tempDir, err := os.MkdirTemp("", "gitTest")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	defer os.RemoveAll(tempDir) // clean up
 
@@ -74,7 +74,7 @@ func TestGitInteraction(t *testing.T) {
 	err = repo.Fetch(&git.FetchOptions{
 		RefSpecs: []config.RefSpec{"refs/*:refs/*", "HEAD:refs/heads/HEAD"},
 	})
-	assert.NoError(t, err, "Failed to fetch")
+	require.NoError(t, err, "Failed to fetch")
 
 	// Switch to the "feature" branch
 	w, err := repo.Worktree()
@@ -97,10 +97,14 @@ func TestGitInteraction(t *testing.T) {
 
 	targetBranch = "main"
 
+	// Change the working directory to the temporary directory
+	err = os.Chdir(tempDir)
+	require.NoError(t, err, "Failed to change working directory to tempDir")
+
 	t.Run("get changed files", func(t *testing.T) {
 		changedFiles, err := target.getChangedFiles(utils.OsFileReader{})
-		assert.Equal(t, []string{"cluster-state/web/ingress-nginx.yaml"}, changedFiles)
 		assert.NoError(t, err, "Failed to get changed files")
+		assert.Equal(t, []string{"cluster-state/web/ingress-nginx.yaml"}, changedFiles)
 	})
 
 	t.Run("get changed file content", func(t *testing.T) {
