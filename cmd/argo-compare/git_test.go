@@ -58,6 +58,16 @@ func TestNewGitRepo(t *testing.T) {
 }
 
 func TestGitInteraction(t *testing.T) {
+	// Save the initial working directory
+	originalDir, err := os.Getwd()
+	require.NoError(t, err, "Failed to get original working directory")
+
+	defer func() {
+		// Change back to the original working directory
+		err = os.Chdir(originalDir)
+		require.NoError(t, err, "Failed to change back to the original working directory")
+	}()
+
 	// Create temporary directory for cloning
 	tempDir, err := os.MkdirTemp("", "gitTest")
 	require.NoError(t, err)
@@ -78,11 +88,9 @@ func TestGitInteraction(t *testing.T) {
 
 	// Switch to the "feature" branch
 	w, err := repo.Worktree()
-
 	require.NoError(t, err, "Failed to get worktree")
 
 	branchRef := plumbing.NewBranchReferenceName("feature-branch")
-
 	err = w.Checkout(&git.CheckoutOptions{
 		Branch: branchRef,
 	})
