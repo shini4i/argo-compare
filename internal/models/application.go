@@ -46,7 +46,8 @@ type Source struct {
 // - Sets the 'MultiSource' field to true if sources are specified.
 // - Returns nil if all validation checks pass.
 func (app *Application) Validate() error {
-	if isEmpty(app) {
+	// Check if the required fields 'Kind', 'Metadata.Name', and 'Metadata.Namespace' are set.
+	if app.Kind == "" || app.Metadata.Name == "" || app.Metadata.Namespace == "" {
 		return EmptyFileError
 	}
 
@@ -76,14 +77,4 @@ func (app *Application) Validate() error {
 	}
 
 	return nil
-}
-
-// Check if the Application structure is empty.
-func isEmpty(app *Application) bool {
-	return app.Kind == "" &&
-		app.Metadata.Name == "" &&
-		app.Metadata.Namespace == "" &&
-		app.Spec.Source == nil &&
-		len(app.Spec.Sources) == 0 &&
-		!app.Spec.MultiSource
 }
