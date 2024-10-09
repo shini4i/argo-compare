@@ -133,7 +133,7 @@ func (g *GitRepo) getChangedFiles(fileReader interfaces.FileReader) ([]string, e
 	printChangeFile(foundFiles, removedFiles)
 	g.sortChangedFiles(fileReader, foundFiles)
 
-	return foundFiles, nil
+	return g.changedFiles, nil
 }
 
 // getChangedFileContent retrieves the content of a given targetFile in the provided targetBranch.
