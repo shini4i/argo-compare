@@ -81,7 +81,7 @@ func (g *GitRepo) sortChangedFiles(fileReader interfaces.FileReader, files []str
 // If errors occur during these steps, they are returned.
 // It also triggers the logging and sorting processes for the changed files.
 func (g *GitRepo) getChangedFiles(fileReader interfaces.FileReader) ([]string, error) {
-	targetRef, err := g.Repo.Reference(plumbing.ReferenceName(fmt.Sprintf("refs/heads/%s", targetBranch)), true)
+	targetRef, err := g.Repo.Reference(plumbing.ReferenceName(fmt.Sprintf("refs/remotes/origin/%s", targetBranch)), true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve target branch %s: %v", targetBranch, err)
 	}
@@ -144,7 +144,7 @@ func (g *GitRepo) getChangedFileContent(targetBranch string, targetFile string) 
 	log.Debugf("Getting content of %s from %s", targetFile, targetBranch)
 
 	// Retrieve the target branch reference.
-	targetRef, err := g.Repo.Reference(plumbing.ReferenceName("refs/heads/"+targetBranch), true)
+	targetRef, err := g.Repo.Reference(plumbing.ReferenceName("refs/remotes/origin/"+targetBranch), true)
 	if err != nil {
 		return models.Application{}, fmt.Errorf("failed to resolve target branch %s: %v", targetBranch, err)
 	}
