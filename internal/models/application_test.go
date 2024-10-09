@@ -67,6 +67,7 @@ func TestApplication_Validate(t *testing.T) {
 
 	// Test case 5: Both 'source' and 'sources' fields are set
 	appWithBothFields := &Application{
+		Kind: "Application",
 		Spec: struct {
 			Source      *Source   `yaml:"source"`
 			Sources     []*Source `yaml:"sources"`

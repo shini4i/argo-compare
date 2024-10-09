@@ -47,7 +47,7 @@ type Source struct {
 // - Returns nil if all validation checks pass.
 func (app *Application) Validate() error {
 	// Check if the required fields 'Kind', 'Metadata.Name', and 'Metadata.Namespace' are set.
-	if app.Kind == "" || app.Metadata.Name == "" || app.Metadata.Namespace == "" {
+	if app.Kind == "" && app.Metadata.Name == "" && app.Metadata.Namespace == "" {
 		return EmptyFileError
 	}
 
