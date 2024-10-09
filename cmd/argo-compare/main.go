@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/alecthomas/kong"
@@ -170,6 +171,7 @@ func parseCli() error {
 	case "branch <name>":
 		targetBranch = CLI.Branch.Name
 		fileToCompare = CLI.Branch.File
+		filesToIgnore = CLI.Branch.Ignore
 	}
 
 	return nil
@@ -193,7 +195,7 @@ func runCLI() error {
 		return err
 	}
 
-	changedFiles, err := getChangedFiles(repo, fileToCompare)
+	changedFiles, err := getChangedFiles(repo, fileToCompare, filesToIgnore)
 	if err != nil {
 		return err
 	}
@@ -207,7 +209,7 @@ func runCLI() error {
 	return printInvalidFilesList(repo)
 }
 
-func getChangedFiles(repo *GitRepo, fileToCompare string) ([]string, error) {
+func getChangedFiles(repo *GitRepo, fileToCompare string, filesToIgnore []string) ([]string, error) {
 	var changedFiles []string
 	var err error
 
@@ -220,7 +222,13 @@ func getChangedFiles(repo *GitRepo, fileToCompare string) ([]string, error) {
 		}
 	}
 
-	return changedFiles, nil
+	// Use slices library to filter out the filesToIgnore from the changedFiles slice
+	filteredChangedFiles := slices.DeleteFunc(changedFiles, func(file string) bool {
+		return slices.Contains(filesToIgnore, file)
+	})
+
+	// Return the filtered list
+	return filteredChangedFiles, nil
 }
 
 func updateConfigurations() {
