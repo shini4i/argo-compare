@@ -222,12 +222,10 @@ func getChangedFiles(repo *GitRepo, fileToCompare string, filesToIgnore []string
 		}
 	}
 
-	// Use slices library to filter out the filesToIgnore from the changedFiles slice
 	filteredChangedFiles := slices.DeleteFunc(changedFiles, func(file string) bool {
 		return slices.Contains(filesToIgnore, file)
 	})
 
-	// Return the filtered list
 	return filteredChangedFiles, nil
 }
 
