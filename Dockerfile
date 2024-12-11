@@ -1,20 +1,16 @@
 FROM alpine:3.20 AS downloader
 
+ARG TARGETARCH
+
 ENV HELM_VERSION=3.15.2
 ENV DIFF_SO_FANCY_VERSION=1.4.4
 
 WORKDIR /tmp
 
-RUN ARCH="" && \
-    case $(uname -m) in \
-        x86_64)  ARCH='amd64'; ;; \
-        aarch64) ARCH='arm64'; ;; \
-        *) echo "unsupported architecture"; exit 1 ;; \
-    esac \
-    && apk add --no-cache wget git patch \
-    && wget --progress=dot:giga -O helm.tar.gz "https://get.helm.sh/helm-v${HELM_VERSION}-linux-${ARCH}.tar.gz" \
-    && tar -xf helm.tar.gz "linux-${ARCH}/helm" \
-    && mv "linux-${ARCH}/helm" /usr/bin/helm
+RUN apk add --no-cache wget git patch \
+    && wget --progress=dot:giga -O helm.tar.gz "https://get.helm.sh/helm-v${HELM_VERSION}-linux-${TARGETARCH}.tar.gz" \
+    && tar -xf helm.tar.gz "linux-${TARGETARCH}/helm" \
+    && mv "linux-${TARGETARCH}/helm" /usr/bin/helm
 
 RUN git clone -b v${DIFF_SO_FANCY_VERSION} https://github.com/so-fancy/diff-so-fancy /diff-so-fancy \
  && mv /diff-so-fancy/diff-so-fancy /usr/local/bin/diff-so-fancy \
