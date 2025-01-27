@@ -12,7 +12,7 @@ require (
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/mattn/go-zglob v0.0.6
 	github.com/op/go-logging v0.0.0-20160315200505-970db520ece7
-	github.com/spf13/afero v1.11.0
+	github.com/spf13/afero v1.12.0
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/mock v0.5.0
 	gopkg.in/yaml.v3 v3.0.1
