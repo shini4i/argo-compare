@@ -5,7 +5,7 @@ go 1.23
 toolchain go1.23.4
 
 require (
-	github.com/alecthomas/kong v1.6.1
+	github.com/alecthomas/kong v1.8.1
 	github.com/codingsince1985/checksum v1.3.0
 	github.com/fatih/color v1.18.0
 	github.com/go-git/go-git/v5 v5.13.2
