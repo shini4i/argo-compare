@@ -1,7 +1,7 @@
 module github.com/shini4i/argo-compare
 
 go 1.23
-toolchain go1.23.4
+toolchain go1.24.1
 
 require (
 	github.com/alecthomas/kong v1.8.1
@@ -11,7 +11,7 @@ require (
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/mattn/go-zglob v0.0.6
 	github.com/op/go-logging v0.0.0-20160315200505-970db520ece7
-	github.com/spf13/afero v1.12.0
+	github.com/spf13/afero v1.14.0
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/mock v0.5.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -40,6 +40,6 @@ require (
 	golang.org/x/crypto v0.35.0 // indirect
 	golang.org/x/net v0.35.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
-	golang.org/x/text v0.22.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
