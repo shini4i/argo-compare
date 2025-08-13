@@ -18,10 +18,16 @@ type Application struct {
 		Namespace string `yaml:"namespace"`
 	} `yaml:"metadata"`
 	Spec struct {
-		Source      *Source   `yaml:"source"`
-		Sources     []*Source `yaml:"sources"`
-		MultiSource bool      `yaml:"-"`
+		Source      *Source      `yaml:"source"`
+		Sources     []*Source    `yaml:"sources"`
+		MultiSource bool         `yaml:"-"`
+		Destination *Destination `yaml:"destination"`
 	} `yaml:"spec"`
+}
+
+type Destination struct {
+	Server    string `yaml:"server"`
+	Namespace string `yaml:"namespace"`
 }
 
 type Source struct {

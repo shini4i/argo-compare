@@ -191,7 +191,7 @@ func (g RealHelmChartProcessor) ExtractHelmChart(cmdRunner interfaces.CmdRunner,
 // and the target type which categorizes the application.
 // The function constructs the Helm command with the provided arguments, runs it, and checks for any errors.
 // If there are any errors, it returns them. Otherwise, it returns nil.
-func (g RealHelmChartProcessor) RenderAppSource(cmdRunner interfaces.CmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType string) error {
+func (g RealHelmChartProcessor) RenderAppSource(cmdRunner interfaces.CmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType, namespace string) error {
 	g.Log.Debugf("Rendering [%s] chart's version [%s] templates using release name [%s]",
 		cyan(chartName),
 		cyan(chartVersion),
@@ -205,6 +205,7 @@ func (g RealHelmChartProcessor) RenderAppSource(cmdRunner interfaces.CmdRunner, 
 		"--output-dir", fmt.Sprintf("%s/templates/%s", tmpDir, targetType),
 		"--values", fmt.Sprintf("%s/charts/%s/%s/values.yaml", tmpDir, targetType, chartName),
 		"--values", fmt.Sprintf("%s/%s-values-%s.yaml", tmpDir, chartName, targetType),
+		"--namespace", namespace,
 	)
 
 	if err != nil {
