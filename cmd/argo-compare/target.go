@@ -140,14 +140,14 @@ func (t *Target) renderAppSources(helmChartProcessor interfaces.HelmChartsProces
 			} else {
 				releaseName = t.App.Metadata.Name
 			}
-			if err := helmChartProcessor.RenderAppSource(&utils.RealCmdRunner{}, releaseName, source.Chart, source.TargetRevision, tmpDir, t.Type); err != nil {
+			if err := helmChartProcessor.RenderAppSource(&utils.RealCmdRunner{}, releaseName, source.Chart, source.TargetRevision, tmpDir, t.Type, t.App.Spec.Destination.Namespace); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 
-	if err := helmChartProcessor.RenderAppSource(&utils.RealCmdRunner{}, releaseName, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision, tmpDir, t.Type); err != nil {
+	if err := helmChartProcessor.RenderAppSource(&utils.RealCmdRunner{}, releaseName, t.App.Spec.Source.Chart, t.App.Spec.Source.TargetRevision, tmpDir, t.Type, t.App.Spec.Destination.Namespace); err != nil {
 		return err
 	}
 

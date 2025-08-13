@@ -180,7 +180,7 @@ func TestTarget_renderAppSources(t *testing.T) {
 	err := app.parse()
 	assert.NoError(t, err)
 
-	mockHelmChartProcessor.EXPECT().RenderAppSource(app.CmdRunner, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	mockHelmChartProcessor.EXPECT().RenderAppSource(app.CmdRunner, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	err = app.renderAppSources(mockHelmChartProcessor)
 	assert.NoError(t, err)
@@ -195,20 +195,20 @@ func TestTarget_renderAppSources(t *testing.T) {
 	assert.NoError(t, err)
 
 	for _, source := range app2.App.Spec.Sources {
-		mockHelmChartProcessor.EXPECT().RenderAppSource(app2.CmdRunner, gomock.Any(), source.Chart, source.TargetRevision, gomock.Any(), gomock.Any()).Return(nil)
+		mockHelmChartProcessor.EXPECT().RenderAppSource(app2.CmdRunner, gomock.Any(), source.Chart, source.TargetRevision, gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	}
 
 	err = app2.renderAppSources(mockHelmChartProcessor)
 	assert.NoError(t, err)
 
 	// Test case 3: Single source rendering failure
-	mockHelmChartProcessor.EXPECT().RenderAppSource(app.CmdRunner, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("some rendering error"))
+	mockHelmChartProcessor.EXPECT().RenderAppSource(app.CmdRunner, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("some rendering error"))
 
 	err = app.renderAppSources(mockHelmChartProcessor)
 	assert.ErrorContains(t, err, "some rendering error")
 
 	// Test case 4: Multiple source rendering failure
-	mockHelmChartProcessor.EXPECT().RenderAppSource(app2.CmdRunner, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("multiple rendering error"))
+	mockHelmChartProcessor.EXPECT().RenderAppSource(app2.CmdRunner, gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("multiple rendering error"))
 
 	err = app2.renderAppSources(mockHelmChartProcessor)
 	assert.ErrorContains(t, err, "multiple rendering error")
