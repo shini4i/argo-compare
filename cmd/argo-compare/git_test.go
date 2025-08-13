@@ -127,9 +127,10 @@ func TestGitInteraction(t *testing.T) {
 				Namespace: "argo-cd",
 			},
 			Spec: struct {
-				Source      *models.Source   `yaml:"source"`
-				Sources     []*models.Source `yaml:"sources"`
-				MultiSource bool             `yaml:"-"`
+				Source      *models.Source      `yaml:"source"`
+				Sources     []*models.Source    `yaml:"sources"`
+				MultiSource bool                `yaml:"-"`
+				Destination *models.Destination `yaml:"destination"`
 			}{
 				Source: &models.Source{
 					TargetRevision: "4.9.1",

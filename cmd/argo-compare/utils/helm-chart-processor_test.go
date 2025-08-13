@@ -203,6 +203,7 @@ func TestRenderAppSource(t *testing.T) {
 	chartVersion := "1.2.3"
 	tmpDir := testsDir + "/tmp"
 	targetType := "src"
+	namespace := "my-namespace"
 
 	// Test case 1: Successful render
 	mockCmdRunner.EXPECT().Run("helm",
@@ -211,10 +212,11 @@ func TestRenderAppSource(t *testing.T) {
 		gomock.Any(),
 		"--output-dir", gomock.Any(),
 		"--values", gomock.Any(),
-		"--values", gomock.Any()).Return("", "", nil)
+		"--values", gomock.Any(),
+		"--namespace", gomock.Any()).Return("", "", nil)
 
 	// Call the function under test
-	err := helmChartProcessor.RenderAppSource(mockCmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType)
+	err := helmChartProcessor.RenderAppSource(mockCmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType, namespace)
 	assert.NoError(t, err, "expected no error, got %v", err)
 
 	// Test case 2: Failed render
@@ -227,8 +229,10 @@ func TestRenderAppSource(t *testing.T) {
 		gomock.Any(),
 		"--output-dir", gomock.Any(),
 		"--values", gomock.Any(),
-		"--values", gomock.Any()).Return("", "", osErr)
+		"--values", gomock.Any(),
+		"--namespace", gomock.Any()).Return("", "", osErr)
 
-	err = helmChartProcessor.RenderAppSource(mockCmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType)
+	err = helmChartProcessor.RenderAppSource(mockCmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType, namespace)
+	assert.Error(t, err, "expected error, got nil")
 	assert.Errorf(t, err, "expected error, got %v", err)
 }

@@ -24,9 +24,10 @@ func TestApplication_Validate(t *testing.T) {
 	appWithEmptyChart := &Application{
 		Kind: "Application",
 		Spec: struct {
-			Source      *Source   `yaml:"source"`
-			Sources     []*Source `yaml:"sources"`
-			MultiSource bool      `yaml:"-"`
+			Source      *Source      `yaml:"source"`
+			Sources     []*Source    `yaml:"sources"`
+			MultiSource bool         `yaml:"-"`
+			Destination *Destination `yaml:"destination"`
 		}{
 			Source: &Source{
 				Chart: "", // Empty chart name
@@ -42,9 +43,10 @@ func TestApplication_Validate(t *testing.T) {
 	appWithMultipleSources := &Application{
 		Kind: "Application",
 		Spec: struct {
-			Source      *Source   `yaml:"source"`
-			Sources     []*Source `yaml:"sources"`
-			MultiSource bool      `yaml:"-"`
+			Source      *Source      `yaml:"source"`
+			Sources     []*Source    `yaml:"sources"`
+			MultiSource bool         `yaml:"-"`
+			Destination *Destination `yaml:"destination"`
 		}{
 			Source: nil,
 			Sources: []*Source{
@@ -69,9 +71,10 @@ func TestApplication_Validate(t *testing.T) {
 	appWithBothFields := &Application{
 		Kind: "Application",
 		Spec: struct {
-			Source      *Source   `yaml:"source"`
-			Sources     []*Source `yaml:"sources"`
-			MultiSource bool      `yaml:"-"`
+			Source      *Source      `yaml:"source"`
+			Sources     []*Source    `yaml:"sources"`
+			MultiSource bool         `yaml:"-"`
+			Destination *Destination `yaml:"destination"`
 		}{
 			Source: &Source{
 				RepoURL:        "https://chart.example.com",
@@ -95,9 +98,10 @@ func TestApplication_Validate(t *testing.T) {
 	appWithMultipleSourcesUnsupported := &Application{
 		Kind: "Application",
 		Spec: struct {
-			Source      *Source   `yaml:"source"`
-			Sources     []*Source `yaml:"sources"`
-			MultiSource bool      `yaml:"-"`
+			Source      *Source      `yaml:"source"`
+			Sources     []*Source    `yaml:"sources"`
+			MultiSource bool         `yaml:"-"`
+			Destination *Destination `yaml:"destination"`
 		}{
 			Source: nil,
 			Sources: []*Source{
