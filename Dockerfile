@@ -28,7 +28,7 @@ RUN patch < /tmp/diff-so-fancy.patch
 
 FROM alpine:3.22
 
-RUN apk add --no-cache perl ncurses \
+RUN apk add --no-cache ncurses perl \
  && adduser --disabled-password --gecos '' app
 
 COPY --from=downloader /usr/bin/helm /usr/bin/helm

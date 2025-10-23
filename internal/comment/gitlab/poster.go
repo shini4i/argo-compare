@@ -113,6 +113,7 @@ func (p *Poster) Post(body string) error {
 		return fmt.Errorf("gitlab: unexpected status %s: %s", resp.Status, strings.TrimSpace(string(respBody)))
 	}
 
-	io.Copy(io.Discard, resp.Body)
+	// Drain response body for connection reuse; errors are intentionally ignored.
+	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
 }
