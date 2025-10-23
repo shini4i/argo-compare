@@ -178,7 +178,6 @@ func (g RealHelmChartProcessor) ExtractHelmChart(cmdRunner ports.CmdRunner, glob
 		g.Log.Error(stderr)
 	}
 
-	// Return the result of tar extraction (error or nil) so the caller can handle it appropriately.
 	return err
 }
 
