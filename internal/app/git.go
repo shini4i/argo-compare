@@ -150,7 +150,7 @@ func (g *GitRepo) targetFileContent(targetTree *object.Tree, targetBranch, targe
 	fileEntry, err := targetTree.File(targetFile)
 	if err != nil {
 		if errors.Is(err, object.ErrFileNotFound) {
-			g.log.Warningf("\u001B[33mThe requested file %s does not exist in target branch %s, assuming it is a new Application\u001B[0m", targetFile, targetBranch)
+			g.log.Warning(yellow(fmt.Sprintf("The requested file %s does not exist in target branch %s, assuming it is a new Application", targetFile, targetBranch)))
 			if !printAdded {
 				return "", gitFileDoesNotExist
 			}

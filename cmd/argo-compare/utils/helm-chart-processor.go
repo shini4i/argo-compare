@@ -74,14 +74,14 @@ func (g RealHelmChartProcessor) DownloadHelmChart(cmdRunner ports.CmdRunner, glo
 	chartLocation := fmt.Sprintf("%s/%s", cacheDir, repoUrl)
 
 	if err := os.MkdirAll(chartLocation, 0750); err != nil {
-		return err
+		return fmt.Errorf("failed to create chart cache directory %q: %w", chartLocation, err)
 	}
 
 	// A bit hacky, but we need to support cases when helm chart tgz filename does not follow the standard naming convention
 	// For example, sonarqube-4.0.0+315.tgz
 	chartFileName, err := globber.Glob(fmt.Sprintf("%s/%s-%s*.tgz", chartLocation, chartName, targetRevision))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to search for chart %s version %s in %s: %w", chartName, targetRevision, chartLocation, err)
 	}
 
 	if len(chartFileName) == 0 {
@@ -141,7 +141,7 @@ func (g RealHelmChartProcessor) ExtractHelmChart(cmdRunner ports.CmdRunner, glob
 
 	path := fmt.Sprintf("%s/charts/%s/%s", tmpDir, targetType, chartName)
 	if err := os.MkdirAll(path, 0750); err != nil {
-		return err
+		return fmt.Errorf("failed to create chart extraction directory %q: %w", path, err)
 	}
 
 	searchPattern := fmt.Sprintf("%s/%s-%s*.tgz",
@@ -178,6 +178,7 @@ func (g RealHelmChartProcessor) ExtractHelmChart(cmdRunner ports.CmdRunner, glob
 		g.Log.Error(stderr)
 	}
 
+	// Bubble up tar extraction failure (if any) so the caller can surface it with context.
 	return err
 }
 
@@ -205,6 +206,7 @@ func (g RealHelmChartProcessor) RenderAppSource(cmdRunner ports.CmdRunner, relea
 	)
 
 	if len(stderr) > 0 {
+		// Helm may emit warnings via stderr even on success; log them for visibility.
 		g.Log.Error(stderr)
 	}
 
