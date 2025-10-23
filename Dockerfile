@@ -7,7 +7,7 @@ ENV DIFF_SO_FANCY_VERSION=1.4.4
 
 WORKDIR /tmp
 
-RUN apk add --no-cache git patch wget \
+RUN apk add --no-cache wget git patch \
     && wget --progress=dot:giga -O helm.tar.gz "https://get.helm.sh/helm-v${HELM_VERSION}-linux-${TARGETARCH}.tar.gz" \
     && tar -xf helm.tar.gz "linux-${TARGETARCH}/helm" \
     && mv "linux-${TARGETARCH}/helm" /usr/bin/helm
@@ -28,7 +28,7 @@ RUN patch < /tmp/diff-so-fancy.patch
 
 FROM alpine:3.22
 
-RUN apk add --no-cache ncurses perl \
+RUN apk add --no-cache perl ncurses \
  && adduser --disabled-password --gecos '' app
 
 COPY --from=downloader /usr/bin/helm /usr/bin/helm
