@@ -78,10 +78,11 @@ func TestGitRepoGetChangedFilesRespectsIgnore(t *testing.T) {
 	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
 	require.NoError(t, err)
 
-	files, err := repoInstance.GetChangedFiles("main", []string{"apps/secondary.yaml"})
+	result, err := repoInstance.GetChangedFiles("main", []string{"apps/secondary.yaml"})
 	require.NoError(t, err)
 
-	require.ElementsMatch(t, []string{"apps/demo.yaml"}, files)
+	require.ElementsMatch(t, []string{"apps/demo.yaml"}, result.Applications)
+	require.Empty(t, result.Invalid)
 }
 
 func writeExtraApplication(t *testing.T, repoDir, name, version string, replicas int) {

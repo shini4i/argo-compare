@@ -28,8 +28,7 @@ type RealHelmChartProcessor struct {
 // GenerateValuesFile creates a Helm values file for a given chart in a specified directory.
 // It takes a chart name, a temporary directory for storing the file, the target type categorizing the application,
 // and the content of the values file in string format.
-// The function first attempts to create the file. If an error occurs, it terminates the program.
-// Next, it writes the values string to the file. If an error occurs during this process, the program is also terminated.
+// The function first attempts to create the file and writes the provided values content to disk.
 func (g RealHelmChartProcessor) GenerateValuesFile(chartName, tmpDir, targetType, values string, valuesObject map[string]interface{}) error {
 	yamlFile, err := os.Create(fmt.Sprintf("%s/%s-values-%s.yaml", tmpDir, chartName, targetType))
 	if err != nil {
@@ -37,9 +36,8 @@ func (g RealHelmChartProcessor) GenerateValuesFile(chartName, tmpDir, targetType
 	}
 
 	defer func(yamlFile *os.File) {
-		err := yamlFile.Close()
-		if err != nil {
-			g.Log.Fatal(err)
+		if err := yamlFile.Close(); err != nil {
+			g.Log.Errorf("failed to close values file %s: %v", yamlFile.Name(), err)
 		}
 	}(yamlFile)
 
@@ -74,14 +72,14 @@ func (g RealHelmChartProcessor) DownloadHelmChart(cmdRunner ports.CmdRunner, glo
 	chartLocation := fmt.Sprintf("%s/%s", cacheDir, repoUrl)
 
 	if err := os.MkdirAll(chartLocation, 0750); err != nil {
-		g.Log.Fatal(err)
+		return err
 	}
 
 	// A bit hacky, but we need to support cases when helm chart tgz filename does not follow the standard naming convention
 	// For example, sonarqube-4.0.0+315.tgz
 	chartFileName, err := globber.Glob(fmt.Sprintf("%s/%s-%s*.tgz", chartLocation, chartName, targetRevision))
 	if err != nil {
-		g.Log.Fatal(err)
+		return err
 	}
 
 	if len(chartFileName) == 0 {
@@ -178,11 +176,7 @@ func (g RealHelmChartProcessor) ExtractHelmChart(cmdRunner ports.CmdRunner, glob
 		g.Log.Error(stderr)
 	}
 
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // RenderAppSource uses the Helm CLI to render the templates of a given chart.
@@ -208,10 +202,9 @@ func (g RealHelmChartProcessor) RenderAppSource(cmdRunner ports.CmdRunner, relea
 		"--namespace", namespace,
 	)
 
-	if err != nil {
+	if len(stderr) > 0 {
 		g.Log.Error(stderr)
-		return err
 	}
 
-	return nil
+	return err
 }

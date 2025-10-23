@@ -82,7 +82,10 @@ func (a *App) Run() error {
 
 	a.logger.Infof("===> Running Argo Compare version [%s]", cyan(a.cfg.Version))
 
-	var changedFiles []string
+	var (
+		changedFiles []string
+		invalidFiles []string
+	)
 
 	if a.cfg.FileToCompare != "" {
 		changedFiles = filterIgnored([]string{a.cfg.FileToCompare}, a.cfg.FilesToIgnore)
@@ -91,10 +94,13 @@ func (a *App) Run() error {
 			return nil
 		}
 	} else {
-		changedFiles, err = repo.GetChangedFiles(a.cfg.TargetBranch, a.cfg.FilesToIgnore)
+		var result ChangedFilesResult
+		result, err = repo.GetChangedFiles(a.cfg.TargetBranch, a.cfg.FilesToIgnore)
 		if err != nil {
 			return err
 		}
+		changedFiles = result.Applications
+		invalidFiles = result.Invalid
 	}
 
 	if len(changedFiles) == 0 {
@@ -106,7 +112,7 @@ func (a *App) Run() error {
 		return err
 	}
 
-	return repo.PrintInvalidFiles()
+	return a.reportInvalidFiles(invalidFiles)
 }
 
 func (a *App) compareFiles(repo *GitRepo, changedFiles []string) error {
@@ -235,4 +241,17 @@ func (a *App) collectRepoCredentials() error {
 	}
 
 	return nil
+}
+
+func (a *App) reportInvalidFiles(invalid []string) error {
+	if len(invalid) == 0 {
+		return nil
+	}
+
+	a.logger.Info("===> The following yaml files are invalid and were skipped")
+	for _, file := range invalid {
+		a.logger.Warningf("▶ %s", file)
+	}
+
+	return errors.New("invalid files found")
 }
