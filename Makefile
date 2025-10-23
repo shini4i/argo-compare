@@ -14,7 +14,7 @@ install-deps: ## Install dependencies
 .PHONY: mocks
 mocks: ## Generate mocks
 	@echo "===> Generating mocks"
-	@mockgen --source=cmd/argo-compare/interfaces/interfaces.go --destination=cmd/argo-compare/mocks/interfaces.go --package=mocks
+	@mockgen --source=internal/ports/ports.go --destination=cmd/argo-compare/mocks/interfaces.go --package=mocks
 
 .PHONY: test
 test: mocks ## Run tests
@@ -22,7 +22,7 @@ test: mocks ## Run tests
 
 .PHONY: test-coverage
 test-coverage: mocks ## Run tests with coverage
-	@mkdir -p testdata/repo.git/refs/heads testdata/repo.git/refs/tags
+	@mkdir -p .tmp/repo.git/refs/heads .tmp/repo.git/refs/tags
 	@go test -v -coverprofile=coverage.out ./... -count=1 2>&1 | tee /dev/stderr | go-junit-report -set-exit-code > report.xml
 
 .PHONY: test-coverage-html

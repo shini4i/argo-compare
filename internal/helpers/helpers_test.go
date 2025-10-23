@@ -1,11 +1,14 @@
 package helpers
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -17,6 +20,19 @@ metadata:
     app.kubernetes.io/instance: traefik-web
     app.kubernetes.io/name: traefik
     argocd.argoproj.io/instance: traefik
+  name: traefik
+  namespace: web
+`
+	helmDeploymentWithManagedLabels = `# for testing purpose we need only limited fields
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/instance: traefik-web
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: traefik
+    argocd.argoproj.io/instance: traefik
+    helm.sh/chart: traefik-23.0.1
   name: traefik
   namespace: web
 `
@@ -36,25 +52,18 @@ func TestGetEnv(t *testing.T) {
 	assert.Equal(t, expectedValue, actualValue)
 }
 
-func TestContains(t *testing.T) {
-	// Test case 1: Check if an item is in a slice
-	slice1 := []string{"apple", "banana", "cherry"}
-	assert.True(t, Contains(slice1, "apple"))
-
-	// Test case 2: Check if an item is not in a slice
-	slice2 := []string{"apple", "banana", "cherry"}
-	assert.False(t, Contains(slice2, "orange"))
-}
-
 func TestStripHelmLabels(t *testing.T) {
-	// Call the function to strip Helm labels
-	fileContent, err := StripHelmLabels("../../testdata/dynamic/deployment.yaml")
+	tmpDir := t.TempDir()
+	sourcePath := filepath.Join(tmpDir, "deployment.yaml")
+	require.NoError(t, os.WriteFile(sourcePath, []byte(helmDeploymentWithManagedLabels), 0o644))
+
+	fileContent, err := StripHelmLabels(sourcePath)
 
 	assert.NoError(t, err)
 	assert.Equal(t, expectedStrippedOutput, string(fileContent))
 
 	// We want to be sure that the function returns an error if the file cannot be read
-	_, err = StripHelmLabels("../../testdata/invalid.yaml")
+	_, err = StripHelmLabels(filepath.Join(tmpDir, "missing.yaml"))
 	assert.Error(t, err)
 }
 
@@ -62,7 +71,7 @@ func TestWriteToFile(t *testing.T) {
 	fs := afero.NewMemMapFs()
 
 	// Test case 1: Check the successful case
-	filePath := "../../testdata/dynamic/output.txt"
+	filePath := "output.txt"
 
 	// Call the function to write data to file
 	err := WriteToFile(fs, filePath, []byte(expectedStrippedOutput))
@@ -82,7 +91,7 @@ func TestWriteToFile(t *testing.T) {
 	// Test case 2: Check the error case (we should get an error if the file cannot be written)
 	fs = afero.NewReadOnlyFs(fs)
 
-	filePath = "../../testdata/invalid/output.txt"
+	filePath = "invalid/output.txt"
 	err = WriteToFile(fs, filePath, []byte(expectedStrippedOutput))
 	assert.Error(t, err)
 }

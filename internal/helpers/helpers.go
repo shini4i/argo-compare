@@ -20,18 +20,6 @@ func GetEnv(key, fallback string) string {
 	return fallback
 }
 
-// Contains checks if a string `s` is present in the given string slice `slice`.
-// It iterates over each item in the slice and returns true if a match is found.
-// If no match is found, it returns false.
-func Contains(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
-			return true
-		}
-	}
-	return false
-}
-
 // StripHelmLabels removes the specified Helm labels from the content of a file.
 // The function takes a file path as input and returns the stripped file content as a byte slice.
 // It removes the labels listed in the `labels` slice using regular expressions.

@@ -12,15 +12,17 @@ import (
 
 	"github.com/op/go-logging"
 
-	interfaces "github.com/shini4i/argo-compare/cmd/argo-compare/interfaces"
 	"github.com/shini4i/argo-compare/internal/models"
+	"github.com/shini4i/argo-compare/internal/ports"
 )
 
 var (
-	cyan                  = color.New(color.FgCyan, color.Bold).SprintFunc()
+	cyan = color.New(color.FgCyan, color.Bold).SprintFunc()
+	// FailedToDownloadChart indicates Helm failed to pull the requested chart.
 	FailedToDownloadChart = errors.New("failed to download chart")
 )
 
+// RealHelmChartProcessor coordinates Helm CLI interactions for chart lifecycle tasks.
 type RealHelmChartProcessor struct {
 	Log *logging.Logger
 }
@@ -28,8 +30,7 @@ type RealHelmChartProcessor struct {
 // GenerateValuesFile creates a Helm values file for a given chart in a specified directory.
 // It takes a chart name, a temporary directory for storing the file, the target type categorizing the application,
 // and the content of the values file in string format.
-// The function first attempts to create the file. If an error occurs, it terminates the program.
-// Next, it writes the values string to the file. If an error occurs during this process, the program is also terminated.
+// The function first attempts to create the file and writes the provided values content to disk.
 func (g RealHelmChartProcessor) GenerateValuesFile(chartName, tmpDir, targetType, values string, valuesObject map[string]interface{}) error {
 	yamlFile, err := os.Create(fmt.Sprintf("%s/%s-values-%s.yaml", tmpDir, chartName, targetType))
 	if err != nil {
@@ -37,9 +38,8 @@ func (g RealHelmChartProcessor) GenerateValuesFile(chartName, tmpDir, targetType
 	}
 
 	defer func(yamlFile *os.File) {
-		err := yamlFile.Close()
-		if err != nil {
-			g.Log.Fatal(err)
+		if err := yamlFile.Close(); err != nil {
+			g.Log.Errorf("failed to close values file %s: %v", yamlFile.Name(), err)
 		}
 	}(yamlFile)
 
@@ -70,18 +70,18 @@ func (g RealHelmChartProcessor) GenerateValuesFile(chartName, tmpDir, targetType
 // If the chart is already present in the cache, the function just logs the information and doesn't download it again.
 // The function is designed to handle potential errors during directory creation, globbing, and Helm chart downloading.
 // Any critical error during these operations terminates the program.
-func (g RealHelmChartProcessor) DownloadHelmChart(cmdRunner interfaces.CmdRunner, globber interfaces.Globber, cacheDir, repoUrl, chartName, targetRevision string, repoCredentials []models.RepoCredentials) error {
+func (g RealHelmChartProcessor) DownloadHelmChart(cmdRunner ports.CmdRunner, globber ports.Globber, cacheDir, repoUrl, chartName, targetRevision string, repoCredentials []models.RepoCredentials) error {
 	chartLocation := fmt.Sprintf("%s/%s", cacheDir, repoUrl)
 
 	if err := os.MkdirAll(chartLocation, 0750); err != nil {
-		g.Log.Fatal(err)
+		return fmt.Errorf("failed to create chart cache directory %q: %w", chartLocation, err)
 	}
 
 	// A bit hacky, but we need to support cases when helm chart tgz filename does not follow the standard naming convention
 	// For example, sonarqube-4.0.0+315.tgz
 	chartFileName, err := globber.Glob(fmt.Sprintf("%s/%s-%s*.tgz", chartLocation, chartName, targetRevision))
 	if err != nil {
-		g.Log.Fatal(err)
+		return fmt.Errorf("failed to search for chart %s version %s in %s: %w", chartName, targetRevision, chartLocation, err)
 	}
 
 	if len(chartFileName) == 0 {
@@ -133,7 +133,7 @@ func (g RealHelmChartProcessor) DownloadHelmChart(cmdRunner interfaces.CmdRunner
 // If multiple files matching the pattern are found, an error is returned.
 // The function logs any output (standard or error) from the tar command.
 // Any critical error during these operations, like directory creation or extraction failure, terminates the program.
-func (g RealHelmChartProcessor) ExtractHelmChart(cmdRunner interfaces.CmdRunner, globber interfaces.Globber, chartName, chartVersion, chartLocation, tmpDir, targetType string) error {
+func (g RealHelmChartProcessor) ExtractHelmChart(cmdRunner ports.CmdRunner, globber ports.Globber, chartName, chartVersion, chartLocation, tmpDir, targetType string) error {
 	g.Log.Debugf("Extracting [%s] chart version [%s] to %s/charts/%s...",
 		cyan(chartName),
 		cyan(chartVersion),
@@ -141,7 +141,7 @@ func (g RealHelmChartProcessor) ExtractHelmChart(cmdRunner interfaces.CmdRunner,
 
 	path := fmt.Sprintf("%s/charts/%s/%s", tmpDir, targetType, chartName)
 	if err := os.MkdirAll(path, 0750); err != nil {
-		return err
+		return fmt.Errorf("failed to create chart extraction directory %q: %w", path, err)
 	}
 
 	searchPattern := fmt.Sprintf("%s/%s-%s*.tgz",
@@ -178,11 +178,7 @@ func (g RealHelmChartProcessor) ExtractHelmChart(cmdRunner interfaces.CmdRunner,
 		g.Log.Error(stderr)
 	}
 
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 // RenderAppSource uses the Helm CLI to render the templates of a given chart.
@@ -191,7 +187,7 @@ func (g RealHelmChartProcessor) ExtractHelmChart(cmdRunner interfaces.CmdRunner,
 // and the target type which categorizes the application.
 // The function constructs the Helm command with the provided arguments, runs it, and checks for any errors.
 // If there are any errors, it returns them. Otherwise, it returns nil.
-func (g RealHelmChartProcessor) RenderAppSource(cmdRunner interfaces.CmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType, namespace string) error {
+func (g RealHelmChartProcessor) RenderAppSource(cmdRunner ports.CmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType, namespace string) error {
 	g.Log.Debugf("Rendering [%s] chart's version [%s] templates using release name [%s]",
 		cyan(chartName),
 		cyan(chartVersion),
@@ -208,10 +204,10 @@ func (g RealHelmChartProcessor) RenderAppSource(cmdRunner interfaces.CmdRunner, 
 		"--namespace", namespace,
 	)
 
-	if err != nil {
+	if len(stderr) > 0 {
+		// Helm may emit warnings via stderr even on success; log them for visibility.
 		g.Log.Error(stderr)
-		return err
 	}
 
-	return nil
+	return err
 }

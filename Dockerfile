@@ -1,4 +1,4 @@
-FROM alpine:3.20 AS downloader
+FROM alpine:3.22 AS downloader
 
 ARG TARGETARCH
 
@@ -26,7 +26,7 @@ WORKDIR /usr/local/bin
 
 RUN patch < /tmp/diff-so-fancy.patch
 
-FROM alpine:3.20
+FROM alpine:3.22
 
 RUN apk add --no-cache perl ncurses \
  && adduser --disabled-password --gecos '' app
