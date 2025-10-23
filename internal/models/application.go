@@ -6,11 +6,15 @@ import (
 )
 
 var (
-	NotApplicationError              = errors.New("file is not an Application")
+	// NotApplicationError signals that the provided manifest is not an ArgoCD Application.
+	NotApplicationError = errors.New("file is not an Application")
+	// UnsupportedAppConfigurationError identifies manifests that use unsupported configuration.
 	UnsupportedAppConfigurationError = errors.New("unsupported Application configuration")
-	EmptyFileError                   = errors.New("file is empty")
+	// EmptyFileError indicates that the manifest file contained no data.
+	EmptyFileError = errors.New("file is empty")
 )
 
+// Application models the subset of ArgoCD Application fields used by the tool.
 type Application struct {
 	Kind     string `yaml:"kind"`
 	Metadata struct {
@@ -25,11 +29,13 @@ type Application struct {
 	} `yaml:"spec"`
 }
 
+// Destination describes where an Application should be deployed.
 type Destination struct {
 	Server    string `yaml:"server"`
 	Namespace string `yaml:"namespace"`
 }
 
+// Source holds the chart or path information for a single Application source.
 type Source struct {
 	RepoURL        string `yaml:"repoURL"`
 	Chart          string `yaml:"chart,omitempty"`

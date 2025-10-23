@@ -13,6 +13,61 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	helmDeploymentWithManagedLabels = `# for testing purpose we need only limited fields
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/instance: traefik-web
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: traefik
+    argocd.argoproj.io/instance: traefik
+    helm.sh/chart: traefik-23.0.1
+  name: traefik
+  namespace: web
+`
+	expectedStrippedDeployment = `# for testing purpose we need only limited fields
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/instance: traefik-web
+    app.kubernetes.io/name: traefik
+    argocd.argoproj.io/instance: traefik
+  name: traefik
+  namespace: web
+`
+	appManifestYAML = `apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ingress-nginx
+  namespace: argo-cd
+spec:
+  source:
+    repoURL: https://kubernetes.github.io/ingress-nginx
+    chart: ingress-nginx
+    targetRevision: "4.2.3"
+    helm:
+      values: |
+        fullnameOverride: ingress-nginx
+        controller:
+          kind: DaemonSet
+          service:
+            externalTrafficPolicy: Local
+            annotations:
+              fancyAnnotation: false
+`
+	appValuesYAML = `fullnameOverride: ingress-nginx
+controller:
+  kind: DaemonSet
+  service:
+    externalTrafficPolicy: Local
+    annotations:
+      fancyAnnotation: false
+`
+)
+
 func TestCompareGenerateFilesStatus(t *testing.T) {
 	c := Compare{}
 
@@ -36,17 +91,9 @@ func TestCompareGenerateFilesStatus(t *testing.T) {
 }
 
 func TestCompareFindAndStripHelmLabels(t *testing.T) {
-	testFile := filepath.Join("..", "..", "testdata", "dynamic", "deployment.yaml")
-	backupFile := testFile + ".bak"
-
-	original, err := os.ReadFile(testFile)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(backupFile, original, 0o644))
-	t.Cleanup(func() {
-		require.NoError(t, os.Rename(backupFile, testFile))
-	})
-
-	tmpDir := filepath.Dir(testFile)
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "deployment.yaml")
+	require.NoError(t, os.WriteFile(testFile, []byte(helmDeploymentWithManagedLabels), 0o644))
 
 	c := &Compare{
 		Globber: utils.CustomGlobber{},
@@ -58,19 +105,7 @@ func TestCompareFindAndStripHelmLabels(t *testing.T) {
 	modified, err := os.ReadFile(testFile)
 	require.NoError(t, err)
 
-	expected := `# for testing purpose we need only limited fields
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    app.kubernetes.io/instance: traefik-web
-    app.kubernetes.io/name: traefik
-    argocd.argoproj.io/instance: traefik
-  name: traefik
-  namespace: web
-`
-
-	assert.Equal(t, expected, string(modified))
+	assert.Equal(t, expectedStrippedDeployment, string(modified))
 }
 
 func TestCompareProcessFiles(t *testing.T) {
@@ -80,8 +115,8 @@ func TestCompareProcessFiles(t *testing.T) {
 
 	file1 := filepath.Join(srcDir, "test.yaml")
 	file2 := filepath.Join(srcDir, "test-values.yaml")
-	copyFile(t, filepath.Join("..", "..", "testdata", "test.yaml"), file1)
-	copyFile(t, filepath.Join("..", "..", "testdata", "test-values.yaml"), file2)
+	require.NoError(t, os.WriteFile(file1, []byte(appManifestYAML), 0o644))
+	require.NoError(t, os.WriteFile(file2, []byte(appValuesYAML), 0o644))
 
 	c := &Compare{TmpDir: tmpDir}
 
@@ -132,9 +167,37 @@ func TestStdoutStrategyPresent(t *testing.T) {
 	assert.Contains(t, logs, "file3")
 }
 
-func copyFile(t *testing.T, src, dst string) {
-	t.Helper()
-	data, err := os.ReadFile(src)
+func TestCompareExecuteProducesDiffs(t *testing.T) {
+	tmpDir := t.TempDir()
+	srcDir := filepath.Join(tmpDir, "templates", "src")
+	dstDir := filepath.Join(tmpDir, "templates", "dst")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+	require.NoError(t, os.MkdirAll(dstDir, 0o755))
+
+	write := func(dir, name, content string) {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644))
+	}
+
+	write(srcDir, "added.yaml", "kind: ConfigMap\nmetadata:\n  name: added\n")
+	write(dstDir, "removed.yaml", "kind: ConfigMap\nmetadata:\n  name: removed\n")
+	write(srcDir, "changed.yaml", "kind: ConfigMap\nmetadata:\n  name: changed\n  labels:\n    side: src\n")
+	write(dstDir, "changed.yaml", "kind: ConfigMap\nmetadata:\n  name: changed\n  labels:\n    side: dst\n")
+
+	compare := Compare{
+		Globber:            utils.CustomGlobber{},
+		TmpDir:             tmpDir,
+		PreserveHelmLabels: true,
+	}
+
+	result, err := compare.Execute()
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(dst, data, 0o644))
+
+	require.Len(t, result.Added, 1)
+	assert.Equal(t, "/added.yaml", result.Added[0].File.Name)
+	require.Len(t, result.Removed, 1)
+	assert.Equal(t, "/removed.yaml", result.Removed[0].File.Name)
+	require.Len(t, result.Changed, 1)
+	assert.Equal(t, "/changed.yaml", result.Changed[0].File.Name)
+	assert.Contains(t, result.Changed[0].Diff, "-    side: dst")
+	assert.Contains(t, result.Changed[0].Diff, "+    side: src")
 }

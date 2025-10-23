@@ -18,11 +18,11 @@ mocks: ## Generate mocks
 
 .PHONY: test
 test: mocks ## Run tests
-	@go test -v ./... -count=1
+@go test -v ./... -count=1
 
 .PHONY: test-coverage
 test-coverage: mocks ## Run tests with coverage
-	@mkdir -p testdata/repo.git/refs/heads testdata/repo.git/refs/tags
+	@mkdir -p .tmp/repo.git/refs/heads .tmp/repo.git/refs/tags
 	@go test -v -coverprofile=coverage.out ./... -count=1 2>&1 | tee /dev/stderr | go-junit-report -set-exit-code > report.xml
 
 .PHONY: test-coverage-html

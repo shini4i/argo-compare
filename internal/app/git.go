@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/afero"
 )
 
+// GitRepo wraps interactions with the current repository for diff analysis.
 type GitRepo struct {
 	repo       *git.Repository
 	fs         afero.Fs
@@ -24,6 +25,7 @@ type GitRepo struct {
 	log        *logging.Logger
 }
 
+// ChangedFilesResult encapsulates the changed application files and any invalid manifests.
 type ChangedFilesResult struct {
 	Applications []string
 	Invalid      []string
@@ -31,6 +33,7 @@ type ChangedFilesResult struct {
 
 var gitFileDoesNotExist = errors.New("file does not exist in target branch")
 
+// NewGitRepo opens the current repository and prepares helpers for git operations.
 func NewGitRepo(fs afero.Fs, cmdRunner ports.CmdRunner, fileReader ports.FileReader, log *logging.Logger) (*GitRepo, error) {
 	repoRoot, err := GetGitRepoRoot()
 	if err != nil {
@@ -51,6 +54,7 @@ func NewGitRepo(fs afero.Fs, cmdRunner ports.CmdRunner, fileReader ports.FileRea
 	}, nil
 }
 
+// GetChangedFiles compares HEAD against targetBranch and returns changed application files.
 func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string) (ChangedFilesResult, error) {
 	targetRef, err := g.repo.Reference(plumbing.ReferenceName(fmt.Sprintf("refs/remotes/origin/%s", targetBranch)), true)
 	if err != nil {
@@ -104,6 +108,7 @@ func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string) (
 	return ChangedFilesResult{Applications: filtered, Invalid: invalid}, nil
 }
 
+// GetChangedFileContent fetches and parses targetFile from targetBranch.
 func (g *GitRepo) GetChangedFileContent(targetBranch, targetFile string, printAdded bool) (models.Application, error) {
 	g.log.Debugf("Getting content of %s from %s", targetFile, targetBranch)
 
@@ -230,6 +235,7 @@ func (g *GitRepo) checkIfApp(file string) (bool, error) {
 	return true, nil
 }
 
+// GetGitRepoRoot walks up from the working directory to find the repository root.
 func GetGitRepoRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {

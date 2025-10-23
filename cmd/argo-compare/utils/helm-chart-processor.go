@@ -17,10 +17,12 @@ import (
 )
 
 var (
-	cyan                  = color.New(color.FgCyan, color.Bold).SprintFunc()
+	cyan = color.New(color.FgCyan, color.Bold).SprintFunc()
+	// FailedToDownloadChart indicates Helm failed to pull the requested chart.
 	FailedToDownloadChart = errors.New("failed to download chart")
 )
 
+// RealHelmChartProcessor coordinates Helm CLI interactions for chart lifecycle tasks.
 type RealHelmChartProcessor struct {
 	Log *logging.Logger
 }

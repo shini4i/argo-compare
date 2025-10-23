@@ -8,18 +8,21 @@ import (
 	"github.com/op/go-logging"
 )
 
+// DiffStrategy presents comparison results to the user.
 type DiffStrategy interface {
 	Present(result ComparisonResult) error
 }
 
 const currentFilePrintPattern = "▶ %s"
 
+// StdoutStrategy writes diff summaries to the configured logger.
 type StdoutStrategy struct {
 	Log         *logging.Logger
 	ShowAdded   bool
 	ShowRemoved bool
 }
 
+// ExternalDiffStrategy pipes unified diffs into an external command.
 type ExternalDiffStrategy struct {
 	Log         *logging.Logger
 	Tool        string
@@ -27,6 +30,7 @@ type ExternalDiffStrategy struct {
 	ShowRemoved bool
 }
 
+// Present prints comparison results using the configured stdout logger.
 func (s StdoutStrategy) Present(result ComparisonResult) error {
 	if result.IsEmpty() {
 		s.Log.Info("No diff was found in rendered manifests!")
@@ -64,6 +68,7 @@ func (s StdoutStrategy) printSection(operation string, entries []DiffOutput) {
 	}
 }
 
+// Present streams diff content to the configured external tool.
 func (s ExternalDiffStrategy) Present(result ComparisonResult) error {
 	if result.IsEmpty() {
 		s.Log.Info("No diff was found in rendered manifests!")

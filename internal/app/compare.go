@@ -16,26 +16,31 @@ import (
 	"github.com/spf13/afero"
 )
 
+// File captures the relative name and checksum of a rendered manifest.
 type File struct {
 	Name string
 	Sha  string
 }
 
+// DiffOutput contains the unified diff for a single manifest.
 type DiffOutput struct {
 	File File
 	Diff string
 }
 
+// ComparisonResult aggregates the additions, removals, and changes discovered.
 type ComparisonResult struct {
 	Added   []DiffOutput
 	Removed []DiffOutput
 	Changed []DiffOutput
 }
 
+// IsEmpty reports whether there are no changes to present.
 func (r ComparisonResult) IsEmpty() bool {
 	return len(r.Added) == 0 && len(r.Removed) == 0 && len(r.Changed) == 0
 }
 
+// Compare analyses rendered manifest trees to produce diff results.
 type Compare struct {
 	Globber            ports.Globber
 	TmpDir             string
@@ -48,6 +53,7 @@ type Compare struct {
 	diffFiles    []File
 }
 
+// Execute orchestrates the comparison of rendered manifests.
 func (c *Compare) Execute() (ComparisonResult, error) {
 	if err := c.prepareFiles(); err != nil {
 		return ComparisonResult{}, err

@@ -1,7 +1,0 @@
-fullnameOverride: ingress-nginx
-controller:
-  kind: DaemonSet
-  service:
-    externalTrafficPolicy: Local
-    annotations:
-      fancyAnnotation: false

@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Target encapsulates the chart rendering workflow for a single application source.
 type Target struct {
 	CmdRunner       ports.CmdRunner
 	FileReader      ports.FileReader

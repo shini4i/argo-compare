@@ -1,6 +1,7 @@
 package command
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -96,4 +97,74 @@ func TestExecuteDropCache(t *testing.T) {
 	_, statErr := os.Stat(cacheDir)
 	assert.True(t, os.IsNotExist(statErr))
 	assert.False(t, called, "run function should not execute when dropping cache")
+}
+
+func TestExecuteErrorScenarios(t *testing.T) {
+	cases := []struct {
+		name      string
+		setupOpts func(t *testing.T) Options
+		args      []string
+		wantErr   string
+	}{
+		{
+			name: "missing run handler",
+			setupOpts: func(t *testing.T) Options {
+				return Options{
+					Version:          "test",
+					CacheDir:         t.TempDir(),
+					TempDirBase:      t.TempDir(),
+					ExternalDiffTool: "",
+					InitLogging:      func(bool) {},
+					RunApp:           nil,
+				}
+			},
+			args:    []string{"branch", "main"},
+			wantErr: "no run handler provided",
+		},
+		{
+			name: "run handler failure",
+			setupOpts: func(t *testing.T) Options {
+				return Options{
+					Version:          "test",
+					CacheDir:         t.TempDir(),
+					TempDirBase:      t.TempDir(),
+					ExternalDiffTool: "",
+					InitLogging:      func(bool) {},
+					RunApp: func(app.Config) error {
+						return errors.New("execution failed")
+					},
+				}
+			},
+			args:    []string{"branch", "main"},
+			wantErr: "execution failed",
+		},
+		{
+			name: "missing branch argument",
+			setupOpts: func(t *testing.T) Options {
+				return Options{
+					Version:          "test",
+					CacheDir:         t.TempDir(),
+					TempDirBase:      t.TempDir(),
+					ExternalDiffTool: "",
+					InitLogging:      func(bool) {},
+					RunApp: func(app.Config) error {
+						t.Fatalf("RunApp should not be called")
+						return nil
+					},
+				}
+			},
+			args:    []string{"branch"},
+			wantErr: "accepts 1 arg(s), received 0",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			opts := tc.setupOpts(t)
+			err := Execute(opts, tc.args)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
 }

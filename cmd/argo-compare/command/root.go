@@ -9,8 +9,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// ErrCachePurged indicates the user requested cache removal and no further work should run.
 var ErrCachePurged = errors.New("cache directory purged")
 
+// Options describes the collaborators and defaults required to build the CLI.
 type Options struct {
 	Version          string
 	CacheDir         string
@@ -20,6 +22,7 @@ type Options struct {
 	InitLogging      func(debug bool)
 }
 
+// Execute builds and runs the Cobra command tree using the supplied options.
 func Execute(opts Options, args []string) error {
 	root := newRootCommand(opts)
 

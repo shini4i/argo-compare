@@ -15,6 +15,7 @@ import (
 
 const repoCredsPrefix = "REPO_CREDS_" // #nosec G101
 
+// Dependencies aggregates runtime collaborators required by App.
 type Dependencies struct {
 	FS            afero.Fs
 	CmdRunner     ports.CmdRunner
@@ -24,6 +25,7 @@ type Dependencies struct {
 	Logger        *logging.Logger
 }
 
+// App orchestrates the end-to-end comparison workflow.
 type App struct {
 	cfg             Config
 	fs              afero.Fs
@@ -35,6 +37,7 @@ type App struct {
 	repoCredentials []models.RepoCredentials
 }
 
+// New constructs an App using the supplied configuration and dependencies.
 func New(cfg Config, deps Dependencies) (*App, error) {
 	if cfg.CacheDir == "" {
 		return nil, errors.New("cache directory must be provided")
@@ -70,6 +73,7 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 	}, nil
 }
 
+// Run executes the comparison workflow and returns any terminal error.
 func (a *App) Run() error {
 	if err := a.collectRepoCredentials(); err != nil {
 		return err
