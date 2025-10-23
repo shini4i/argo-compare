@@ -18,7 +18,7 @@ mocks: ## Generate mocks
 
 .PHONY: test
 test: mocks ## Run tests
-@go test -v ./... -count=1
+	@go test -v ./... -count=1
 
 .PHONY: test-coverage
 test-coverage: mocks ## Run tests with coverage
