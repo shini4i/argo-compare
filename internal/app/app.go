@@ -122,40 +122,73 @@ func (a *App) Run() error {
 // compareFiles renders and evaluates each changed Application manifest against the target branch.
 func (a *App) compareFiles(repo *GitRepo, changedFiles []string) error {
 	for _, file := range changedFiles {
-		a.logger.Infof("===> Processing changed application: [%s]", cyan(file))
-
-		tmpDir, err := afero.TempDir(a.fs, a.cfg.TempDirBase, "argo-compare-")
-		if err != nil {
-			return err
-		}
-
-		if err := a.processFile(file, "src", models.Application{}, tmpDir); err != nil {
-			return err
-		}
-
-		app, err := repo.GetChangedFileContent(a.cfg.TargetBranch, file, a.cfg.PrintAddedManifests)
-		if errors.Is(err, gitFileDoesNotExist) && !a.cfg.PrintAddedManifests {
-			continue
-		} else if err != nil && !errors.Is(err, models.EmptyFileError) {
-			a.logger.Errorf("Could not get the target Application from branch [%s]: %s", a.cfg.TargetBranch, err)
-		}
-
-		if !errors.Is(err, models.EmptyFileError) {
-			if err := a.processFile(file, "dst", app, tmpDir); err != nil && !a.cfg.PrintAddedManifests {
-				return err
-			}
-		}
-
-		if err := a.runComparison(tmpDir); err != nil {
-			return err
-		}
-
-		if err := (afero.Afero{Fs: a.fs}).RemoveAll(tmpDir); err != nil {
+		if err := a.processChangedFile(repo, file); err != nil {
 			return err
 		}
 	}
-
 	return nil
+}
+
+type destinationAction int
+
+const (
+	destinationSkip destinationAction = iota
+	destinationNone
+	destinationProcess
+)
+
+// processChangedFile orchestrates comparison for a single manifest, optionally skipping targets.
+func (a *App) processChangedFile(repo *GitRepo, file string) (err error) {
+	a.logger.Infof("===> Processing changed application: [%s]", cyan(file))
+
+	tmpDir, err := afero.TempDir(a.fs, a.cfg.TempDirBase, "argo-compare-")
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if removeErr := (afero.Afero{Fs: a.fs}).RemoveAll(tmpDir); err == nil && removeErr != nil {
+			err = removeErr
+		}
+	}()
+
+	if err = a.processFile(file, "src", models.Application{}, tmpDir); err != nil {
+		return err
+	}
+
+	targetApp, action, err := a.resolveTargetApplication(repo, file)
+	if err != nil {
+		return err
+	}
+
+	if action == destinationSkip {
+		return nil
+	}
+
+	if action == destinationProcess {
+		if destErr := a.processFile(file, "dst", targetApp, tmpDir); destErr != nil && !a.cfg.PrintAddedManifests {
+			return destErr
+		}
+	}
+
+	return a.runComparison(tmpDir)
+}
+
+// resolveTargetApplication retrieves the target branch manifest and determines follow-up actions.
+func (a *App) resolveTargetApplication(repo *GitRepo, file string) (models.Application, destinationAction, error) {
+	app, err := repo.GetChangedFileContent(a.cfg.TargetBranch, file, a.cfg.PrintAddedManifests)
+
+	switch {
+	case errors.Is(err, gitFileDoesNotExist) && !a.cfg.PrintAddedManifests:
+		return models.Application{}, destinationSkip, nil
+	case errors.Is(err, models.EmptyFileError):
+		return models.Application{}, destinationNone, nil
+	case err != nil:
+		a.logger.Errorf("Could not get the target Application from branch [%s]: %s", a.cfg.TargetBranch, err)
+		return app, destinationProcess, nil
+	default:
+		return app, destinationProcess, nil
+	}
 }
 
 // processFile prepares Helm inputs for a single manifest and renders its templates.
