@@ -135,7 +135,9 @@ func (a *App) compareFiles(repo *GitRepo, changedFiles []string) error {
 			}
 		}
 
-		a.runComparison(tmpDir)
+		if err := a.runComparison(tmpDir); err != nil {
+			return err
+		}
 
 		if err := (afero.Afero{Fs: a.fs}).RemoveAll(tmpDir); err != nil {
 			return err
@@ -180,18 +182,37 @@ func (a *App) processFile(fileName string, fileType string, application models.A
 	return target.renderAppSources()
 }
 
-func (a *App) runComparison(tmpDir string) {
+func (a *App) runComparison(tmpDir string) error {
 	comparer := Compare{
-		Globber:               a.globber,
-		ExternalDiffTool:      a.cfg.ExternalDiffTool,
-		TmpDir:                tmpDir,
-		PreserveHelmLabels:    a.cfg.PreserveHelmLabels,
-		PrintAddedManifests:   a.cfg.PrintAddedManifests,
-		PrintRemovedManifests: a.cfg.PrintRemovedManifests,
-		Log:                   a.logger,
+		Globber:            a.globber,
+		TmpDir:             tmpDir,
+		PreserveHelmLabels: a.cfg.PreserveHelmLabels,
 	}
-	comparer.findFiles()
-	comparer.printFilesStatus()
+
+	result, err := comparer.Execute()
+	if err != nil {
+		return err
+	}
+
+	strategy := a.selectDiffStrategy()
+	return strategy.Present(result)
+}
+
+func (a *App) selectDiffStrategy() DiffStrategy {
+	if a.cfg.ExternalDiffTool != "" {
+		return ExternalDiffStrategy{
+			Log:         a.logger,
+			Tool:        a.cfg.ExternalDiffTool,
+			ShowAdded:   a.cfg.PrintAddedManifests,
+			ShowRemoved: a.cfg.PrintRemovedManifests,
+		}
+	}
+
+	return StdoutStrategy{
+		Log:         a.logger,
+		ShowAdded:   a.cfg.PrintAddedManifests,
+		ShowRemoved: a.cfg.PrintRemovedManifests,
+	}
 }
 
 func (a *App) collectRepoCredentials() error {

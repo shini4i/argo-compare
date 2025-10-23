@@ -1,18 +1,16 @@
 package app
 
 import (
+	"errors"
 	"fmt"
-	"os/exec"
+	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
-	"sync"
 
 	"github.com/codingsince1985/checksum"
 	"github.com/hexops/gotextdiff"
 	"github.com/hexops/gotextdiff/myers"
 	"github.com/hexops/gotextdiff/span"
-	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/spf13/afero"
@@ -23,99 +21,90 @@ type File struct {
 	Sha  string
 }
 
+type DiffOutput struct {
+	File File
+	Diff string
+}
+
+type ComparisonResult struct {
+	Added   []DiffOutput
+	Removed []DiffOutput
+	Changed []DiffOutput
+}
+
+func (r ComparisonResult) IsEmpty() bool {
+	return len(r.Added) == 0 && len(r.Removed) == 0 && len(r.Changed) == 0
+}
+
 type Compare struct {
-	Globber               ports.Globber
-	ExternalDiffTool      string
-	TmpDir                string
-	PreserveHelmLabels    bool
-	PrintAddedManifests   bool
-	PrintRemovedManifests bool
-	Log                   *logging.Logger
+	Globber            ports.Globber
+	TmpDir             string
+	PreserveHelmLabels bool
 
 	srcFiles     []File
 	dstFiles     []File
-	diffFiles    []File
 	addedFiles   []File
 	removedFiles []File
+	diffFiles    []File
 }
 
-const (
-	srcPathPattern          = "%s/templates/src/%s"
-	dstPathPattern          = "%s/templates/dst/%s"
-	currentFilePrintPattern = "▶ %s"
-)
+func (c *Compare) Execute() (ComparisonResult, error) {
+	if err := c.prepareFiles(); err != nil {
+		return ComparisonResult{}, err
+	}
 
-func (c *Compare) findFiles() {
+	c.generateFilesStatus()
+
+	return c.buildResult()
+}
+
+func (c *Compare) prepareFiles() error {
 	if !c.PreserveHelmLabels {
-		c.findAndStripHelmLabels()
+		if err := c.stripHelmLabels(); err != nil {
+			return err
+		}
 	}
 
-	wg := new(sync.WaitGroup)
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		globPattern := filepath.Join(filepath.Join(filepath.Join(c.TmpDir, "templates/src"), "**", "*.yaml"))
-		srcFiles, err := c.Globber.Glob(globPattern)
-		if err != nil {
-			c.Log.Fatal(err)
-		}
-		c.srcFiles = c.processFiles(srcFiles, "src")
-	}()
-
-	go func() {
-		defer wg.Done()
-		globPattern := filepath.Join(filepath.Join(filepath.Join(c.TmpDir, "templates/dst"), "**", "*.yaml"))
-		if dstFiles, err := c.Globber.Glob(globPattern); err != nil {
-			c.Log.Debugf("Error while finding files in %s: %s", filepath.Join(c.TmpDir, "templates/dst"), err)
-		} else {
-			c.dstFiles = c.processFiles(dstFiles, "dst")
-		}
-	}()
-
-	wg.Wait()
-
-	if !reflect.DeepEqual(c.srcFiles, c.dstFiles) {
-		c.generateFilesStatus()
+	srcPattern := filepath.Join(c.TmpDir, "templates", "src", "**", "*.yaml")
+	srcFiles, err := c.Globber.Glob(srcPattern)
+	if err != nil {
+		return err
 	}
+	c.srcFiles, err = c.processFiles(srcFiles, "src")
+	if err != nil {
+		return err
+	}
+
+	dstPattern := filepath.Join(c.TmpDir, "templates", "dst", "**", "*.yaml")
+	dstFiles, err := c.Globber.Glob(dstPattern)
+	if err != nil {
+		return err
+	}
+	c.dstFiles, err = c.processFiles(dstFiles, "dst")
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func (c *Compare) processFiles(files []string, filesType string) []File {
+func (c *Compare) processFiles(files []string, filesType string) ([]File, error) {
 	var processedFiles []File
 
 	path := filepath.Join(c.TmpDir, "templates", filesType)
 
 	for _, file := range files {
-		if sha256sum, err := checksum.SHA256sum(file); err != nil {
-			c.Log.Fatal(err)
-		} else {
-			processedFiles = append(processedFiles, File{Name: strings.TrimPrefix(file, path), Sha: sha256sum})
+		sha256sum, err := checksum.SHA256sum(file)
+		if err != nil {
+			return nil, err
 		}
+		processedFiles = append(processedFiles, File{Name: strings.TrimPrefix(file, path), Sha: sha256sum})
 	}
 
-	return processedFiles
+	return processedFiles, nil
 }
 
 func (c *Compare) generateFilesStatus() {
-	c.findNewOrRemovedFiles()
-	c.compareFiles()
-}
-
-func (c *Compare) compareFiles() {
-	var diffFiles []File
-
-	for _, srcFile := range c.srcFiles {
-		for _, dstFile := range c.dstFiles {
-			if srcFile.Name == dstFile.Name && srcFile.Sha != dstFile.Sha {
-				diffFiles = append(diffFiles, srcFile)
-			}
-		}
-	}
-
-	c.diffFiles = diffFiles
-}
-
-func (c *Compare) findNewOrRemovedFiles() {
 	srcFileMap := make(map[string]File)
 	for _, srcFile := range c.srcFiles {
 		srcFileMap[srcFile.Name] = srcFile
@@ -126,98 +115,104 @@ func (c *Compare) findNewOrRemovedFiles() {
 		dstFileMap[dstFile.Name] = dstFile
 	}
 
-	var addedFiles []File
-	var removedFiles []File
-
 	for fileName, srcFile := range srcFileMap {
 		if _, found := dstFileMap[fileName]; !found {
-			addedFiles = append(addedFiles, srcFile)
+			c.addedFiles = append(c.addedFiles, srcFile)
 		}
 	}
 
 	for fileName, dstFile := range dstFileMap {
-		if _, found := srcFileMap[fileName]; !found {
-			removedFiles = append(removedFiles, dstFile)
+		if srcFile, found := srcFileMap[fileName]; found {
+			if srcFile.Sha != dstFile.Sha {
+				c.diffFiles = append(c.diffFiles, srcFile)
+			}
+		} else {
+			c.removedFiles = append(c.removedFiles, dstFile)
 		}
 	}
-
-	c.addedFiles = addedFiles
-	c.removedFiles = removedFiles
 }
 
-func (c *Compare) printFilesStatus() {
-	if len(c.addedFiles) == 0 && len(c.removedFiles) == 0 && len(c.diffFiles) == 0 {
-		c.Log.Info("No diff was found in rendered manifests!")
-		return
+func (c *Compare) buildResult() (ComparisonResult, error) {
+	added, err := c.generateDiffs(c.addedFiles)
+	if err != nil {
+		return ComparisonResult{}, err
 	}
 
-	if c.PrintAddedManifests {
-		c.printFiles(c.addedFiles, "added")
+	removed, err := c.generateDiffs(c.removedFiles)
+	if err != nil {
+		return ComparisonResult{}, err
 	}
-	if c.PrintRemovedManifests {
-		c.printFiles(c.removedFiles, "removed")
+
+	changed, err := c.generateDiffs(c.diffFiles)
+	if err != nil {
+		return ComparisonResult{}, err
 	}
-	c.printFiles(c.diffFiles, "changed")
+
+	return ComparisonResult{
+		Added:   added,
+		Removed: removed,
+		Changed: changed,
+	}, nil
 }
 
-func (c *Compare) printFiles(files []File, operation string) {
-	if len(files) == 0 {
-		return
-	}
+func (c *Compare) generateDiffs(files []File) ([]DiffOutput, error) {
+	var outputs []DiffOutput
 
-	fileText := "file"
-	if len(files) > 1 {
-		fileText = "files"
-	}
-	c.Log.Infof("The following %d %s would be %s:", len(files), fileText, operation)
-	for _, file := range files {
-		c.Log.Infof(currentFilePrintPattern, file.Name)
-		c.printDiffFile(file)
-	}
-}
-
-func (c *Compare) printDiffFile(diffFile File) {
-	dstFilePath := fmt.Sprintf(dstPathPattern, c.TmpDir, diffFile.Name)
-	srcFilePath := fmt.Sprintf(srcPathPattern, c.TmpDir, diffFile.Name)
-
-	srcFile := string(readFile(srcFilePath))
-	dstFile := string(readFile(dstFilePath))
-
-	edits := myers.ComputeEdits(span.URIFromPath(srcFilePath), dstFile, srcFile)
-
-	output := fmt.Sprint(gotextdiff.ToUnified(srcFilePath, dstFilePath, dstFile, edits))
-
-	if c.ExternalDiffTool != "" {
-		cmd := exec.Command(c.ExternalDiffTool) // #nosec G204
-
-		cmd.Stdin = strings.NewReader(output)
-
-		cmdOutput, err := cmd.CombinedOutput()
+	for _, f := range files {
+		diff, err := c.generateDiff(f)
 		if err != nil {
-			fmt.Println("Error running external program:", err)
+			return nil, err
 		}
-
-		fmt.Println(string(cmdOutput))
-	} else {
-		fmt.Println(output)
+		outputs = append(outputs, DiffOutput{File: f, Diff: diff})
 	}
+
+	return outputs, nil
 }
 
-func (c *Compare) findAndStripHelmLabels() {
-	var helmFiles []string
-	var err error
+func (c *Compare) generateDiff(f File) (string, error) {
+	dstFilePath := filepath.Join(c.TmpDir, "templates", "dst", f.Name)
+	srcFilePath := filepath.Join(c.TmpDir, "templates", "src", f.Name)
 
-	if helmFiles, err = c.Globber.Glob(filepath.Join(c.TmpDir, "**", "*.yaml")); err != nil {
-		c.Log.Fatal(err)
+	srcFile, err := readFileContent(srcFilePath)
+	if err != nil {
+		return "", err
+	}
+	dstFile, err := readFileContent(dstFilePath)
+	if err != nil {
+		return "", err
+	}
+
+	edits := myers.ComputeEdits(span.URIFromPath(srcFilePath), string(dstFile), string(srcFile))
+
+	return fmt.Sprint(gotextdiff.ToUnified(srcFilePath, dstFilePath, string(dstFile), edits)), nil
+}
+
+func (c *Compare) stripHelmLabels() error {
+	helmFiles, err := c.Globber.Glob(filepath.Join(c.TmpDir, "**", "*.yaml"))
+	if err != nil {
+		return err
 	}
 
 	for _, helmFile := range helmFiles {
-		if desiredState, err := helpers.StripHelmLabels(helmFile); err != nil {
-			c.Log.Fatal(err)
-		} else {
-			if err := helpers.WriteToFile(afero.NewOsFs(), helmFile, desiredState); err != nil {
-				c.Log.Fatal(err)
-			}
+		desiredState, err := helpers.StripHelmLabels(helmFile)
+		if err != nil {
+			return err
+		}
+		if err := helpers.WriteToFile(afero.NewOsFs(), helmFile, desiredState); err != nil {
+			return err
 		}
 	}
+
+	return nil
+}
+
+func readFileContent(path string) ([]byte, error) {
+	data, err := os.ReadFile(path) // #nosec G304
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }

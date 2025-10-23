@@ -34,7 +34,7 @@ func loggingInit(debug bool) {
 	logging.SetLevel(level, "")
 }
 
-func buildConfig() app.Config {
+func buildConfig() (app.Config, error) {
 	printAdded := CLI.Branch.PrintAddedManifests
 	printRemoved := CLI.Branch.PrintRemovedManifests
 
@@ -43,19 +43,19 @@ func buildConfig() app.Config {
 		printRemoved = true
 	}
 
-	return app.Config{
-		TargetBranch:          CLI.Branch.Name,
-		FileToCompare:         CLI.Branch.File,
-		FilesToIgnore:         CLI.Branch.Ignore,
-		PreserveHelmLabels:    CLI.Branch.PreserveHelmLabels,
-		PrintAddedManifests:   printAdded,
-		PrintRemovedManifests: printRemoved,
-		CacheDir:              cacheDir,
-		TempDirBase:           os.TempDir(),
-		ExternalDiffTool:      os.Getenv("EXTERNAL_DIFF_TOOL"),
-		Debug:                 CLI.Debug,
-		Version:               version,
-	}
+	return app.NewConfig(
+		CLI.Branch.Name,
+		app.WithFileToCompare(CLI.Branch.File),
+		app.WithFilesToIgnore(CLI.Branch.Ignore),
+		app.WithPreserveHelmLabels(CLI.Branch.PreserveHelmLabels),
+		app.WithPrintAdded(printAdded),
+		app.WithPrintRemoved(printRemoved),
+		app.WithCacheDir(cacheDir),
+		app.WithTempDirBase(os.TempDir()),
+		app.WithExternalDiffTool(os.Getenv("EXTERNAL_DIFF_TOOL")),
+		app.WithDebug(CLI.Debug),
+		app.WithVersion(version),
+	)
 }
 
 func setupDependencies(logger *logging.Logger) app.Dependencies {
@@ -78,7 +78,10 @@ func main() {
 		kong.UsageOnError(),
 		kong.Vars{"version": version})
 
-	config := buildConfig()
+	config, err := buildConfig()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	loggingInit(config.Debug)
 

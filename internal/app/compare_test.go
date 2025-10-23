@@ -14,10 +14,7 @@ import (
 )
 
 func TestCompareGenerateFilesStatus(t *testing.T) {
-	logger := logging.MustGetLogger("compare-status")
-	c := Compare{
-		Log: logger,
-	}
+	c := Compare{}
 
 	c.srcFiles = []File{
 		{Name: "file1", Sha: "1234"},
@@ -54,10 +51,9 @@ func TestCompareFindAndStripHelmLabels(t *testing.T) {
 	c := &Compare{
 		Globber: utils.CustomGlobber{},
 		TmpDir:  tmpDir,
-		Log:     logging.MustGetLogger("compare-strip"),
 	}
 
-	c.findAndStripHelmLabels()
+	require.NoError(t, c.stripHelmLabels())
 
 	modified, err := os.ReadFile(testFile)
 	require.NoError(t, err)
@@ -87,13 +83,11 @@ func TestCompareProcessFiles(t *testing.T) {
 	copyFile(t, filepath.Join("..", "..", "testdata", "test.yaml"), file1)
 	copyFile(t, filepath.Join("..", "..", "testdata", "test-values.yaml"), file2)
 
-	c := &Compare{
-		TmpDir: tmpDir,
-		Log:    logging.MustGetLogger("compare-files"),
-	}
+	c := &Compare{TmpDir: tmpDir}
 
 	files := []string{file1, file2}
-	found := c.processFiles(files, "src")
+	found, err := c.processFiles(files, "src")
+	require.NoError(t, err)
 
 	assert.Len(t, found, 2)
 	assert.Equal(t, strings.TrimPrefix(file1, filepath.Join(tmpDir, "templates", "src")), found[0].Name)
@@ -102,7 +96,7 @@ func TestCompareProcessFiles(t *testing.T) {
 	assert.NotEmpty(t, found[1].Sha)
 }
 
-func TestComparePrintFilesStatus(t *testing.T) {
+func TestStdoutStrategyPresent(t *testing.T) {
 	var buf bytes.Buffer
 	backend := logging.NewLogBackend(&buf, "", 0)
 	logging.SetBackend(logging.NewBackendFormatter(backend, logging.MustStringFormatter(`%{message}`)))
@@ -110,27 +104,32 @@ func TestComparePrintFilesStatus(t *testing.T) {
 		logging.SetBackend(logging.NewBackendFormatter(logging.NewLogBackend(os.Stdout, "", 0), logging.MustStringFormatter(`%{message}`)))
 	})
 
-	c := &Compare{
-		Log: logging.MustGetLogger("compare-print"),
+	strategy := StdoutStrategy{
+		Log:         logging.MustGetLogger("compare-print"),
+		ShowAdded:   true,
+		ShowRemoved: true,
 	}
 
-	c.printFilesStatus()
+	result := ComparisonResult{}
+	require.NoError(t, strategy.Present(result))
 	assert.Contains(t, buf.String(), "No diff was found in rendered manifests!")
 
 	buf.Reset()
 
-	c.addedFiles = []File{{Name: "file1", Sha: "123"}}
-	c.removedFiles = []File{{Name: "file2", Sha: "456"}, {Name: "file3", Sha: "789"}}
-	c.diffFiles = []File{}
-	c.PrintAddedManifests = true
-	c.PrintRemovedManifests = true
+	result = ComparisonResult{
+		Added:   []DiffOutput{{File: File{Name: "file1"}, Diff: "diff-added"}},
+		Removed: []DiffOutput{{File: File{Name: "file2"}, Diff: "diff-removed"}},
+		Changed: []DiffOutput{{File: File{Name: "file3"}, Diff: "diff-changed"}},
+	}
 
-	c.printFilesStatus()
-
+	require.NoError(t, strategy.Present(result))
 	logs := buf.String()
 	assert.Contains(t, logs, "The following 1 file would be added")
-	assert.Contains(t, logs, "The following 2 files would be removed")
-	assert.NotContains(t, logs, "would be changed")
+	assert.Contains(t, logs, "The following 1 file would be removed")
+	assert.Contains(t, logs, "The following 1 file would be changed")
+	assert.Contains(t, logs, "file1")
+	assert.Contains(t, logs, "file2")
+	assert.Contains(t, logs, "file3")
 }
 
 func copyFile(t *testing.T, src, dst string) {
