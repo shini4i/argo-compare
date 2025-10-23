@@ -19,29 +19,23 @@ var CLI struct {
 		PreserveHelmLabels    bool     `help:"Preserve Helm labels during comparison"`
 		PrintAddedManifests   bool     `help:"Print added manifests"`
 		PrintRemovedManifests bool     `help:"Print removed manifests"`
-		FullOutput            bool     `help:"Print full output"`
+		FullOutput            bool     `help:"Print added and removed manifests"`
 	} `cmd:"" help:"target branch to compare with" type:"string"`
 }
-
-var (
-	targetBranch          string
-	fileToCompare         string
-	filesToIgnore         []string
-	preserveHelmLabels    bool
-	printAddedManifests   bool
-	printRemovedManifests bool
-)
 
 type DropCache bool
 
 func (d *DropCache) BeforeApply(app *kong.Kong) error {
+	if !bool(*d) {
+		return nil
+	}
+
 	fmt.Printf("===> Purging cache directory: %s\n", cacheDir)
 
 	if err := os.RemoveAll(cacheDir); err != nil {
 		return err
 	}
 
-	// it is required to be able to unit test this function
 	if app != nil {
 		app.Exit(0)
 	}
