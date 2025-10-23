@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"os"
 )
 
@@ -18,6 +19,7 @@ type Config struct {
 	ExternalDiffTool      string
 	Debug                 bool
 	Version               string
+	Comment               *CommentConfig
 }
 
 // ConfigOption mutates a Config during construction.
@@ -38,7 +40,61 @@ func NewConfig(targetBranch string, opts ...ConfigOption) (Config, error) {
 		opt(&cfg)
 	}
 
+	if cfg.Comment != nil {
+		if err := cfg.Comment.validate(); err != nil {
+			return Config{}, err
+		}
+	}
+
 	return cfg, nil
+}
+
+// CommentProvider identifies the upstream system where diffs can be posted as comments.
+type CommentProvider string
+
+const (
+	// CommentProviderNone disables comment publishing.
+	CommentProviderNone CommentProvider = ""
+	// CommentProviderGitLab enables posting comments to GitLab merge requests.
+	CommentProviderGitLab CommentProvider = "gitlab"
+)
+
+// CommentConfig stores configuration necessary to publish comparison results as comments.
+type CommentConfig struct {
+	Provider CommentProvider
+	GitLab   GitLabCommentConfig
+}
+
+// GitLabCommentConfig supplies the details required to comment on a GitLab Merge Request.
+type GitLabCommentConfig struct {
+	BaseURL         string
+	Token           string
+	ProjectID       string
+	MergeRequestIID int
+}
+
+func (c CommentConfig) validate() error {
+	switch c.Provider {
+	case CommentProviderNone:
+		return nil
+	case CommentProviderGitLab:
+		if c.GitLab.BaseURL == "" || c.GitLab.Token == "" || c.GitLab.ProjectID == "" || c.GitLab.MergeRequestIID == 0 {
+			return fmt.Errorf("gitlab comment configuration requires base URL, token, project ID, and merge request IID")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported comment provider %q", c.Provider)
+	}
+}
+
+// WithCommentConfig enables or updates comment publishing settings.
+func WithCommentConfig(commentCfg CommentConfig) ConfigOption {
+	return func(cfg *Config) {
+		cfg.Comment = &CommentConfig{
+			Provider: commentCfg.Provider,
+			GitLab:   commentCfg.GitLab,
+		}
+	}
 }
 
 // WithFileToCompare sets the specific manifest file to inspect.

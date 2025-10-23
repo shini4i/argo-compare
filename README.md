@@ -63,6 +63,36 @@ Additionally, you can try this tool using docker container:
 docker run -it --mount type=bind,source="$(pwd)",target=/apps --env EXTERNAL_DIFF_TOOL=diff-so-fancy --workdir /apps ghcr.io/shini4i/argo-compare:<version> branch <target-branch> --full-output
 ```
 
+To post the comparison as a comment to a GitLab Merge Request, provide the GitLab provider and credentials either with flags or environment variables:
+
+```bash
+ARGO_COMPARE_COMMENT_PROVIDER=gitlab \
+ARGO_COMPARE_GITLAB_URL=https://gitlab.com \
+ARGO_COMPARE_GITLAB_TOKEN=$GITLAB_TOKEN \
+ARGO_COMPARE_GITLAB_PROJECT_ID=12345 \
+ARGO_COMPARE_GITLAB_MR_IID=10 \
+argo-compare branch <target-branch>
+```
+
+Equivalent CLI flags are available:
+
+```bash
+argo-compare branch <target-branch> \
+  --comment-provider gitlab \
+  --gitlab-url https://gitlab.com \
+  --gitlab-token "$GITLAB_TOKEN" \
+  --gitlab-project-id 12345 \
+  --gitlab-merge-request-iid 10
+```
+
+When running inside GitLab CI, most settings are detected automatically:
+
+- `--comment-provider` defaults to `gitlab` when `GITLAB_CI` and `CI_MERGE_REQUEST_IID` are present.
+- `--gitlab-url` falls back to `CI_SERVER_URL`.
+- `--gitlab-project-id` falls back to `CI_PROJECT_ID`.
+- `--gitlab-merge-request-iid` falls back to `CI_MERGE_REQUEST_IID`.
+- `--gitlab-token` falls back to `CI_JOB_TOKEN` if no explicit token is provided (ensure the token has the necessary scope to post notes).
+
 #### Password Protected Repositories
 Using password protected repositories is a bit more challenging. To make it work, we need to expose JSON as an environment variable.
 The JSON should contain the following fields:
@@ -104,7 +134,8 @@ Argo Compare will look for all `REPO_CREDS_*` environment variables and use them
 
 - [ ] Add support for Application using git as a source of helm chart
 - [x] Add support for providing credentials for password protected helm repositories
-- [ ] Add support for posting diff as a comment to PR (GitHub)/MR(GitLab)
+- [x] Add support for posting diff as a comment to MR (GitLab)
+- [ ] Add support for posting diff as a comment to PR (GitHub)
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.

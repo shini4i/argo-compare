@@ -168,3 +168,35 @@ func TestExecuteErrorScenarios(t *testing.T) {
 		})
 	}
 }
+
+func TestExecuteUsesGitLabCIEnvDefaults(t *testing.T) {
+	var receivedConfig app.Config
+
+	opts := Options{
+		Version:          "test-version",
+		CacheDir:         t.TempDir(),
+		TempDirBase:      os.TempDir(),
+		ExternalDiffTool: "",
+		InitLogging:      func(bool) {},
+		RunApp: func(cfg app.Config) error {
+			receivedConfig = cfg
+			return nil
+		},
+	}
+
+	t.Setenv("GITLAB_CI", "true")
+	t.Setenv("CI_MERGE_REQUEST_IID", "42")
+	t.Setenv("CI_PROJECT_ID", "321")
+	t.Setenv("CI_SERVER_URL", "https://gitlab.example.com")
+	t.Setenv("CI_JOB_TOKEN", "job-token")
+
+	err := Execute(opts, []string{"branch", "main"})
+	require.NoError(t, err)
+
+	require.NotNil(t, receivedConfig.Comment)
+	assert.Equal(t, app.CommentProviderGitLab, receivedConfig.Comment.Provider)
+	assert.Equal(t, "https://gitlab.example.com", receivedConfig.Comment.GitLab.BaseURL)
+	assert.Equal(t, "321", receivedConfig.Comment.GitLab.ProjectID)
+	assert.Equal(t, 42, receivedConfig.Comment.GitLab.MergeRequestIID)
+	assert.Equal(t, "job-token", receivedConfig.Comment.GitLab.Token)
+}

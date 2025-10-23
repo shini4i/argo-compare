@@ -4,8 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/shini4i/argo-compare/internal/app"
+	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/spf13/cobra"
 )
 
@@ -89,7 +92,46 @@ func newBranchCommand(opts Options, dropCache func() bool, debug func() bool) *c
 		printAdded         bool
 		printRemoved       bool
 		fullOutput         bool
+		commentProvider    string
+		gitlabURL          string
+		gitlabToken        string
+		gitlabProjectID    string
+		gitlabMergeIID     int
 	)
+
+	defaultCommentProvider := helpers.GetEnv("ARGO_COMPARE_COMMENT_PROVIDER", "")
+	if defaultCommentProvider == "" && helpers.GetEnv("GITLAB_CI", "") != "" && helpers.GetEnv("CI_MERGE_REQUEST_IID", "") != "" {
+		defaultCommentProvider = string(app.CommentProviderGitLab)
+	}
+	commentProvider = defaultCommentProvider
+
+	defaultGitlabURL := helpers.GetEnv("ARGO_COMPARE_GITLAB_URL", "")
+	if defaultGitlabURL == "" {
+		defaultGitlabURL = helpers.GetEnv("CI_SERVER_URL", "")
+	}
+	gitlabURL = defaultGitlabURL
+
+	defaultGitlabToken := helpers.GetEnv("ARGO_COMPARE_GITLAB_TOKEN", "")
+	if defaultGitlabToken == "" {
+		defaultGitlabToken = helpers.GetEnv("CI_JOB_TOKEN", "")
+	}
+	gitlabToken = defaultGitlabToken
+
+	defaultProjectID := helpers.GetEnv("ARGO_COMPARE_GITLAB_PROJECT_ID", "")
+	if defaultProjectID == "" {
+		defaultProjectID = helpers.GetEnv("CI_PROJECT_ID", "")
+	}
+	gitlabProjectID = defaultProjectID
+
+	gitlabMergeFromEnv := helpers.GetEnv("ARGO_COMPARE_GITLAB_MR_IID", "")
+	if gitlabMergeFromEnv == "" {
+		gitlabMergeFromEnv = helpers.GetEnv("CI_MERGE_REQUEST_IID", "")
+	}
+	if gitlabMergeFromEnv != "" {
+		if parsed, err := strconv.Atoi(gitlabMergeFromEnv); err == nil {
+			gitlabMergeIID = parsed
+		}
+	}
 
 	cmd := &cobra.Command{
 		Use:   "branch <name>",
@@ -107,8 +149,7 @@ func newBranchCommand(opts Options, dropCache func() bool, debug func() bool) *c
 				printRemoved = true
 			}
 
-			cfg, err := app.NewConfig(
-				targetBranch,
+			configOptions := []app.ConfigOption{
 				app.WithFileToCompare(file),
 				app.WithFilesToIgnore(ignore),
 				app.WithPreserveHelmLabels(preserveHelmLabels),
@@ -119,6 +160,28 @@ func newBranchCommand(opts Options, dropCache func() bool, debug func() bool) *c
 				app.WithExternalDiffTool(opts.ExternalDiffTool),
 				app.WithDebug(debug()),
 				app.WithVersion(opts.Version),
+			}
+
+			switch provider := strings.ToLower(strings.TrimSpace(commentProvider)); provider {
+			case "":
+				// no-op
+			case string(app.CommentProviderGitLab):
+				configOptions = append(configOptions, app.WithCommentConfig(app.CommentConfig{
+					Provider: app.CommentProviderGitLab,
+					GitLab: app.GitLabCommentConfig{
+						BaseURL:         gitlabURL,
+						Token:           gitlabToken,
+						ProjectID:       gitlabProjectID,
+						MergeRequestIID: gitlabMergeIID,
+					},
+				}))
+			default:
+				return fmt.Errorf("unsupported comment provider %q", commentProvider)
+			}
+
+			cfg, err := app.NewConfig(
+				targetBranch,
+				configOptions...,
 			)
 			if err != nil {
 				return err
@@ -138,6 +201,11 @@ func newBranchCommand(opts Options, dropCache func() bool, debug func() bool) *c
 	cmd.Flags().BoolVar(&printAdded, "print-added-manifests", false, "Print added manifests")
 	cmd.Flags().BoolVar(&printRemoved, "print-removed-manifests", false, "Print removed manifests")
 	cmd.Flags().BoolVar(&fullOutput, "full-output", false, "Print all changed, added, and removed manifests")
+	cmd.Flags().StringVar(&commentProvider, "comment-provider", commentProvider, "Post diff comment using provider (gitlab)")
+	cmd.Flags().StringVar(&gitlabURL, "gitlab-url", gitlabURL, "GitLab base URL (e.g., https://gitlab.com)")
+	cmd.Flags().StringVar(&gitlabToken, "gitlab-token", gitlabToken, "GitLab personal access token")
+	cmd.Flags().StringVar(&gitlabProjectID, "gitlab-project-id", gitlabProjectID, "GitLab project ID")
+	cmd.Flags().IntVar(&gitlabMergeIID, "gitlab-merge-request-iid", gitlabMergeIID, "GitLab merge request IID")
 
 	return cmd
 }

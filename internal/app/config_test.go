@@ -51,3 +51,39 @@ func TestNewConfigRequiresTargetBranch(t *testing.T) {
 	_, err := NewConfig("")
 	assert.Error(t, err)
 }
+
+func TestNewConfigWithGitLabComment(t *testing.T) {
+	cfg, err := NewConfig("main",
+		WithCacheDir("/tmp/cache"),
+		WithCommentConfig(CommentConfig{
+			Provider: CommentProviderGitLab,
+			GitLab: GitLabCommentConfig{
+				BaseURL:         "https://gitlab.example.com",
+				Token:           "secret",
+				ProjectID:       "1",
+				MergeRequestIID: 42,
+			},
+		}),
+	)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Comment)
+	assert.Equal(t, CommentProviderGitLab, cfg.Comment.Provider)
+	assert.Equal(t, "https://gitlab.example.com", cfg.Comment.GitLab.BaseURL)
+	assert.Equal(t, 42, cfg.Comment.GitLab.MergeRequestIID)
+}
+
+func TestNewConfigWithInvalidGitLabComment(t *testing.T) {
+	_, err := NewConfig("main",
+		WithCommentConfig(CommentConfig{
+			Provider: CommentProviderGitLab,
+		}),
+	)
+	require.Error(t, err)
+}
+
+func TestNewConfigWithUnsupportedCommentProvider(t *testing.T) {
+	_, err := NewConfig("main",
+		WithCommentConfig(CommentConfig{Provider: "bitbucket"}),
+	)
+	require.Error(t, err)
+}

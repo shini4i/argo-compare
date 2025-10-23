@@ -3,11 +3,14 @@ package app
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
 	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
+	"github.com/shini4i/argo-compare/internal/comment"
+	"github.com/shini4i/argo-compare/internal/comment/gitlab"
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/spf13/afero"
@@ -17,12 +20,13 @@ const repoCredsPrefix = "REPO_CREDS_" // #nosec G101
 
 // Dependencies aggregates runtime collaborators required by App.
 type Dependencies struct {
-	FS            afero.Fs
-	CmdRunner     ports.CmdRunner
-	FileReader    ports.FileReader
-	HelmProcessor ports.HelmChartsProcessor
-	Globber       ports.Globber
-	Logger        *logging.Logger
+	FS                   afero.Fs
+	CmdRunner            ports.CmdRunner
+	FileReader           ports.FileReader
+	HelmProcessor        ports.HelmChartsProcessor
+	Globber              ports.Globber
+	Logger               *logging.Logger
+	CommentPosterFactory CommentPosterFactory
 }
 
 // App orchestrates the end-to-end comparison workflow.
@@ -35,7 +39,11 @@ type App struct {
 	globber         ports.Globber
 	logger          *logging.Logger
 	repoCredentials []models.RepoCredentials
+	commentFactory  CommentPosterFactory
 }
+
+// CommentPosterFactory builds a comment poster based on the active configuration.
+type CommentPosterFactory func(cfg Config) (comment.Poster, error)
 
 // New constructs an App using the supplied configuration and dependencies.
 func New(cfg Config, deps Dependencies) (*App, error) {
@@ -61,15 +69,19 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 	if deps.Logger == nil {
 		return nil, errors.New("logger must be provided")
 	}
+	if deps.CommentPosterFactory == nil {
+		deps.CommentPosterFactory = defaultCommentPosterFactory
+	}
 
 	return &App{
-		cfg:           cfg,
-		fs:            deps.FS,
-		cmdRunner:     deps.CmdRunner,
-		fileReader:    deps.FileReader,
-		helmProcessor: deps.HelmProcessor,
-		globber:       deps.Globber,
-		logger:        deps.Logger,
+		cfg:            cfg,
+		fs:             deps.FS,
+		cmdRunner:      deps.CmdRunner,
+		fileReader:     deps.FileReader,
+		helmProcessor:  deps.HelmProcessor,
+		globber:        deps.Globber,
+		logger:         deps.Logger,
+		commentFactory: deps.CommentPosterFactory,
 	}, nil
 }
 
@@ -240,26 +252,57 @@ func (a *App) runComparison(tmpDir string) error {
 		return err
 	}
 
-	strategy := a.selectDiffStrategy()
-	return strategy.Present(result)
+	strategies, err := a.selectDiffStrategies()
+	if err != nil {
+		return err
+	}
+
+	for _, strategy := range strategies {
+		if err := strategy.Present(result); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-// selectDiffStrategy picks the appropriate diff presentation implementation based on configuration.
-func (a *App) selectDiffStrategy() DiffStrategy {
+// selectDiffStrategies picks the appropriate diff presentation implementations based on configuration.
+func (a *App) selectDiffStrategies() ([]DiffStrategy, error) {
+	var strategies []DiffStrategy
+
 	if a.cfg.ExternalDiffTool != "" {
-		return ExternalDiffStrategy{
+		strategies = append(strategies, ExternalDiffStrategy{
 			Log:         a.logger,
 			Tool:        a.cfg.ExternalDiffTool,
 			ShowAdded:   a.cfg.PrintAddedManifests,
 			ShowRemoved: a.cfg.PrintRemovedManifests,
-		}
+		})
+	} else {
+		strategies = append(strategies, StdoutStrategy{
+			Log:         a.logger,
+			ShowAdded:   a.cfg.PrintAddedManifests,
+			ShowRemoved: a.cfg.PrintRemovedManifests,
+		})
 	}
 
-	return StdoutStrategy{
-		Log:         a.logger,
-		ShowAdded:   a.cfg.PrintAddedManifests,
-		ShowRemoved: a.cfg.PrintRemovedManifests,
+	if a.cfg.Comment != nil && a.cfg.Comment.Provider != CommentProviderNone {
+		poster, err := a.commentFactory(a.cfg)
+		if err != nil {
+			return nil, err
+		}
+		if poster == nil {
+			return nil, errors.New("comment poster factory returned nil")
+		}
+
+		strategies = append(strategies, CommentStrategy{
+			Log:         a.logger,
+			Poster:      poster,
+			ShowAdded:   a.cfg.PrintAddedManifests,
+			ShowRemoved: a.cfg.PrintRemovedManifests,
+		})
 	}
+
+	return strategies, nil
 }
 
 // collectRepoCredentials loads repository credentials from environment variables.
@@ -297,4 +340,22 @@ func (a *App) reportInvalidFiles(invalid []string) error {
 	}
 
 	return errors.New("invalid files found")
+}
+
+func defaultCommentPosterFactory(cfg Config) (comment.Poster, error) {
+	if cfg.Comment == nil || cfg.Comment.Provider == CommentProviderNone {
+		return nil, fmt.Errorf("comment factory requested with no comment provider configured")
+	}
+
+	switch cfg.Comment.Provider {
+	case CommentProviderGitLab:
+		return gitlab.NewPoster(gitlab.Config{
+			BaseURL:         cfg.Comment.GitLab.BaseURL,
+			Token:           cfg.Comment.GitLab.Token,
+			ProjectID:       cfg.Comment.GitLab.ProjectID,
+			MergeRequestIID: cfg.Comment.GitLab.MergeRequestIID,
+		})
+	default:
+		return nil, fmt.Errorf("unsupported comment provider %q", cfg.Comment.Provider)
+	}
 }
