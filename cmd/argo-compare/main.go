@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/alecthomas/kong"
 	"github.com/op/go-logging"
+	command "github.com/shini4i/argo-compare/cmd/argo-compare/command"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/app"
 	"github.com/shini4i/argo-compare/internal/helpers"
@@ -34,30 +34,6 @@ func loggingInit(debug bool) {
 	logging.SetLevel(level, "")
 }
 
-func buildConfig() (app.Config, error) {
-	printAdded := CLI.Branch.PrintAddedManifests
-	printRemoved := CLI.Branch.PrintRemovedManifests
-
-	if CLI.Branch.FullOutput {
-		printAdded = true
-		printRemoved = true
-	}
-
-	return app.NewConfig(
-		CLI.Branch.Name,
-		app.WithFileToCompare(CLI.Branch.File),
-		app.WithFilesToIgnore(CLI.Branch.Ignore),
-		app.WithPreserveHelmLabels(CLI.Branch.PreserveHelmLabels),
-		app.WithPrintAdded(printAdded),
-		app.WithPrintRemoved(printRemoved),
-		app.WithCacheDir(cacheDir),
-		app.WithTempDirBase(os.TempDir()),
-		app.WithExternalDiffTool(os.Getenv("EXTERNAL_DIFF_TOOL")),
-		app.WithDebug(CLI.Debug),
-		app.WithVersion(version),
-	)
-}
-
 func setupDependencies(logger *logging.Logger) app.Dependencies {
 	return app.Dependencies{
 		FS:            afero.NewOsFs(),
@@ -72,25 +48,25 @@ func setupDependencies(logger *logging.Logger) app.Dependencies {
 func main() {
 	cacheDir = helpers.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
 
-	kong.Parse(&CLI,
-		kong.Name("argo-compare"),
-		kong.Description("Compare ArgoCD applications between git branches"),
-		kong.UsageOnError(),
-		kong.Vars{"version": version})
-
-	config, err := buildConfig()
-	if err != nil {
-		log.Fatal(err)
+	runApp := func(cfg app.Config) error {
+		deps := setupDependencies(log)
+		application, err := app.New(cfg, deps)
+		if err != nil {
+			return err
+		}
+		return application.Run()
 	}
 
-	loggingInit(config.Debug)
-
-	application, err := app.New(config, setupDependencies(log))
-	if err != nil {
-		log.Fatal(err)
+	opts := command.Options{
+		Version:          version,
+		CacheDir:         cacheDir,
+		TempDirBase:      os.TempDir(),
+		ExternalDiffTool: os.Getenv("EXTERNAL_DIFF_TOOL"),
+		RunApp:           runApp,
+		InitLogging:      loggingInit,
 	}
 
-	if err := application.Run(); err != nil {
+	if err := command.Execute(opts, nil); err != nil {
 		log.Fatal(err)
 	}
 }
