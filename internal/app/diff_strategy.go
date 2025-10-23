@@ -50,6 +50,7 @@ func (s StdoutStrategy) Present(result ComparisonResult) error {
 	return nil
 }
 
+// printSection logs a summary of diff entries and prints their unified diffs.
 func (s StdoutStrategy) printSection(operation string, entries []DiffOutput) {
 	if len(entries) == 0 {
 		return
@@ -90,6 +91,7 @@ func (s ExternalDiffStrategy) Present(result ComparisonResult) error {
 	return s.runSection(result.Changed)
 }
 
+// runSection streams a set of diff outputs through the configured external diff tool.
 func (s ExternalDiffStrategy) runSection(entries []DiffOutput) error {
 	for _, entry := range entries {
 		if err := s.runTool(entry.Diff); err != nil {
@@ -99,6 +101,7 @@ func (s ExternalDiffStrategy) runSection(entries []DiffOutput) error {
 	return nil
 }
 
+// runTool executes the external diff command with the given diff content.
 func (s ExternalDiffStrategy) runTool(diff string) error {
 	cmd := exec.Command(s.Tool) // #nosec G204
 	cmd.Stdin = strings.NewReader(diff)

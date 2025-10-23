@@ -19,6 +19,7 @@
 
         preCommitTools = with pkgs; [
           pre-commit
+          hadolint
           git
         ];
       in

@@ -41,6 +41,8 @@ func (r ComparisonResult) IsEmpty() bool {
 }
 
 // Compare analyses rendered manifest trees to produce diff results.
+const yamlGlob = "*.yaml"
+
 type Compare struct {
 	Globber            ports.Globber
 	TmpDir             string
@@ -64,6 +66,7 @@ func (c *Compare) Execute() (ComparisonResult, error) {
 	return c.buildResult()
 }
 
+// prepareFiles normalizes render outputs and populates source/destination file lists.
 func (c *Compare) prepareFiles() error {
 	if !c.PreserveHelmLabels {
 		if err := c.stripHelmLabels(); err != nil {
@@ -71,7 +74,7 @@ func (c *Compare) prepareFiles() error {
 		}
 	}
 
-	srcPattern := filepath.Join(c.TmpDir, "templates", "src", "**", "*.yaml")
+	srcPattern := filepath.Join(c.TmpDir, "templates", "src", "**", yamlGlob)
 	srcFiles, err := c.Globber.Glob(srcPattern)
 	if err != nil {
 		return err
@@ -81,7 +84,7 @@ func (c *Compare) prepareFiles() error {
 		return err
 	}
 
-	dstPattern := filepath.Join(c.TmpDir, "templates", "dst", "**", "*.yaml")
+	dstPattern := filepath.Join(c.TmpDir, "templates", "dst", "**", yamlGlob)
 	dstFiles, err := c.Globber.Glob(dstPattern)
 	if err != nil {
 		return err
@@ -94,6 +97,7 @@ func (c *Compare) prepareFiles() error {
 	return nil
 }
 
+// processFiles records manifest metadata for the supplied file set.
 func (c *Compare) processFiles(files []string, filesType string) ([]File, error) {
 	var processedFiles []File
 
@@ -110,6 +114,7 @@ func (c *Compare) processFiles(files []string, filesType string) ([]File, error)
 	return processedFiles, nil
 }
 
+// generateFilesStatus computes the sets of added, removed, and changed manifests.
 func (c *Compare) generateFilesStatus() {
 	srcFileMap := make(map[string]File)
 	for _, srcFile := range c.srcFiles {
@@ -138,6 +143,7 @@ func (c *Compare) generateFilesStatus() {
 	}
 }
 
+// buildResult produces the final comparison result with generated diffs.
 func (c *Compare) buildResult() (ComparisonResult, error) {
 	added, err := c.generateDiffs(c.addedFiles)
 	if err != nil {
@@ -161,6 +167,7 @@ func (c *Compare) buildResult() (ComparisonResult, error) {
 	}, nil
 }
 
+// generateDiffs collects unified diff outputs for each provided file.
 func (c *Compare) generateDiffs(files []File) ([]DiffOutput, error) {
 	var outputs []DiffOutput
 
@@ -175,6 +182,7 @@ func (c *Compare) generateDiffs(files []File) ([]DiffOutput, error) {
 	return outputs, nil
 }
 
+// generateDiff creates the unified diff for a single manifest entry.
 func (c *Compare) generateDiff(f File) (string, error) {
 	dstFilePath := filepath.Join(c.TmpDir, "templates", "dst", f.Name)
 	srcFilePath := filepath.Join(c.TmpDir, "templates", "src", f.Name)
@@ -193,8 +201,9 @@ func (c *Compare) generateDiff(f File) (string, error) {
 	return fmt.Sprint(gotextdiff.ToUnified(srcFilePath, dstFilePath, string(dstFile), edits)), nil
 }
 
+// stripHelmLabels removes Helm-managed metadata that would otherwise produce noisy diffs.
 func (c *Compare) stripHelmLabels() error {
-	helmFiles, err := c.Globber.Glob(filepath.Join(c.TmpDir, "**", "*.yaml"))
+	helmFiles, err := c.Globber.Glob(filepath.Join(c.TmpDir, "**", yamlGlob))
 	if err != nil {
 		return err
 	}
@@ -212,6 +221,7 @@ func (c *Compare) stripHelmLabels() error {
 	return nil
 }
 
+// readFileContent loads file contents while tolerating missing files.
 func readFileContent(path string) ([]byte, error) {
 	data, err := os.ReadFile(path) // #nosec G304
 	if errors.Is(err, os.ErrNotExist) {

@@ -112,43 +112,67 @@ func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string) (
 func (g *GitRepo) GetChangedFileContent(targetBranch, targetFile string, printAdded bool) (models.Application, error) {
 	g.log.Debugf("Getting content of %s from %s", targetFile, targetBranch)
 
+	targetTree, err := g.treeForBranch(targetBranch)
+	if err != nil {
+		return models.Application{}, err
+	}
+
+	fileContent, err := g.targetFileContent(targetTree, targetBranch, targetFile, printAdded)
+	if err != nil {
+		return models.Application{}, err
+	}
+
+	return g.parseTargetApplication(fileContent)
+}
+
+// treeForBranch resolves the Git tree for the provided remote branch reference.
+func (g *GitRepo) treeForBranch(targetBranch string) (*object.Tree, error) {
 	targetRef, err := g.repo.Reference(plumbing.ReferenceName("refs/remotes/origin/"+targetBranch), true)
 	if err != nil {
-		return models.Application{}, fmt.Errorf("failed to resolve target branch %s: %v", targetBranch, err)
+		return nil, fmt.Errorf("failed to resolve target branch %s: %v", targetBranch, err)
 	}
 
 	targetCommit, err := g.repo.CommitObject(targetRef.Hash())
 	if err != nil {
-		return models.Application{}, fmt.Errorf("failed to get commit object for target branch %s: %v", targetBranch, err)
+		return nil, fmt.Errorf("failed to get commit object for target branch %s: %v", targetBranch, err)
 	}
 
 	targetTree, err := targetCommit.Tree()
 	if err != nil {
-		return models.Application{}, fmt.Errorf("failed to get tree for target commit: %v", err)
+		return nil, fmt.Errorf("failed to get tree for target commit: %v", err)
 	}
 
+	return targetTree, nil
+}
+
+// targetFileContent retrieves the contents of a manifest from the target branch, respecting print options.
+func (g *GitRepo) targetFileContent(targetTree *object.Tree, targetBranch, targetFile string, printAdded bool) (string, error) {
 	fileEntry, err := targetTree.File(targetFile)
 	if err != nil {
 		if errors.Is(err, object.ErrFileNotFound) {
 			g.log.Warningf("\u001B[33mThe requested file %s does not exist in target branch %s, assuming it is a new Application\u001B[0m", targetFile, targetBranch)
 			if !printAdded {
-				return models.Application{}, gitFileDoesNotExist
+				return "", gitFileDoesNotExist
 			}
-		} else {
-			return models.Application{}, fmt.Errorf("failed to find file %s in target branch %s: %v", targetFile, targetBranch, err)
+			return "", nil
 		}
+		return "", fmt.Errorf("failed to find file %s in target branch %s: %v", targetFile, targetBranch, err)
 	}
 
-	var fileContent string
 	if fileEntry == nil {
-		fileContent = ""
-	} else {
-		fileContent, err = fileEntry.Contents()
-		if err != nil {
-			return models.Application{}, fmt.Errorf("failed to get contents of file %s: %v", targetFile, err)
-		}
+		return "", nil
 	}
 
+	fileContent, err := fileEntry.Contents()
+	if err != nil {
+		return "", fmt.Errorf("failed to get contents of file %s: %v", targetFile, err)
+	}
+
+	return fileContent, nil
+}
+
+// parseTargetApplication parses the retrieved manifest content into an Application model.
+func (g *GitRepo) parseTargetApplication(fileContent string) (models.Application, error) {
 	tmpFile, err := helpers.CreateTempFile(g.fs, fileContent)
 	if err != nil {
 		return models.Application{}, err
@@ -173,6 +197,7 @@ func (g *GitRepo) GetChangedFileContent(targetBranch, targetFile string, printAd
 	return target.App, nil
 }
 
+// printChangeFile reports the lists of added and removed files at debug level.
 func (g *GitRepo) printChangeFile(addedFiles, removed []string) {
 	g.log.Debug("===> Found the following changed files:")
 	for _, file := range addedFiles {
@@ -188,6 +213,7 @@ func (g *GitRepo) printChangeFile(addedFiles, removed []string) {
 	}
 }
 
+// sortChangedFiles filters diff results to include only valid Application manifests.
 func (g *GitRepo) sortChangedFiles(files []string) (applications []string, invalid []string) {
 	for _, file := range files {
 		if filepath.Ext(file) != ".yaml" {
@@ -219,6 +245,7 @@ func (g *GitRepo) sortChangedFiles(files []string) (applications []string, inval
 	return applications, invalid
 }
 
+// checkIfApp determines whether the provided path points to a valid Application manifest.
 func (g *GitRepo) checkIfApp(file string) (bool, error) {
 	g.log.Debugf("===> Checking if [%s] is an Application", cyan(file))
 
@@ -257,17 +284,6 @@ func GetGitRepoRoot() (string, error) {
 	}
 
 	return "", fmt.Errorf("no git repository found")
-}
-
-func readFile(file string) []byte {
-	data, err := os.ReadFile(file) // #nosec G304
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return nil
-	}
-	return data
 }
 
 func filterIgnored(files []string, ignored []string) []string {

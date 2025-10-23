@@ -40,6 +40,7 @@ func Execute(opts Options, args []string) error {
 	return nil
 }
 
+// newRootCommand builds the root Cobra command with global flags and hooks.
 func newRootCommand(opts Options) *cobra.Command {
 	var (
 		debug     bool
@@ -79,6 +80,7 @@ func newRootCommand(opts Options) *cobra.Command {
 	return root
 }
 
+// newBranchCommand constructs the branch subcommand responsible for manifest comparisons.
 func newBranchCommand(opts Options, dropCache func() bool, debug func() bool) *cobra.Command {
 	var (
 		file               string

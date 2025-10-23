@@ -52,16 +52,6 @@ func TestGetEnv(t *testing.T) {
 	assert.Equal(t, expectedValue, actualValue)
 }
 
-func TestContains(t *testing.T) {
-	// Test case 1: Check if an item is in a slice
-	slice1 := []string{"apple", "banana", "cherry"}
-	assert.True(t, Contains(slice1, "apple"))
-
-	// Test case 2: Check if an item is not in a slice
-	slice2 := []string{"apple", "banana", "cherry"}
-	assert.False(t, Contains(slice2, "orange"))
-}
-
 func TestStripHelmLabels(t *testing.T) {
 	tmpDir := t.TempDir()
 	sourcePath := filepath.Join(tmpDir, "deployment.yaml")

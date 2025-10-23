@@ -26,6 +26,7 @@ type Target struct {
 	App  models.Application
 }
 
+// parse loads the target application's manifest into memory and validates its structure.
 func (t *Target) parse() error {
 	app := models.Application{}
 
@@ -57,6 +58,7 @@ func (t *Target) parse() error {
 	return nil
 }
 
+// generateValuesFiles materializes Helm values files so templates can be rendered.
 func (t *Target) generateValuesFiles() error {
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
@@ -76,6 +78,7 @@ func (t *Target) generateValuesFiles() error {
 	)
 }
 
+// ensureHelmCharts downloads required Helm charts into the configured cache.
 func (t *Target) ensureHelmCharts() error {
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
@@ -105,6 +108,7 @@ func (t *Target) ensureHelmCharts() error {
 	)
 }
 
+// extractCharts unpacks cached Helm charts into the working directories.
 func (t *Target) extractCharts() error {
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
@@ -134,6 +138,7 @@ func (t *Target) extractCharts() error {
 	)
 }
 
+// renderAppSources runs Helm template rendering for each application source.
 func (t *Target) renderAppSources() error {
 	var releaseName string
 

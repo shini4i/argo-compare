@@ -119,6 +119,7 @@ func (a *App) Run() error {
 	return a.reportInvalidFiles(invalidFiles)
 }
 
+// compareFiles renders and evaluates each changed Application manifest against the target branch.
 func (a *App) compareFiles(repo *GitRepo, changedFiles []string) error {
 	for _, file := range changedFiles {
 		a.logger.Infof("===> Processing changed application: [%s]", cyan(file))
@@ -157,6 +158,7 @@ func (a *App) compareFiles(repo *GitRepo, changedFiles []string) error {
 	return nil
 }
 
+// processFile prepares Helm inputs for a single manifest and renders its templates.
 func (a *App) processFile(fileName string, fileType string, application models.Application, tmpDir string) error {
 	target := Target{
 		CmdRunner:       a.cmdRunner,
@@ -192,6 +194,7 @@ func (a *App) processFile(fileName string, fileType string, application models.A
 	return target.renderAppSources()
 }
 
+// runComparison executes the diff strategy for the prepared temporary workspace.
 func (a *App) runComparison(tmpDir string) error {
 	comparer := Compare{
 		Globber:            a.globber,
@@ -208,6 +211,7 @@ func (a *App) runComparison(tmpDir string) error {
 	return strategy.Present(result)
 }
 
+// selectDiffStrategy picks the appropriate diff presentation implementation based on configuration.
 func (a *App) selectDiffStrategy() DiffStrategy {
 	if a.cfg.ExternalDiffTool != "" {
 		return ExternalDiffStrategy{
@@ -225,6 +229,7 @@ func (a *App) selectDiffStrategy() DiffStrategy {
 	}
 }
 
+// collectRepoCredentials loads repository credentials from environment variables.
 func (a *App) collectRepoCredentials() error {
 	a.logger.Debug("===> Collecting repo credentials")
 
@@ -247,6 +252,7 @@ func (a *App) collectRepoCredentials() error {
 	return nil
 }
 
+// reportInvalidFiles logs invalid manifests and returns an error when any are encountered.
 func (a *App) reportInvalidFiles(invalid []string) error {
 	if len(invalid) == 0 {
 		return nil
