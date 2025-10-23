@@ -7,7 +7,6 @@ dist/
 
 # local env files
 .env
-.envrc
 
 # coverage files
 coverage.out
