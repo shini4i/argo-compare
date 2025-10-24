@@ -97,7 +97,20 @@ func buildCommentBodies(result ComparisonResult, showAdded, showRemoved bool, ap
 		maxChunkLen = maxPerComment / 2
 	}
 
-	chunks := collectDiffChunks(result, showAdded, showRemoved, maxChunkLen)
+	chunks, notices := collectDiffChunks(result, showAdded, showRemoved, maxChunkLen)
+	if len(notices) > 0 {
+		var noticeBuilder strings.Builder
+		noticeBuilder.WriteString("**CRD Notes**\n")
+		for _, notice := range notices {
+			noticeBuilder.WriteString(notice)
+			if !strings.HasSuffix(notice, "\n") {
+				noticeBuilder.WriteString("\n")
+			}
+		}
+		noticeBuilder.WriteString("\n")
+		chunks = append(chunks, noticeBuilder.String())
+	}
+
 	return assembleCommentBodies(header, chunks)
 }
 
@@ -129,39 +142,58 @@ func buildSummaryLines(result ComparisonResult, showAdded, showRemoved bool) str
 	return "**Summary**\n" + strings.Join(lines, "\n") + "\n\n"
 }
 
-func collectDiffChunks(result ComparisonResult, showAdded, showRemoved bool, maxChunkLen int) []string {
-	var chunks []string
+// collectDiffChunks flattens diff outputs into renderable chunks and gathers notices for omitted sections (e.g. CRDs).
+func collectDiffChunks(result ComparisonResult, showAdded, showRemoved bool, maxChunkLen int) ([]string, []string) {
+	var (
+		chunks  []string
+		notices []string
+	)
 
 	if showAdded {
-		chunks = append(chunks, buildDiffChunks("Added", result.Added, maxChunkLen)...)
+		addedChunks, addedNotices := buildDiffChunks("Added", result.Added, maxChunkLen)
+		chunks = append(chunks, addedChunks...)
+		notices = append(notices, addedNotices...)
 	} else if len(result.Added) > 0 {
 		chunks = append(chunks, buildOmittedNotice("Added", len(result.Added)))
 	}
 
 	if showRemoved {
-		chunks = append(chunks, buildDiffChunks("Removed", result.Removed, maxChunkLen)...)
+		removedChunks, removedNotices := buildDiffChunks("Removed", result.Removed, maxChunkLen)
+		chunks = append(chunks, removedChunks...)
+		notices = append(notices, removedNotices...)
 	} else if len(result.Removed) > 0 {
 		chunks = append(chunks, buildOmittedNotice("Removed", len(result.Removed)))
 	}
 
-	chunks = append(chunks, buildDiffChunks("Changed", result.Changed, maxChunkLen)...)
+	changedChunks, changedNotices := buildDiffChunks("Changed", result.Changed, maxChunkLen)
+	chunks = append(chunks, changedChunks...)
+	notices = append(notices, changedNotices...)
 
-	return chunks
+	return chunks, notices
 }
 
 func buildOmittedNotice(section string, count int) string {
 	return fmt.Sprintf("> %s manifests (%d) are present but not shown with the current settings.\n\n", section, count)
 }
 
-func buildDiffChunks(section string, entries []DiffOutput, maxChunkLen int) []string {
-	var chunks []string
+// buildDiffChunks produces diff chunks for a single section (Added/Removed/Changed) and returns any notices.
+func buildDiffChunks(section string, entries []DiffOutput, maxChunkLen int) ([]string, []string) {
+	var (
+		chunks  []string
+		notices []string
+	)
 	for _, entry := range entries {
-		chunks = append(chunks, buildDiffEntryChunks(section, entry, maxChunkLen)...)
+		entryChunks, notice := buildDiffEntryChunks(section, entry, maxChunkLen)
+		if notice != "" {
+			notices = append(notices, notice)
+		}
+		chunks = append(chunks, entryChunks...)
 	}
-	return chunks
+	return chunks, notices
 }
 
-func buildDiffEntryChunks(section string, entry DiffOutput, maxChunkLen int) []string {
+// buildDiffEntryChunks formats a single diff entry into one or more chunks, returning the diff text and optional notice.
+func buildDiffEntryChunks(section string, entry DiffOutput, maxChunkLen int) ([]string, string) {
 	fileName := strings.TrimPrefix(entry.File.Name, "/")
 	if fileName == "" {
 		fileName = "unknown"
@@ -173,10 +205,11 @@ func buildDiffEntryChunks(section string, entry DiffOutput, maxChunkLen int) []s
 	}
 
 	if isCRDManifest(entry) {
-		return []string{fmt.Sprintf("> CRD manifest `%s` detected in the %s section. Diff omitted to keep merge request comments concise. Review the job logs for full details.\n\n", fileName, strings.ToLower(section))}
+		notice := fmt.Sprintf("> CRD manifest `%s` detected in the %s section. Diff omitted to keep merge request comments concise. Review the job logs for full details.\n", fileName, strings.ToLower(section))
+		return nil, notice
 	}
 
-	diff = sanitizeDiffHeaders(section, fileName, diff)
+	diff = stripDiffHeaders(diff)
 
 	closing := "\n```\n</details>\n\n"
 	var chunks []string
@@ -210,7 +243,7 @@ func buildDiffEntryChunks(section string, entry DiffOutput, maxChunkLen int) []s
 		part++
 	}
 
-	return chunks
+	return chunks, ""
 }
 
 func splitDiffContent(content string, limit int) (string, string) {
@@ -280,31 +313,26 @@ func ensureTrailingNewline(body string) string {
 	return body
 }
 
-func sanitizeDiffHeaders(section, fileName, diff string) string {
+// stripDiffHeaders removes git metadata headers from diff output, leaving only the hunk details.
+func stripDiffHeaders(diff string) string {
 	lines := strings.Split(diff, "\n")
-	if len(lines) >= 2 && strings.HasPrefix(lines[0], "--- ") && strings.HasPrefix(lines[1], "+++ ") {
-		label := sanitizeDiffFileName(fileName)
-		switch section {
-		case "Added":
-			lines[0] = "--- /dev/null"
-			lines[1] = fmt.Sprintf("+++ b/%s", label)
-		case "Removed":
-			lines[0] = fmt.Sprintf("--- a/%s", label)
-			lines[1] = "+++ /dev/null"
-		default:
-			lines[0] = fmt.Sprintf("--- a/%s", label)
-			lines[1] = fmt.Sprintf("+++ b/%s", label)
+	start := 0
+	for start < len(lines) {
+		line := lines[start]
+		if strings.HasPrefix(line, "diff --git ") ||
+			strings.HasPrefix(line, "index ") ||
+			strings.HasPrefix(line, "--- ") ||
+			strings.HasPrefix(line, "+++ ") {
+			start++
+			continue
 		}
+		break
 	}
 
-	return strings.Join(lines, "\n")
-}
-
-func sanitizeDiffFileName(name string) string {
-	if name == "" {
-		return "manifest"
+	if start >= len(lines) {
+		return ""
 	}
-	return strings.ReplaceAll(name, " ", "_")
+	return strings.Join(lines[start:], "\n")
 }
 
 func isCRDManifest(entry DiffOutput) bool {

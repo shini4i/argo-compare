@@ -45,13 +45,13 @@ func TestCommentStrategyPresentWithDiff(t *testing.T) {
 
 	result := ComparisonResult{
 		Added: []DiffOutput{
-			{File: File{Name: "/added.yaml"}, Diff: "+ added"},
+			{File: File{Name: "/added.yaml"}, Diff: "--- /tmp/src\n+++ /tmp/dst\n+ added"},
 		},
 		Changed: []DiffOutput{
-			{File: File{Name: "changed.yaml"}, Diff: "@@ diff"},
+			{File: File{Name: "changed.yaml"}, Diff: "--- /tmp/src\n+++ /tmp/dst\n@@ diff\n- old\n+ new"},
 		},
 		Removed: []DiffOutput{
-			{File: File{Name: "/removed.yaml"}, Diff: "- removed"},
+			{File: File{Name: "/removed.yaml"}, Diff: "--- /tmp/src\n+++ /tmp/dst\n- removed"},
 		},
 	}
 
@@ -67,7 +67,12 @@ func TestCommentStrategyPresentWithDiff(t *testing.T) {
 	assert.Contains(t, body, "<summary>Removed • removed.yaml</summary>")
 	assert.Contains(t, body, "```diff")
 	assert.Contains(t, body, "@@ diff")
-	assert.NotContains(t, body, "argo-compare-")
+	assert.NotContains(t, body, "--- /")
+	assert.NotContains(t, body, "+++ /")
+	assert.Contains(t, body, "+ added")
+	assert.Contains(t, body, "- old")
+	assert.Contains(t, body, "+ new")
+	assert.Contains(t, body, "- removed")
 }
 
 func TestCommentStrategyPresentNoDiff(t *testing.T) {
@@ -156,7 +161,7 @@ func TestCommentStrategyNotesHiddenSections(t *testing.T) {
 	assert.Contains(t, body, "Removed manifests (1) are present but not shown")
 }
 
-func TestCommentStrategySanitizesDiffHeaders(t *testing.T) {
+func TestCommentStrategyStripsDiffHeaders(t *testing.T) {
 	poster := &stubPoster{}
 	logger := setupSilentLogger("comment-headers", t)
 
@@ -174,9 +179,9 @@ func TestCommentStrategySanitizesDiffHeaders(t *testing.T) {
 	require.NoError(t, strategy.Present(result))
 	require.Len(t, poster.bodies, 1)
 	body := poster.bodies[0]
-	assert.Contains(t, body, "--- a/manifests/sample.yaml")
-	assert.Contains(t, body, "+++ b/manifests/sample.yaml")
-	assert.NotContains(t, body, "/tmp/argo-compare-123")
+	assert.NotContains(t, body, "--- ")
+	assert.NotContains(t, body, "+++ ")
+	assert.Contains(t, body, "@@ diff")
 }
 
 func TestCommentStrategySkipsCRDManifests(t *testing.T) {
@@ -197,7 +202,9 @@ func TestCommentStrategySkipsCRDManifests(t *testing.T) {
 	require.NoError(t, strategy.Present(result))
 	require.Len(t, poster.bodies, 1)
 	body := poster.bodies[0]
+	assert.Contains(t, body, "**CRD Notes**")
 	assert.Contains(t, body, "CRD manifest `crds/crd.yaml`")
 	assert.Contains(t, body, "diff omitted")
 	assert.NotContains(t, body, "kind: CustomResourceDefinition")
+	assert.Greater(t, strings.Index(body, "**CRD Notes**"), strings.LastIndex(body, "</details>"))
 }
