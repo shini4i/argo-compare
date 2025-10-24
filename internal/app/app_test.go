@@ -60,7 +60,7 @@ func TestSelectDiffStrategiesIncludesCommentStrategy(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	strategies, err := appInstance.selectDiffStrategies()
+	strategies, err := appInstance.selectDiffStrategies("apps/foo.yaml")
 	require.NoError(t, err)
 	require.Len(t, strategies, 2)
 
@@ -94,6 +94,6 @@ func TestSelectDiffStrategiesErrorFromFactory(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = appInstance.selectDiffStrategies()
+	_, err = appInstance.selectDiffStrategies("apps/foo.yaml")
 	require.Error(t, err)
 }

@@ -183,7 +183,7 @@ func (a *App) processChangedFile(repo *GitRepo, file string) (err error) {
 		}
 	}
 
-	return a.runComparison(tmpDir)
+	return a.runComparison(tmpDir, file)
 }
 
 // resolveTargetApplication retrieves the target branch manifest and determines follow-up actions.
@@ -240,7 +240,7 @@ func (a *App) processFile(fileName string, fileType string, application models.A
 }
 
 // runComparison executes the diff strategy for the prepared temporary workspace.
-func (a *App) runComparison(tmpDir string) error {
+func (a *App) runComparison(tmpDir, applicationFile string) error {
 	comparer := Compare{
 		Globber:            a.globber,
 		TmpDir:             tmpDir,
@@ -252,7 +252,7 @@ func (a *App) runComparison(tmpDir string) error {
 		return err
 	}
 
-	strategies, err := a.selectDiffStrategies()
+	strategies, err := a.selectDiffStrategies(applicationFile)
 	if err != nil {
 		return err
 	}
@@ -267,7 +267,7 @@ func (a *App) runComparison(tmpDir string) error {
 }
 
 // selectDiffStrategies picks the appropriate diff presentation implementations based on configuration.
-func (a *App) selectDiffStrategies() ([]DiffStrategy, error) {
+func (a *App) selectDiffStrategies(applicationFile string) ([]DiffStrategy, error) {
 	var strategies []DiffStrategy
 
 	if a.cfg.ExternalDiffTool != "" {
@@ -295,10 +295,11 @@ func (a *App) selectDiffStrategies() ([]DiffStrategy, error) {
 		}
 
 		strategies = append(strategies, CommentStrategy{
-			Log:         a.logger,
-			Poster:      poster,
-			ShowAdded:   a.cfg.PrintAddedManifests,
-			ShowRemoved: a.cfg.PrintRemovedManifests,
+			Log:             a.logger,
+			Poster:          poster,
+			ShowAdded:       a.cfg.PrintAddedManifests,
+			ShowRemoved:     a.cfg.PrintRemovedManifests,
+			ApplicationPath: applicationFile,
 		})
 	}
 
