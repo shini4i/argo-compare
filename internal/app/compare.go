@@ -77,7 +77,10 @@ func (c *Compare) prepareFiles() error {
 	srcPattern := filepath.Join(c.TmpDir, "templates", "src", "**", yamlGlob)
 	srcFiles, err := c.Globber.Glob(srcPattern)
 	if err != nil {
-		return err
+		if !os.IsNotExist(err) {
+			return err
+		}
+		srcFiles = nil
 	}
 	c.srcFiles, err = c.processFiles(srcFiles, "src")
 	if err != nil {
@@ -87,7 +90,10 @@ func (c *Compare) prepareFiles() error {
 	dstPattern := filepath.Join(c.TmpDir, "templates", "dst", "**", yamlGlob)
 	dstFiles, err := c.Globber.Glob(dstPattern)
 	if err != nil {
-		return err
+		if !os.IsNotExist(err) {
+			return err
+		}
+		dstFiles = nil
 	}
 	c.dstFiles, err = c.processFiles(dstFiles, "dst")
 	if err != nil {
