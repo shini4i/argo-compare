@@ -355,10 +355,29 @@ func stripDiffHeaders(diff string) string {
 
 func isCRDManifest(entry DiffOutput) bool {
 	name := strings.ToLower(strings.Trim(entry.File.Name, "/"))
-	if strings.Contains(name, "crd") || strings.Contains(name, "customresourcedefinition") {
+	if hasCRDPathIndicator(name) {
 		return true
 	}
 
 	diffLower := strings.ToLower(entry.Diff)
 	return strings.Contains(diffLower, "kind: customresourcedefinition")
+}
+
+// hasCRDPathIndicator reports whether the path strongly suggests a CRD manifest.
+func hasCRDPathIndicator(name string) bool {
+	if name == "" {
+		return false
+	}
+
+	segments := strings.Split(name, "/")
+	for _, segment := range segments {
+		if segment == "crds" {
+			return true
+		}
+		if strings.HasSuffix(segment, ".crd.yaml") || strings.HasSuffix(segment, "-crd.yaml") {
+			return true
+		}
+	}
+
+	return false
 }

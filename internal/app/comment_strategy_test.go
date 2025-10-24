@@ -206,5 +206,29 @@ func TestCommentStrategySkipsCRDManifests(t *testing.T) {
 	assert.Contains(t, body, "CRD manifest `crds/crd.yaml`")
 	assert.Contains(t, body, "Diff omitted")
 	assert.NotContains(t, body, "kind: CustomResourceDefinition")
-	assert.Greater(t, strings.Index(body, "**CRD Notes**"), strings.LastIndex(body, "</details>"))
+	if strings.Contains(body, "</details>") {
+		assert.True(t, strings.Index(body, "**CRD Notes**") > strings.LastIndex(body, "</details>"), "CRD notes should appear after diff sections")
+	}
+}
+
+func TestCommentStrategyIgnoresNonCRDManifests(t *testing.T) {
+	poster := &stubPoster{}
+	logger := setupSilentLogger("comment-non-crd", t)
+
+	strategy := CommentStrategy{
+		Log:             logger,
+		Poster:          poster,
+		ApplicationPath: "apps/credentials.yaml",
+	}
+
+	diff := "--- a/config/credentials.yaml\n+++ b/config/credentials.yaml\n+ username: demo"
+	result := ComparisonResult{
+		Changed: []DiffOutput{{File: File{Name: "/config/credentials.yaml"}, Diff: diff}},
+	}
+
+	require.NoError(t, strategy.Present(result))
+	require.Len(t, poster.bodies, 1)
+	body := poster.bodies[0]
+	assert.Contains(t, body, "credentials.yaml")
+	assert.NotContains(t, body, "CRD Notes")
 }

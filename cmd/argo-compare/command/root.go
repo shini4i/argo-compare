@@ -84,6 +84,7 @@ func newRootCommand(opts Options) *cobra.Command {
 }
 
 // newBranchCommand constructs the branch subcommand responsible for manifest comparisons.
+// newBranchCommand wires the branch subcommand and its flag handling.
 func newBranchCommand(opts Options, dropCache func() bool, debug func() bool) *cobra.Command {
 	flags := loadBranchDefaults()
 
@@ -146,6 +147,7 @@ type branchFlags struct {
 	gitlabMergeIID     int
 }
 
+// loadBranchDefaults gathers branch flag defaults from the environment.
 func loadBranchDefaults() branchFlags {
 	defaults := branchFlags{}
 
@@ -186,6 +188,7 @@ func loadBranchDefaults() branchFlags {
 	return defaults
 }
 
+// applyFullOutput toggles added/removed flags when full output is requested.
 func (b *branchFlags) applyFullOutput() {
 	if b.fullOutput {
 		b.printAdded = true
@@ -193,6 +196,7 @@ func (b *branchFlags) applyFullOutput() {
 	}
 }
 
+// configOptions builds the list of config options based on flag values.
 func (b branchFlags) configOptions(opts Options, debugEnabled bool) ([]app.ConfigOption, error) {
 	options := []app.ConfigOption{
 		app.WithFileToCompare(b.file),
@@ -218,6 +222,7 @@ func (b branchFlags) configOptions(opts Options, debugEnabled bool) ([]app.Confi
 	return options, nil
 }
 
+// commentOption resolves the comment configuration, if any.
 func (b branchFlags) commentOption() (app.ConfigOption, error) {
 	provider := strings.ToLower(strings.TrimSpace(b.commentProvider))
 	switch provider {
