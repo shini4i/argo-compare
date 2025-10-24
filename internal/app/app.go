@@ -291,7 +291,7 @@ func (a *App) selectDiffStrategies(applicationFile string) ([]DiffStrategy, erro
 			return nil, err
 		}
 		if poster == nil {
-			return nil, errors.New("comment poster factory returned nil")
+			return nil, fmt.Errorf("comment poster factory returned nil for provider %q", a.cfg.Comment.Provider)
 		}
 
 		strategies = append(strategies, CommentStrategy{
@@ -343,9 +343,14 @@ func (a *App) reportInvalidFiles(invalid []string) error {
 	return errors.New("invalid files found")
 }
 
+// defaultCommentPosterFactory returns a poster instance for the configured comment provider.
+// It expects cfg.Comment to be non-nil and already validated by the caller.
 func defaultCommentPosterFactory(cfg Config) (comment.Poster, error) {
-	if cfg.Comment == nil || cfg.Comment.Provider == CommentProviderNone {
-		return nil, fmt.Errorf("comment factory requested with no comment provider configured")
+	if cfg.Comment == nil {
+		return nil, fmt.Errorf("comment factory requested with nil comment configuration")
+	}
+	if cfg.Comment.Provider == CommentProviderNone {
+		return nil, fmt.Errorf("comment factory requested with comment provider %q", CommentProviderNone)
 	}
 
 	switch cfg.Comment.Provider {

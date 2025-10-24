@@ -19,8 +19,11 @@ type CommentStrategy struct {
 }
 
 const (
+	// gitlabNoteLengthLimit reflects GitLab's documented 1 MB limit for note bodies.
 	gitlabNoteLengthLimit = 1_000_000
-	commentPartReserve    = 32
+	// commentPartReserve keeps room for part numbering suffixes when chunking comments.
+	commentPartReserve = 32
+	crdNoticeTemplate  = "> CRD manifest `%s` detected in the %s section. Diff omitted to keep merge request comments concise. Review the job logs for full details.\n"
 )
 
 // Present formats comparison results and pushes them as one or more comments depending on size.
@@ -100,13 +103,7 @@ func buildCommentBodies(result ComparisonResult, showAdded, showRemoved bool, ap
 		return []string{ensureTrailingNewline(header + "No manifest differences detected :white_check_mark:\n")}
 	}
 
-	maxPerComment := gitlabNoteLengthLimit - commentPartReserve
-	if maxPerComment <= 0 {
-		maxPerComment = gitlabNoteLengthLimit
-	}
-	if len(header) >= maxPerComment {
-		maxPerComment = len(header) + 1
-	}
+	maxPerComment := computeMaxPerComment(len(header))
 
 	maxChunkLen := maxPerComment - len(header)
 	if maxChunkLen <= 0 {
@@ -221,7 +218,7 @@ func buildDiffEntryChunks(section string, entry DiffOutput, maxChunkLen int) ([]
 	}
 
 	if isCRDManifest(entry) {
-		notice := fmt.Sprintf("> CRD manifest `%s` detected in the %s section. Diff omitted to keep merge request comments concise. Review the job logs for full details.\n", fileName, strings.ToLower(section))
+		notice := fmt.Sprintf(crdNoticeTemplate, fileName, strings.ToLower(section))
 		return nil, notice
 	}
 
@@ -278,13 +275,7 @@ func splitDiffContent(content string, limit int) (string, string) {
 }
 
 func assembleCommentBodies(header string, chunks []string) []string {
-	maxPerComment := gitlabNoteLengthLimit - commentPartReserve
-	if maxPerComment <= 0 {
-		maxPerComment = gitlabNoteLengthLimit
-	}
-	if len(header) >= maxPerComment {
-		maxPerComment = len(header) + 1
-	}
+	maxPerComment := computeMaxPerComment(len(header))
 
 	var bodies []string
 	var builder strings.Builder
@@ -327,6 +318,17 @@ func includeNonEmptyChunks(chunks []string) []string {
 func ensureTrailingNewline(body string) string {
 	body = strings.TrimRight(body, "\n") + "\n"
 	return body
+}
+
+func computeMaxPerComment(headerLen int) int {
+	maxPerComment := gitlabNoteLengthLimit - commentPartReserve
+	if maxPerComment <= 0 {
+		maxPerComment = gitlabNoteLengthLimit
+	}
+	if headerLen >= maxPerComment {
+		maxPerComment = headerLen + 1
+	}
+	return maxPerComment
 }
 
 // stripDiffHeaders removes git metadata headers from diff output, leaving only the hunk details.

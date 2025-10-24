@@ -15,8 +15,10 @@ import (
 )
 
 const (
-	defaultAPIPrefix   = "/api/v4"
-	privateTokenHeader = "PRIVATE-TOKEN"
+	defaultAPIPrefix      = "/api/v4"
+	privateTokenHeader    = "PRIVATE-TOKEN"
+	maxErrorResponseBytes = 4096
+	defaultClientTimeout  = 15 * time.Second
 )
 
 // Config describes settings required to post comments to a GitLab Merge Request.
@@ -27,6 +29,7 @@ type Config struct {
 	MergeRequestIID int
 	HTTPClient      *http.Client
 	APIPrefix       string
+	Timeout         time.Duration
 }
 
 type Poster struct {
@@ -63,7 +66,11 @@ func NewPoster(cfg Config) (*Poster, error) {
 
 	client := cfg.HTTPClient
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		timeout := cfg.Timeout
+		if timeout <= 0 {
+			timeout = defaultClientTimeout
+		}
+		client = &http.Client{Timeout: timeout}
 	}
 
 	apiPrefix := cfg.APIPrefix
@@ -109,7 +116,7 @@ func (p *Poster) Post(body string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorResponseBytes))
 		return fmt.Errorf("gitlab: unexpected status %s: %s", resp.Status, strings.TrimSpace(string(respBody)))
 	}
 
