@@ -204,7 +204,7 @@ func TestCommentStrategySkipsCRDManifests(t *testing.T) {
 	body := poster.bodies[0]
 	assert.Contains(t, body, "**CRD Notes**")
 	assert.Contains(t, body, "CRD manifest `crds/crd.yaml`")
-	assert.Contains(t, body, "diff omitted")
+	assert.Contains(t, body, "Diff omitted")
 	assert.NotContains(t, body, "kind: CustomResourceDefinition")
 	assert.Greater(t, strings.Index(body, "**CRD Notes**"), strings.LastIndex(body, "</details>"))
 }

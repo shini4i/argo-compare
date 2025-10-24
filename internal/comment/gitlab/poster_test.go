@@ -20,26 +20,28 @@ func TestPosterPost(t *testing.T) {
 		Token  string
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		received.Method = r.Method
-		received.Path = r.URL.Path
-		received.Token = r.Header.Get(privateTokenHeader)
+	client := &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			received.Method = req.Method
+			received.Path = req.URL.Path
+			received.Token = req.Header.Get(privateTokenHeader)
 
-		defer r.Body.Close()
-		data, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
-		require.NoError(t, json.Unmarshal(data, &received.Body))
+			data, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			require.NoError(t, json.Unmarshal(data, &received.Body))
 
-		w.WriteHeader(http.StatusCreated)
-	}))
-	t.Cleanup(server.Close)
+			resp := httptest.NewRecorder()
+			resp.WriteHeader(http.StatusCreated)
+			return resp.Result(), nil
+		}),
+	}
 
 	cfg := Config{
-		BaseURL:         server.URL,
+		BaseURL:         "http://gitlab.example",
 		Token:           "token",
 		ProjectID:       "group/project",
 		MergeRequestIID: 7,
-		HTTPClient:      server.Client(),
+		HTTPClient:      client,
 	}
 	poster, err := NewPoster(cfg)
 	require.NoError(t, err)
@@ -51,23 +53,26 @@ func TestPosterPost(t *testing.T) {
 	assert.Equal(t, "token", received.Token)
 	assert.Equal(t, "hello world", received.Body["body"])
 
-	baseURL, _ := url.Parse(server.URL)
+	baseURL, _ := url.Parse(cfg.BaseURL)
 	expectedPath := baseURL.Path + "/api/v4/projects/group%2Fproject/merge_requests/7/notes"
 	assert.Equal(t, expectedPath, received.Path)
 }
 
 func TestPosterPostErrorStatus(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "boom", http.StatusBadRequest)
-	}))
-	t.Cleanup(server.Close)
+	client := &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			resp := httptest.NewRecorder()
+			http.Error(resp, "boom", http.StatusBadRequest)
+			return resp.Result(), nil
+		}),
+	}
 
 	poster, err := NewPoster(Config{
-		BaseURL:         server.URL,
+		BaseURL:         "https://gitlab.example",
 		Token:           "token",
 		ProjectID:       "1",
 		MergeRequestIID: 2,
-		HTTPClient:      server.Client(),
+		HTTPClient:      client,
 	})
 	require.NoError(t, err)
 
@@ -87,4 +92,10 @@ func TestNewPosterValidatesConfig(t *testing.T) {
 
 	_, err = NewPoster(Config{BaseURL: "http://example.com", Token: "token", ProjectID: "1"})
 	require.Error(t, err)
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
