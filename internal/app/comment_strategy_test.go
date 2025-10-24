@@ -184,6 +184,8 @@ func TestCommentStrategyStripsDiffHeaders(t *testing.T) {
 	assert.Contains(t, body, "@@ diff")
 }
 
+// TestCommentStrategySkipsCRDManifests ensures CRD manifest diffs are replaced
+// with a concise notice in posted comments.
 func TestCommentStrategySkipsCRDManifests(t *testing.T) {
 	poster := &stubPoster{}
 	logger := setupSilentLogger("comment-crd", t)
@@ -206,8 +208,9 @@ func TestCommentStrategySkipsCRDManifests(t *testing.T) {
 	assert.Contains(t, body, "CRD manifest `crds/crd.yaml`")
 	assert.Contains(t, body, "Diff omitted")
 	assert.NotContains(t, body, "kind: CustomResourceDefinition")
-	if strings.Contains(body, "</details>") {
-		assert.True(t, strings.Index(body, "**CRD Notes**") > strings.LastIndex(body, "</details>"), "CRD notes should appear after diff sections")
+	if lastDetails := strings.LastIndex(body, "</details>"); lastDetails != -1 {
+		tail := body[lastDetails+len("</details>"):]
+		assert.Contains(t, tail, "**CRD Notes**", "CRD notes should appear after diff sections")
 	}
 }
 

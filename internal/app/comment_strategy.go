@@ -353,6 +353,9 @@ func stripDiffHeaders(diff string) string {
 	return strings.Join(lines[start:], "\n")
 }
 
+// isCRDManifest reports whether the provided diff output appears to describe a
+// CustomResourceDefinition manifest by inspecting both the path and diff
+// content.
 func isCRDManifest(entry DiffOutput) bool {
 	name := strings.ToLower(strings.Trim(entry.File.Name, "/"))
 	if hasCRDPathIndicator(name) {
@@ -370,11 +373,44 @@ func hasCRDPathIndicator(name string) bool {
 	}
 
 	segments := strings.Split(name, "/")
-	for _, segment := range segments {
-		if segment == "crds" {
+	for idx, segment := range segments {
+		if segment == "" {
+			continue
+		}
+		if segment == "crd" || segment == "crds" {
 			return true
 		}
-		if strings.HasSuffix(segment, ".crd.yaml") || strings.HasSuffix(segment, "-crd.yaml") {
+		isLastSegment := idx == len(segments)-1
+		if isLastSegment && hasCRDFilenamePattern(segment) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hasCRDFilenamePattern reports whether a file name follows common CRD manifest conventions.
+func hasCRDFilenamePattern(segment string) bool {
+	if segment == "" {
+		return false
+	}
+
+	lowered := strings.ToLower(segment)
+	if strings.Contains(lowered, ".crd.") {
+		return true
+	}
+
+	crdSuffixes := []string{
+		"crd.yaml",
+		"crd.yml",
+		"-crd.yaml",
+		"-crd.yml",
+		"_crd.yaml",
+		"_crd.yml",
+	}
+
+	for _, suffix := range crdSuffixes {
+		if strings.HasSuffix(lowered, suffix) {
 			return true
 		}
 	}
