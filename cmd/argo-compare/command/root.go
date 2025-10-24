@@ -84,7 +84,6 @@ func newRootCommand(opts Options) *cobra.Command {
 }
 
 // newBranchCommand constructs the branch subcommand responsible for manifest comparisons.
-// newBranchCommand wires the branch subcommand and its flag handling.
 func newBranchCommand(opts Options, dropCache func() bool, debug func() bool) *cobra.Command {
 	flags := loadBranchDefaults()
 
