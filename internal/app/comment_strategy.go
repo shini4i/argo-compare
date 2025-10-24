@@ -25,14 +25,30 @@ const (
 
 // Present formats comparison results and pushes them as one or more comments depending on size.
 func (s CommentStrategy) Present(result ComparisonResult) error {
+	if err := s.validate(); err != nil {
+		return err
+	}
+
+	bodies := buildCommentBodies(result, s.ShowAdded, s.ShowRemoved, s.ApplicationPath)
+	if err := s.postBodies(bodies); err != nil {
+		return err
+	}
+
+	s.logResult(result, len(bodies))
+	return nil
+}
+
+func (s CommentStrategy) validate() error {
 	if s.Poster == nil {
 		return errors.New("comment strategy requires a poster implementation")
 	}
 	if s.Log == nil {
 		return errors.New("comment strategy requires a logger")
 	}
+	return nil
+}
 
-	bodies := buildCommentBodies(result, s.ShowAdded, s.ShowRemoved, s.ApplicationPath)
+func (s CommentStrategy) postBodies(bodies []string) error {
 	for idx, body := range bodies {
 		bodyToPost := body
 		if len(bodies) > 1 {
@@ -45,23 +61,23 @@ func (s CommentStrategy) Present(result ComparisonResult) error {
 			return fmt.Errorf("post diff comment: %w", err)
 		}
 	}
+	return nil
+}
 
+func (s CommentStrategy) logResult(result ComparisonResult, commentCount int) {
 	app := strings.TrimSpace(s.ApplicationPath)
 	if app == "" {
 		app = "unknown application"
 	}
 
-	if result.IsEmpty() {
+	switch {
+	case result.IsEmpty():
 		s.Log.Infof("Posted comment summarizing absence of manifest changes for %s", app)
-	} else {
-		if len(bodies) > 1 {
-			s.Log.Infof("Posted %d comments with manifest diff summary for %s", len(bodies), app)
-		} else {
-			s.Log.Infof("Posted comment with manifest diff summary for %s", app)
-		}
+	case commentCount > 1:
+		s.Log.Infof("Posted %d comments with manifest diff summary for %s", commentCount, app)
+	default:
+		s.Log.Infof("Posted comment with manifest diff summary for %s", app)
 	}
-
-	return nil
 }
 
 func buildCommentBodies(result ComparisonResult, showAdded, showRemoved bool, applicationPath string) []string {
