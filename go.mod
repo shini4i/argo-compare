@@ -12,7 +12,7 @@ require (
 	github.com/mattn/go-zglob v0.0.6
 	github.com/op/go-logging v0.0.0-20160315200505-970db520ece7
 	github.com/spf13/afero v1.14.0
-	github.com/spf13/cobra v1.8.0
+	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/mock v0.6.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -38,7 +38,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/net v0.39.0 // indirect
