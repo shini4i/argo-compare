@@ -9,6 +9,7 @@ import (
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/app"
 	"github.com/shini4i/argo-compare/internal/helpers"
+	"github.com/shini4i/argo-compare/internal/sanitizer"
 	"github.com/spf13/afero"
 )
 
@@ -37,12 +38,13 @@ func loggingInit(debug bool) {
 // setupDependencies wires runtime collaborators used by the application.
 func setupDependencies(logger *logging.Logger) app.Dependencies {
 	return app.Dependencies{
-		FS:            afero.NewOsFs(),
-		CmdRunner:     &utils.RealCmdRunner{},
-		FileReader:    utils.OsFileReader{},
-		HelmProcessor: utils.RealHelmChartProcessor{Log: logger},
-		Globber:       utils.CustomGlobber{},
-		Logger:        logger,
+		FS:                  afero.NewOsFs(),
+		CmdRunner:           &utils.RealCmdRunner{},
+		FileReader:          utils.OsFileReader{},
+		HelmProcessor:       utils.RealHelmChartProcessor{Log: logger},
+		Globber:             utils.CustomGlobber{},
+		Logger:              logger,
+		SensitiveDataMasker: sanitizer.NewKubernetesSecretMasker(),
 	}
 }
 

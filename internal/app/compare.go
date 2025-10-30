@@ -47,6 +47,7 @@ type Compare struct {
 	Globber            ports.Globber
 	TmpDir             string
 	PreserveHelmLabels bool
+	Masker             ports.SensitiveDataMasker // Sanitizes manifest content prior to diffing.
 
 	srcFiles     []File
 	dstFiles     []File
@@ -202,9 +203,33 @@ func (c *Compare) generateDiff(f File) (string, error) {
 		return "", err
 	}
 
+	if c.Masker != nil {
+		srcFile, err = c.applyMask(srcFile)
+		if err != nil {
+			return "", err
+		}
+		dstFile, err = c.applyMask(dstFile)
+		if err != nil {
+			return "", err
+		}
+	}
+
 	edits := myers.ComputeEdits(span.URIFromPath(srcFilePath), string(dstFile), string(srcFile))
 
 	return fmt.Sprint(gotextdiff.ToUnified(srcFilePath, dstFilePath, string(dstFile), edits)), nil
+}
+
+// applyMask redacts sensitive manifest data when a masker dependency is configured.
+func (c *Compare) applyMask(content []byte) ([]byte, error) {
+	if len(content) == 0 {
+		return content, nil
+	}
+
+	masked, _, err := c.Masker.Mask(content)
+	if err != nil {
+		return nil, fmt.Errorf("mask manifest content: %w", err)
+	}
+	return masked, nil
 }
 
 // stripHelmLabels removes Helm-managed metadata that would otherwise produce noisy diffs.

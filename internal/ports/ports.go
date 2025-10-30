@@ -27,6 +27,11 @@ type Globber interface {
 	Glob(pattern string) ([]string, error)
 }
 
+// SensitiveDataMasker rewrites manifest content to remove or obscure sensitive information.
+type SensitiveDataMasker interface {
+	Mask(content []byte) ([]byte, bool, error)
+}
+
 // HelmChartsProcessor coordinates the Helm chart lifecycle required for comparisons.
 type HelmChartsProcessor interface {
 	GenerateValuesFile(chartName, tmpDir, targetType, values string, valuesObject map[string]interface{}) error
