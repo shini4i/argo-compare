@@ -13,6 +13,7 @@ import (
 	"github.com/shini4i/argo-compare/internal/comment/gitlab"
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
+	"github.com/shini4i/argo-compare/internal/sanitizer"
 	"github.com/spf13/afero"
 )
 
@@ -27,19 +28,21 @@ type Dependencies struct {
 	Globber              ports.Globber
 	Logger               *logging.Logger
 	CommentPosterFactory CommentPosterFactory
+	SensitiveDataMasker  ports.SensitiveDataMasker // Responsible for redacting sensitive manifest fields.
 }
 
 // App orchestrates the end-to-end comparison workflow.
 type App struct {
-	cfg             Config
-	fs              afero.Fs
-	cmdRunner       ports.CmdRunner
-	fileReader      ports.FileReader
-	helmProcessor   ports.HelmChartsProcessor
-	globber         ports.Globber
-	logger          *logging.Logger
-	repoCredentials []models.RepoCredentials
-	commentFactory  CommentPosterFactory
+	cfg                 Config
+	fs                  afero.Fs
+	cmdRunner           ports.CmdRunner
+	fileReader          ports.FileReader
+	helmProcessor       ports.HelmChartsProcessor
+	globber             ports.Globber
+	logger              *logging.Logger
+	repoCredentials     []models.RepoCredentials
+	commentFactory      CommentPosterFactory
+	sensitiveDataMasker ports.SensitiveDataMasker // Applied to manifest content prior to diff generation.
 }
 
 // CommentPosterFactory builds a comment poster based on the active configuration.
@@ -72,16 +75,20 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 	if deps.CommentPosterFactory == nil {
 		deps.CommentPosterFactory = defaultCommentPosterFactory
 	}
+	if deps.SensitiveDataMasker == nil {
+		deps.SensitiveDataMasker = sanitizer.NewKubernetesSecretMasker()
+	}
 
 	return &App{
-		cfg:            cfg,
-		fs:             deps.FS,
-		cmdRunner:      deps.CmdRunner,
-		fileReader:     deps.FileReader,
-		helmProcessor:  deps.HelmProcessor,
-		globber:        deps.Globber,
-		logger:         deps.Logger,
-		commentFactory: deps.CommentPosterFactory,
+		cfg:                 cfg,
+		fs:                  deps.FS,
+		cmdRunner:           deps.CmdRunner,
+		fileReader:          deps.FileReader,
+		helmProcessor:       deps.HelmProcessor,
+		globber:             deps.Globber,
+		logger:              deps.Logger,
+		commentFactory:      deps.CommentPosterFactory,
+		sensitiveDataMasker: deps.SensitiveDataMasker,
 	}, nil
 }
 
@@ -245,6 +252,7 @@ func (a *App) runComparison(tmpDir, applicationFile string) error {
 		Globber:            a.globber,
 		TmpDir:             tmpDir,
 		PreserveHelmLabels: a.cfg.PreserveHelmLabels,
+		Masker:             a.sensitiveDataMasker,
 	}
 
 	result, err := comparer.Execute()

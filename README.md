@@ -93,6 +93,10 @@ When running inside GitLab CI, most settings are detected automatically:
 - `--gitlab-merge-request-iid` falls back to `CI_MERGE_REQUEST_IID`.
 - `--gitlab-token` falls back to `CI_JOB_TOKEN` if no explicit token is provided (ensure the token has the necessary scope to post notes).
 
+### Sensitive data handling
+
+`argo-compare` masks the rendered contents of Kubernetes `Secret` manifests before they reach stdout logs, external diff tools, or merge request comments. Each secret entry is replaced with a deterministic hash placeholder, allowing reviewers to spot that a value changed without exposing the underlying secret material.
+
 #### Password Protected Repositories
 Using password protected repositories is a bit more challenging. To make it work, we need to expose JSON as an environment variable.
 The JSON should contain the following fields:

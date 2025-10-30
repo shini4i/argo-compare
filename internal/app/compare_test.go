@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,9 +10,19 @@ import (
 
 	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
+	"github.com/shini4i/argo-compare/internal/sanitizer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type failingMasker struct {
+	err error
+}
+
+// Mask implements ports.SensitiveDataMasker and always returns the configured error.
+func (f failingMasker) Mask([]byte) ([]byte, bool, error) {
+	return nil, false, f.err
+}
 
 const (
 	helmDeploymentWithManagedLabels = `# for testing purpose we need only limited fields
@@ -200,4 +211,76 @@ func TestCompareExecuteProducesDiffs(t *testing.T) {
 	assert.Equal(t, "/changed.yaml", result.Changed[0].File.Name)
 	assert.Contains(t, result.Changed[0].Diff, "-    side: dst")
 	assert.Contains(t, result.Changed[0].Diff, "+    side: src")
+}
+
+// TestCompareExecuteMasksSecretDiff ensures secret diffs redact sensitive values before presentation.
+func TestCompareExecuteMasksSecretDiff(t *testing.T) {
+	tmpDir := t.TempDir()
+	srcDir := filepath.Join(tmpDir, "templates", "src")
+	dstDir := filepath.Join(tmpDir, "templates", "dst")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+	require.NoError(t, os.MkdirAll(dstDir, 0o755))
+
+	srcSecret := `apiVersion: v1
+kind: Secret
+metadata:
+  name: sample
+type: Opaque
+data:
+  password: c2VjcmV0
+`
+	dstSecret := `apiVersion: v1
+kind: Secret
+metadata:
+  name: sample
+type: Opaque
+data:
+  password: ZGlmZmVyZW50
+`
+
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "secret.yaml"), []byte(srcSecret), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dstDir, "secret.yaml"), []byte(dstSecret), 0o644))
+
+	compare := Compare{
+		Globber:            utils.CustomGlobber{},
+		TmpDir:             tmpDir,
+		PreserveHelmLabels: true,
+		Masker:             sanitizer.NewKubernetesSecretMasker(),
+	}
+
+	result, err := compare.Execute()
+	require.NoError(t, err)
+	require.Len(t, result.Changed, 1)
+
+	diff := result.Changed[0].Diff
+
+	assert.NotContains(t, diff, "c2VjcmV0")
+	assert.NotContains(t, diff, "ZGlmZmVyZW50")
+	assert.Contains(t, diff, "ENC[sha256:")
+	assert.Contains(t, diff, "-  password: ENC[sha256:")
+	assert.Contains(t, diff, "+  password: ENC[sha256:")
+}
+
+// TestCompareGenerateDiffMaskError verifies masking failures are surfaced with context.
+func TestCompareGenerateDiffMaskError(t *testing.T) {
+	tmpDir := t.TempDir()
+	srcDir := filepath.Join(tmpDir, "templates", "src")
+	dstDir := filepath.Join(tmpDir, "templates", "dst")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+	require.NoError(t, os.MkdirAll(dstDir, 0o755))
+
+	content := []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: demo\n")
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "demo.yaml"), content, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dstDir, "demo.yaml"), content, 0o644))
+
+	maskErr := fmt.Errorf("simulated masking failure")
+	compare := Compare{
+		TmpDir: tmpDir,
+		Masker: failingMasker{err: maskErr},
+	}
+
+	_, err := compare.generateDiff(File{Name: "/demo.yaml"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mask manifest content")
+	assert.Contains(t, err.Error(), maskErr.Error())
 }
