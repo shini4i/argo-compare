@@ -17,13 +17,13 @@ import (
 const (
 	maskPrefix      = "ENC[sha256:"
 	maskSuffix      = "]"
-	hashPrefixBytes = 8
+	hashPrefixBytes = 16
 )
 
 // KubernetesSecretMasker redacts sensitive values contained within Kubernetes Secret manifests.
 type KubernetesSecretMasker struct {
 	mu        sync.RWMutex
-	hashCache map[string]string
+	hashCache map[string]string // keyed by the full SHA-256 digest to avoid retaining plaintext secrets.
 }
 
 // Ensure compile-time conformance to the SensitiveDataMasker contract.
@@ -130,7 +130,7 @@ func maskSecretMap(parent *yaml.Node, key string, maskValue func(string) string)
 
 		value.Value = maskValue(value.Value)
 		value.Tag = "!!str"
-		value.Style = yaml.Style(0) // Plain style (default formatting).
+		value.Style = yaml.Style(0) // yaml.Style(0) keeps the scalar in plain style; yaml.v3 does not expose a named constant.
 		masked = true
 	}
 
@@ -167,22 +167,26 @@ func findMappingKeyIndex(mapping *yaml.Node, key string) int {
 
 // buildMaskedValue returns a deterministic redacted placeholder for the provided secret value while reusing cached computations.
 func (m *KubernetesSecretMasker) buildMaskedValue(value string) string {
+	digest := sha256.Sum256([]byte(value))
+	digestKey := hex.EncodeToString(digest[:])
+
 	m.mu.RLock()
-	cached, ok := m.hashCache[value]
+	masked, ok := m.hashCache[digestKey]
 	m.mu.RUnlock()
 	if ok {
-		return cached
+		return masked
 	}
+
+	prefix := hex.EncodeToString(digest[:hashPrefixBytes])
+	masked = maskPrefix + prefix + maskSuffix
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if cached, ok = m.hashCache[value]; ok {
+	if cached, exists := m.hashCache[digestKey]; exists {
+		m.mu.Unlock()
 		return cached
 	}
-
-	sum := sha256.Sum256([]byte(value))
-	masked := maskPrefix + hex.EncodeToString(sum[:hashPrefixBytes]) + maskSuffix
-	m.hashCache[value] = masked
+	m.hashCache[digestKey] = masked
+	m.mu.Unlock()
 
 	return masked
 }

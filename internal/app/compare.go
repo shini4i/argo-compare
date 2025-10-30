@@ -221,10 +221,6 @@ func (c *Compare) generateDiff(f File) (string, error) {
 
 // applyMask redacts sensitive manifest data when a masker dependency is configured.
 func (c *Compare) applyMask(content []byte) ([]byte, error) {
-	if len(content) == 0 {
-		return content, nil
-	}
-
 	masked, changed, err := c.Masker.Mask(content)
 	if err != nil {
 		return nil, fmt.Errorf("mask manifest content: %w", err)
