@@ -119,3 +119,19 @@ data:
 	assert.Contains(t, string(resultOne), "ENC[sha256:")
 	assert.Contains(t, string(resultTwo), "ENC[sha256:")
 }
+
+// TestKubernetesSecretMasker_HandlesNonMappingData ensures non-mapping secret data blocks are ignored safely.
+func TestKubernetesSecretMasker_HandlesNonMappingData(t *testing.T) {
+	masker := NewKubernetesSecretMasker()
+	input := `apiVersion: v1
+kind: Secret
+metadata:
+  name: sample
+data: []
+`
+
+	result, masked, err := masker.Mask([]byte(input))
+	require.NoError(t, err)
+	assert.False(t, masked)
+	assert.Equal(t, input, string(result))
+}

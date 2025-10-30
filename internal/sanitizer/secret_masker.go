@@ -14,10 +14,9 @@ import (
 )
 
 const (
-	maskPrefix          = "ENC[sha256:"
-	maskSuffix          = "]"
-	hashPrefixBytes     = 8
-	hashPrefixHexLength = hashPrefixBytes * 2
+	maskPrefix      = "ENC[sha256:"
+	maskSuffix      = "]"
+	hashPrefixBytes = 8
 )
 
 // KubernetesSecretMasker redacts sensitive values contained within Kubernetes Secret manifests.
@@ -163,6 +162,5 @@ func findMappingKeyIndex(mapping *yaml.Node, key string) int {
 // buildMaskedValue returns a deterministic redacted placeholder for the provided secret value.
 func buildMaskedValue(value string) string {
 	sum := sha256.Sum256([]byte(value))
-	hash := hex.EncodeToString(sum[:hashPrefixBytes])
-	return maskPrefix + hash[:hashPrefixHexLength] + maskSuffix
+	return maskPrefix + hex.EncodeToString(sum[:hashPrefixBytes]) + maskSuffix
 }

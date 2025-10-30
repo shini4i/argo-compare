@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type failingMasker struct {
+	err error
+}
+
+// Mask implements ports.SensitiveDataMasker and always returns the configured error.
+func (f failingMasker) Mask([]byte) ([]byte, bool, error) {
+	return nil, false, f.err
+}
 
 const (
 	helmDeploymentWithManagedLabels = `# for testing purpose we need only limited fields
@@ -249,4 +259,28 @@ data:
 	assert.Contains(t, diff, "ENC[sha256:")
 	assert.Contains(t, diff, "-  password: ENC[sha256:")
 	assert.Contains(t, diff, "+  password: ENC[sha256:")
+}
+
+// TestCompareGenerateDiffMaskError verifies masking failures are surfaced with context.
+func TestCompareGenerateDiffMaskError(t *testing.T) {
+	tmpDir := t.TempDir()
+	srcDir := filepath.Join(tmpDir, "templates", "src")
+	dstDir := filepath.Join(tmpDir, "templates", "dst")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+	require.NoError(t, os.MkdirAll(dstDir, 0o755))
+
+	content := []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: demo\n")
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "demo.yaml"), content, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dstDir, "demo.yaml"), content, 0o644))
+
+	maskErr := fmt.Errorf("mask failed")
+	compare := Compare{
+		TmpDir: tmpDir,
+		Masker: failingMasker{err: maskErr},
+	}
+
+	_, err := compare.generateDiff(File{Name: "/demo.yaml"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mask manifest content")
+	assert.Contains(t, err.Error(), maskErr.Error())
 }
