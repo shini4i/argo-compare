@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/shini4i/argo-compare/internal/ports"
 	"gopkg.in/yaml.v3"
@@ -20,19 +21,24 @@ const (
 )
 
 // KubernetesSecretMasker redacts sensitive values contained within Kubernetes Secret manifests.
-type KubernetesSecretMasker struct{}
+type KubernetesSecretMasker struct {
+	mu        sync.RWMutex
+	hashCache map[string]string
+}
 
 // Ensure compile-time conformance to the SensitiveDataMasker contract.
 var _ ports.SensitiveDataMasker = (*KubernetesSecretMasker)(nil)
 
 // NewKubernetesSecretMasker constructs a masker capable of redacting Kubernetes Secret data values.
 func NewKubernetesSecretMasker() *KubernetesSecretMasker {
-	return &KubernetesSecretMasker{}
+	return &KubernetesSecretMasker{
+		hashCache: make(map[string]string),
+	}
 }
 
 // Mask redacts data and stringData values of Kubernetes Secret manifests while preserving other resources untouched.
 // It returns the potentially modified manifest bytes alongside a flag indicating whether masking occurred.
-func (KubernetesSecretMasker) Mask(content []byte) ([]byte, bool, error) {
+func (m *KubernetesSecretMasker) Mask(content []byte) ([]byte, bool, error) {
 	if len(content) == 0 {
 		return content, false, nil
 	}
@@ -50,7 +56,7 @@ func (KubernetesSecretMasker) Mask(content []byte) ([]byte, bool, error) {
 			return nil, false, fmt.Errorf("decode manifest: %w", err)
 		}
 
-		if sanitizeSecretDocument(&document) {
+		if sanitizeSecretDocument(&document, m.buildMaskedValue) {
 			masked = true
 		}
 
@@ -78,8 +84,8 @@ func (KubernetesSecretMasker) Mask(content []byte) ([]byte, bool, error) {
 	return buffer.Bytes(), true, nil
 }
 
-// sanitizeSecretDocument traverses a YAML document and redacts Kubernetes Secret values in-place.
-func sanitizeSecretDocument(document *yaml.Node) bool {
+// sanitizeSecretDocument traverses a YAML document and redacts Kubernetes Secret values in-place using the supplied masker.
+func sanitizeSecretDocument(document *yaml.Node, maskValue func(string) string) bool {
 	if document == nil || document.Kind != yaml.DocumentNode || len(document.Content) == 0 {
 		return false
 	}
@@ -94,14 +100,14 @@ func sanitizeSecretDocument(document *yaml.Node) bool {
 		return false
 	}
 
-	maskedData := maskSecretMap(root, "data")
-	maskedStringData := maskSecretMap(root, "stringData")
+	maskedData := maskSecretMap(root, "data", maskValue)
+	maskedStringData := maskSecretMap(root, "stringData", maskValue)
 
 	return maskedData || maskedStringData
 }
 
-// maskSecretMap locates the provided key on the mapping node and redacts all scalar values within it.
-func maskSecretMap(parent *yaml.Node, key string) bool {
+// maskSecretMap locates the provided key on the mapping node and redacts all scalar values within it using the provided masking function.
+func maskSecretMap(parent *yaml.Node, key string, maskValue func(string) string) bool {
 	keyIndex := findMappingKeyIndex(parent, key)
 	if keyIndex < 0 {
 		return false
@@ -122,7 +128,7 @@ func maskSecretMap(parent *yaml.Node, key string) bool {
 			continue
 		}
 
-		value.Value = buildMaskedValue(value.Value)
+		value.Value = maskValue(value.Value)
 		value.Tag = "!!str"
 		value.Style = yaml.Style(0) // Plain style (default formatting).
 		masked = true
@@ -159,8 +165,24 @@ func findMappingKeyIndex(mapping *yaml.Node, key string) int {
 	return -1
 }
 
-// buildMaskedValue returns a deterministic redacted placeholder for the provided secret value.
-func buildMaskedValue(value string) string {
+// buildMaskedValue returns a deterministic redacted placeholder for the provided secret value while reusing cached computations.
+func (m *KubernetesSecretMasker) buildMaskedValue(value string) string {
+	m.mu.RLock()
+	cached, ok := m.hashCache[value]
+	m.mu.RUnlock()
+	if ok {
+		return cached
+	}
+
 	sum := sha256.Sum256([]byte(value))
-	return maskPrefix + hex.EncodeToString(sum[:hashPrefixBytes]) + maskSuffix
+	masked := maskPrefix + hex.EncodeToString(sum[:hashPrefixBytes]) + maskSuffix
+
+	m.mu.Lock()
+	if m.hashCache == nil {
+		m.hashCache = make(map[string]string)
+	}
+	m.hashCache[value] = masked
+	m.mu.Unlock()
+
+	return masked
 }
