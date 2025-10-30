@@ -178,8 +178,9 @@ func (m *KubernetesSecretMasker) buildMaskedValue(value string) string {
 	masked := maskPrefix + hex.EncodeToString(sum[:hashPrefixBytes]) + maskSuffix
 
 	m.mu.Lock()
-	if m.hashCache == nil {
-		m.hashCache = make(map[string]string)
+	if cached, ok := m.hashCache[value]; ok {
+		m.mu.Unlock()
+		return cached
 	}
 	m.hashCache[value] = masked
 	m.mu.Unlock()
