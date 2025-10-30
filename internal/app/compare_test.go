@@ -273,7 +273,7 @@ func TestCompareGenerateDiffMaskError(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "demo.yaml"), content, 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dstDir, "demo.yaml"), content, 0o644))
 
-	maskErr := fmt.Errorf("mask failed")
+	maskErr := fmt.Errorf("simulated masking failure")
 	compare := Compare{
 		TmpDir: tmpDir,
 		Masker: failingMasker{err: maskErr},

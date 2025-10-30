@@ -124,7 +124,7 @@ func maskSecretMap(parent *yaml.Node, key string) bool {
 
 		value.Value = buildMaskedValue(value.Value)
 		value.Tag = "!!str"
-		value.Style = 0
+		value.Style = yaml.Style(0) // Plain style (default formatting).
 		masked = true
 	}
 
