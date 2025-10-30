@@ -75,7 +75,7 @@ kind: Secret
 metadata:
   name: second
 stringData:
-  apiKey: another value
+  api-key: another value
 `
 
 	result, masked, err := masker.Mask([]byte(input))

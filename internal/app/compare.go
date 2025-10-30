@@ -225,9 +225,12 @@ func (c *Compare) applyMask(content []byte) ([]byte, error) {
 		return content, nil
 	}
 
-	masked, _, err := c.Masker.Mask(content)
+	masked, changed, err := c.Masker.Mask(content)
 	if err != nil {
 		return nil, fmt.Errorf("mask manifest content: %w", err)
+	}
+	if !changed {
+		return content, nil
 	}
 	return masked, nil
 }
