@@ -34,7 +34,8 @@ type ChangedFilesResult struct {
 
 var errGitFileDoesNotExist = errors.New("file does not exist in target branch")
 
-// NewGitRepo opens the current repository and prepares helpers for git operations.
+// NewGitRepo opens the Git repository rooted at the current working directory and returns a GitRepo configured with the provided filesystem, command runner, file reader, and logger.
+// It locates the repository root and opens the repository; an error is returned if root discovery or repository opening fails.
 func NewGitRepo(fs afero.Fs, cmdRunner ports.CmdRunner, fileReader ports.FileReader, log *logging.Logger) (*GitRepo, error) {
 	repoRoot, err := GetGitRepoRoot()
 	if err != nil {
@@ -264,7 +265,10 @@ func (g *GitRepo) checkIfApp(file string) (bool, error) {
 	return true, nil
 }
 
-// GetGitRepoRoot walks up from the working directory to find the repository root.
+// GetGitRepoRoot returns the filesystem path of the nearest parent directory,
+// starting from the current working directory, that contains a Git repository.
+// It returns an error if the current working directory cannot be determined or
+// if no Git repository is found in any ancestor directories.
 func GetGitRepoRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -288,7 +292,9 @@ func GetGitRepoRoot() (string, error) {
 	return "", fmt.Errorf("no git repository found")
 }
 
-// filterIgnored returns all files that are not present in the ignored list.
+// filterIgnored filters out files that appear in the ignored list.
+// If the ignored list is empty, the input slice is returned unchanged.
+// Comparison is by exact string match and the order of remaining files is preserved.
 func filterIgnored(files, ignored []string) []string {
 	if len(ignored) == 0 {
 		return files

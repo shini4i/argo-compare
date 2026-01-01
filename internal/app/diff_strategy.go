@@ -111,7 +111,7 @@ func (s ExternalDiffStrategy) runSection(ctx context.Context, entries []DiffOutp
 }
 
 // isValidToolChar returns true if the rune is allowed in a tool name.
-// Allowed characters: alphanumeric, dash, underscore, dot, and forward slash (for paths).
+// Allowed characters are ASCII letters, digits, dash (`-`), underscore (`_`), dot (`.`) and forward slash (`/`).
 func isValidToolChar(r rune) bool {
 	return (r >= 'a' && r <= 'z') ||
 		(r >= 'A' && r <= 'Z') ||
@@ -120,7 +120,10 @@ func isValidToolChar(r rune) bool {
 }
 
 // validateToolName checks if the tool name contains only allowed characters.
-// Returns an error if the name contains invalid characters or path traversal patterns.
+// validateToolName checks that a tool name is non-empty, contains only allowed
+// characters (letters, digits, '-', '_', '.', '/') and does not include path
+// traversal sequences like "..". It returns an error describing the invalid name
+// when a check fails.
 func validateToolName(tool string) error {
 	if tool == "" {
 		return fmt.Errorf("invalid diff tool name: empty")

@@ -53,6 +53,12 @@ type App struct {
 type CommentPosterFactory func(cfg Config) (comment.Poster, error)
 
 // New constructs an App using the supplied configuration and dependencies.
+// The provided Config must include a non-empty CacheDir and Dependencies must
+// include a Logger. Any nil dependency fields are replaced with sensible
+// defaults (OS filesystem, real command runner, OS file reader, real Helm
+// processor, globber, default comment poster factory, and a Kubernetes secret
+// sensitive-data masker). It returns the constructed *App or an error if
+// validation fails.
 func New(cfg Config, deps Dependencies) (*App, error) {
 	if cfg.CacheDir == "" {
 		return nil, errors.New("cache directory must be provided")
