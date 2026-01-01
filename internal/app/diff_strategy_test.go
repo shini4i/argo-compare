@@ -126,6 +126,30 @@ func TestExternalDiffStrategyRunToolValidation(t *testing.T) {
 			tool:                  "/usr/bin/diff",
 			expectValidationError: false,
 		},
+		{
+			name:                    "whitespace injection",
+			tool:                    "diff --help",
+			expectValidationError:   true,
+			validationErrorContains: "invalid diff tool name",
+		},
+		{
+			name:                    "newline injection",
+			tool:                    "diff\necho",
+			expectValidationError:   true,
+			validationErrorContains: "invalid diff tool name",
+		},
+		{
+			name:                    "tab injection",
+			tool:                    "diff\techo",
+			expectValidationError:   true,
+			validationErrorContains: "invalid diff tool name",
+		},
+		{
+			name:                    "empty tool name",
+			tool:                    "",
+			expectValidationError:   true,
+			validationErrorContains: "invalid diff tool name",
+		},
 	}
 
 	for _, tt := range tests {
@@ -249,4 +273,42 @@ func TestExternalDiffStrategyPresentShowFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "changed.yaml")
 	assert.NotContains(t, err.Error(), "added.yaml")
 	assert.NotContains(t, err.Error(), "removed.yaml")
+}
+
+func TestValidateToolName(t *testing.T) {
+	tests := []struct {
+		name    string
+		tool    string
+		wantErr bool
+	}{
+		{"empty", "", true},
+		{"path traversal", "../bin/sh", true},
+		{"triple dots", "...", true},
+		{"embedded path traversal", "/usr/../bin/sh", true},
+		{"valid absolute", "/usr/bin/diff", false},
+		{"valid simple", "diff", false},
+		{"valid with underscore", "my_diff", false},
+		{"valid with hyphen", "color-diff", false},
+		{"valid with dot", "diff.sh", false},
+		{"root slash only", "/", false},
+		{"trailing slash", "diff/", false},
+		{"semicolon", "diff;rm", true},
+		{"ampersand", "diff&cmd", true},
+		{"pipe", "diff|cat", true},
+		{"backtick", "diff`whoami`", true},
+		{"dollar sign", "diff$(cmd)", true},
+		{"space", "diff --version", true},
+		{"newline", "diff\necho", true},
+		{"tab", "diff\techo", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateToolName(tt.tool)
+			if tt.wantErr {
+				assert.Error(t, err, "validateToolName(%q) should return error", tt.tool)
+			} else {
+				assert.NoError(t, err, "validateToolName(%q) should not return error", tt.tool)
+			}
+		})
+	}
 }

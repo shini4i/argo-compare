@@ -43,6 +43,9 @@ func (r ComparisonResult) IsEmpty() bool {
 // Compare analyses rendered manifest trees to produce diff results.
 const yamlGlob = "*.yaml"
 
+// defaultOsFs is a cached instance of the OS filesystem to avoid repeated allocations.
+var defaultOsFs = afero.NewOsFs()
+
 type Compare struct {
 	Fs                 afero.Fs
 	Globber            ports.Globber
@@ -57,10 +60,10 @@ type Compare struct {
 	diffFiles    []File
 }
 
-// fs returns the filesystem to use, defaulting to the OS filesystem if none is configured.
+// fs returns the filesystem to use, defaulting to the cached OS filesystem if none is configured.
 func (c *Compare) fs() afero.Fs {
 	if c.Fs == nil {
-		return afero.NewOsFs()
+		return defaultOsFs
 	}
 	return c.Fs
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/shini4i/argo-compare/internal/models"
+	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 )
@@ -40,6 +41,11 @@ func TestGenerateValuesFile(t *testing.T) {
 	// Test case 2: Error when creating the file
 	err = helmChartProcessor.GenerateValuesFile(chartName, "/non/existing/path", targetType, values, nil)
 	assert.Error(t, err, "expected error, got nil")
+
+	// Test case 3: Error when neither values nor valuesObject is provided
+	err = helmChartProcessor.GenerateValuesFile(chartName, tmpDir, targetType, "", nil)
+	assert.Error(t, err, "expected error when both values and valuesObject are empty")
+	assert.Contains(t, err.Error(), "either 'values' or 'valuesObject' must be provided")
 }
 
 func TestDownloadHelmChart(t *testing.T) {
@@ -52,17 +58,18 @@ func TestDownloadHelmChart(t *testing.T) {
 	// Create the mocks
 	mockGlobber := mocks.NewMockGlobber(ctrl)
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	deps := ports.HelmDeps{CmdRunner: mockCmdRunner, Globber: mockGlobber}
 
 	// Test case 1: chart exists
 	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{filepath.Join(cacheDir, "ingress-nginx-3.34.0.tgz")}, nil)
-	err := helmChartProcessor.DownloadHelmChart(context.Background(), mockCmdRunner,
-		mockGlobber,
-		filepath.Join(cacheDir, "cache"),
-		"https://chart.example.com",
-		"ingress-nginx",
-		"3.34.0",
-		[]models.RepoCredentials{},
-	)
+	req := ports.ChartDownloadRequest{
+		CacheDir:        filepath.Join(cacheDir, "cache"),
+		RepoURL:         "https://chart.example.com",
+		ChartName:       "ingress-nginx",
+		TargetRevision:  "3.34.0",
+		RepoCredentials: []models.RepoCredentials{},
+	}
+	err := helmChartProcessor.DownloadHelmChart(context.Background(), deps, req)
 	assert.NoError(t, err, "expected no error, got %v", err)
 
 	// Test case 2: chart does not exist, and successfully downloaded
@@ -75,14 +82,7 @@ func TestDownloadHelmChart(t *testing.T) {
 		"--repo", gomock.Any(),
 		gomock.Any(),
 		"--version", gomock.Any()).Return("", "", nil)
-	err = helmChartProcessor.DownloadHelmChart(context.Background(), mockCmdRunner,
-		mockGlobber,
-		filepath.Join(cacheDir, "cache"),
-		"https://chart.example.com",
-		"ingress-nginx",
-		"3.34.0",
-		[]models.RepoCredentials{},
-	)
+	err = helmChartProcessor.DownloadHelmChart(context.Background(), deps, req)
 	assert.NoError(t, err, "expected no error, got %v", err)
 
 	// Test case 3: chart does not exist, and failed to download
@@ -99,14 +99,7 @@ func TestDownloadHelmChart(t *testing.T) {
 		"--repo", gomock.Any(),
 		gomock.Any(),
 		"--version", gomock.Any()).Return("", "dummy error message", osErr).Times(3) // Expect 3 retries
-	err = helmChartProcessor.DownloadHelmChart(context.Background(), mockCmdRunner,
-		mockGlobber,
-		filepath.Join(cacheDir, "cache"),
-		"https://chart.example.com",
-		"ingress-nginx",
-		"3.34.0",
-		[]models.RepoCredentials{},
-	)
+	err = helmChartProcessor.DownloadHelmChart(context.Background(), deps, req)
 	assert.ErrorIsf(t, err, ErrFailedToDownloadChart, "expected error %v, got %v", ErrFailedToDownloadChart, err)
 }
 
@@ -122,6 +115,7 @@ func TestExtractHelmChart(t *testing.T) {
 	// Create the mocks
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
 	mockGlobber := mocks.NewMockGlobber(ctrl)
+	deps := ports.HelmDeps{CmdRunner: mockCmdRunner, Globber: mockGlobber}
 
 	// Set up the expected behavior for the mocks
 
@@ -140,7 +134,14 @@ func TestExtractHelmChart(t *testing.T) {
 		fmt.Sprintf("%s/charts/%s", expectedTmpDir, expectedTargetType),
 	).Return("", "", nil)
 
-	err := helmChartProcessor.ExtractHelmChart(context.Background(), mockCmdRunner, mockGlobber, "ingress-nginx", "3.34.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
+	req := ports.ChartExtractRequest{
+		ChartName:     "ingress-nginx",
+		ChartVersion:  "3.34.0",
+		ChartLocation: expectedChartLocation,
+		TmpDir:        expectedTmpDir,
+		TargetType:    expectedTargetType,
+	}
+	err := helmChartProcessor.ExtractHelmChart(context.Background(), deps, req)
 
 	assert.NoError(t, err, "expected no error, got %v", err)
 
@@ -152,7 +153,14 @@ func TestExtractHelmChart(t *testing.T) {
 
 	mockGlobber.EXPECT().Glob(fmt.Sprintf("%s/%s-%s*.tgz", expectedChartLocation, "sonarqube", "4.0.0")).Return(expectedChartFilesNames, nil)
 
-	err = helmChartProcessor.ExtractHelmChart(context.Background(), mockCmdRunner, mockGlobber, "sonarqube", "4.0.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
+	req2 := ports.ChartExtractRequest{
+		ChartName:     "sonarqube",
+		ChartVersion:  "4.0.0",
+		ChartLocation: expectedChartLocation,
+		TmpDir:        expectedTmpDir,
+		TargetType:    expectedTargetType,
+	}
+	err = helmChartProcessor.ExtractHelmChart(context.Background(), deps, req2)
 	assert.Error(t, err, "expected error, got %v", err)
 
 	// Test case 3: Chart file found, but failed to extract
@@ -164,19 +172,19 @@ func TestExtractHelmChart(t *testing.T) {
 		fmt.Sprintf("%s/charts/%s", expectedTmpDir, expectedTargetType),
 	).Return("", "some unexpected error", errors.New("some unexpected error"))
 
-	err = helmChartProcessor.ExtractHelmChart(context.Background(), mockCmdRunner, mockGlobber, "ingress-nginx", "3.34.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
+	err = helmChartProcessor.ExtractHelmChart(context.Background(), deps, req)
 	assert.Error(t, err, "expected error, got %v", err)
 
 	// Test case 4: zglob failed to run
 	mockGlobber.EXPECT().Glob(fmt.Sprintf("%s/%s-%s*.tgz", expectedChartLocation, "ingress-nginx", "3.34.0")).Return([]string{}, os.ErrPermission)
 
-	err = helmChartProcessor.ExtractHelmChart(context.Background(), mockCmdRunner, mockGlobber, "ingress-nginx", "3.34.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
+	err = helmChartProcessor.ExtractHelmChart(context.Background(), deps, req)
 	assert.Error(t, err, "expected error, got %v", err)
 
 	// Test case 5: Failed to find chart file
 	mockGlobber.EXPECT().Glob(fmt.Sprintf("%s/%s-%s*.tgz", expectedChartLocation, "ingress-nginx", "3.34.0")).Return([]string{}, nil)
 
-	err = helmChartProcessor.ExtractHelmChart(context.Background(), mockCmdRunner, mockGlobber, "ingress-nginx", "3.34.0", expectedChartLocation, expectedTmpDir, expectedTargetType)
+	err = helmChartProcessor.ExtractHelmChart(context.Background(), deps, req)
 	assert.Error(t, err, "expected error, got %v", err)
 }
 
@@ -189,12 +197,16 @@ func TestRenderAppSource(t *testing.T) {
 	// Create an instance of the mock CmdRunner
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
 
-	releaseName := "my-release"
-	chartName := "my-chart"
-	chartVersion := "1.2.3"
 	tmpDir := t.TempDir()
-	targetType := "src"
-	namespace := "my-namespace"
+
+	req := ports.ChartRenderRequest{
+		ReleaseName:  "my-release",
+		ChartName:    "my-chart",
+		ChartVersion: "1.2.3",
+		TmpDir:       tmpDir,
+		TargetType:   "src",
+		Namespace:    "my-namespace",
+	}
 
 	// Test case 1: Successful render
 	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
@@ -207,7 +219,7 @@ func TestRenderAppSource(t *testing.T) {
 		"--namespace", gomock.Any()).Return("", "", nil)
 
 	// Call the function under test
-	err := helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType, namespace)
+	err := helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req)
 	assert.NoError(t, err, "expected no error, got %v", err)
 
 	// Test case 2: Failed render
@@ -223,7 +235,7 @@ func TestRenderAppSource(t *testing.T) {
 		"--values", gomock.Any(),
 		"--namespace", gomock.Any()).Return("", "", osErr)
 
-	err = helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType, namespace)
+	err = helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req)
 	assert.Error(t, err, "expected error, got nil")
 	assert.Errorf(t, err, "expected error, got %v", err)
 }

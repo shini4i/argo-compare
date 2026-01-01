@@ -16,7 +16,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
-	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
@@ -226,24 +225,24 @@ func (s *stubHelmProcessor) GenerateValuesFile(chartName, tmpDir, targetType, va
 	return os.WriteFile(path, []byte(values), 0o600)
 }
 
-func (s *stubHelmProcessor) DownloadHelmChart(_ context.Context, _ ports.CmdRunner, _ ports.Globber, _, _, _, _ string, _ []models.RepoCredentials) error {
+func (s *stubHelmProcessor) DownloadHelmChart(_ context.Context, _ ports.HelmDeps, _ ports.ChartDownloadRequest) error {
 	s.record("DownloadHelmChart", "")
 	return nil
 }
 
-func (s *stubHelmProcessor) ExtractHelmChart(_ context.Context, _ ports.CmdRunner, _ ports.Globber, chartName, chartVersion, _ string, tmpDir, targetType string) error {
-	s.record("ExtractHelmChart", tmpDir)
-	dir := filepath.Join(tmpDir, "charts", targetType, chartName)
+func (s *stubHelmProcessor) ExtractHelmChart(_ context.Context, _ ports.HelmDeps, req ports.ChartExtractRequest) error {
+	s.record("ExtractHelmChart", req.TmpDir)
+	dir := filepath.Join(req.TmpDir, "charts", req.TargetType, req.ChartName)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	content := fmt.Sprintf("chartVersion: %s\n", chartVersion)
+	content := fmt.Sprintf("chartVersion: %s\n", req.ChartVersion)
 	return os.WriteFile(filepath.Join(dir, "values.yaml"), []byte(content), 0o644)
 }
 
-func (s *stubHelmProcessor) RenderAppSource(_ context.Context, _ ports.CmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType, namespace string) error {
-	s.record("RenderAppSource", tmpDir)
-	dir := filepath.Join(tmpDir, "templates", targetType, chartName)
+func (s *stubHelmProcessor) RenderAppSource(_ context.Context, _ ports.CmdRunner, req ports.ChartRenderRequest) error {
+	s.record("RenderAppSource", req.TmpDir)
+	dir := filepath.Join(req.TmpDir, "templates", req.TargetType, req.ChartName)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -254,6 +253,6 @@ metadata:
   namespace: %s
 data:
   version: %s
-`, releaseName, namespace, chartVersion)
+`, req.ReleaseName, req.Namespace, req.ChartVersion)
 	return os.WriteFile(filepath.Join(dir, "manifest.yaml"), []byte(manifest), 0o644)
 }

@@ -89,113 +89,100 @@ func (t *Target) generateValuesFiles() error {
 // ensureHelmCharts downloads required Helm charts into the configured cache.
 // The context can be used to cancel downloads or set a timeout.
 func (t *Target) ensureHelmCharts(ctx context.Context) error {
+	deps := ports.HelmDeps{CmdRunner: t.CmdRunner, Globber: t.Globber}
+
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
-			if err := t.HelmProcessor.DownloadHelmChart(
-				ctx,
-				t.CmdRunner,
-				t.Globber,
-				t.CacheDir,
-				source.RepoURL,
-				source.Chart,
-				source.TargetRevision,
-				t.RepoCredentials,
-			); err != nil {
+			req := ports.ChartDownloadRequest{
+				CacheDir:        t.CacheDir,
+				RepoURL:         source.RepoURL,
+				ChartName:       source.Chart,
+				TargetRevision:  source.TargetRevision,
+				RepoCredentials: t.RepoCredentials,
+			}
+			if err := t.HelmProcessor.DownloadHelmChart(ctx, deps, req); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 
-	return t.HelmProcessor.DownloadHelmChart(
-		ctx,
-		t.CmdRunner,
-		t.Globber,
-		t.CacheDir,
-		t.App.Spec.Source.RepoURL,
-		t.App.Spec.Source.Chart,
-		t.App.Spec.Source.TargetRevision,
-		t.RepoCredentials,
-	)
+	req := ports.ChartDownloadRequest{
+		CacheDir:        t.CacheDir,
+		RepoURL:         t.App.Spec.Source.RepoURL,
+		ChartName:       t.App.Spec.Source.Chart,
+		TargetRevision:  t.App.Spec.Source.TargetRevision,
+		RepoCredentials: t.RepoCredentials,
+	}
+	return t.HelmProcessor.DownloadHelmChart(ctx, deps, req)
 }
 
 // extractCharts unpacks cached Helm charts into the working directories.
 // The context can be used to cancel extraction or set a timeout.
 func (t *Target) extractCharts(ctx context.Context) error {
+	deps := ports.HelmDeps{CmdRunner: t.CmdRunner, Globber: t.Globber}
+
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
-			if err := t.HelmProcessor.ExtractHelmChart(
-				ctx,
-				t.CmdRunner,
-				t.Globber,
-				source.Chart,
-				source.TargetRevision,
-				fmt.Sprintf("%s/%s", t.CacheDir, source.RepoURL),
-				t.TmpDir,
-				t.Type,
-			); err != nil {
+			req := ports.ChartExtractRequest{
+				ChartName:     source.Chart,
+				ChartVersion:  source.TargetRevision,
+				ChartLocation: fmt.Sprintf("%s/%s", t.CacheDir, source.RepoURL),
+				TmpDir:        t.TmpDir,
+				TargetType:    t.Type,
+			}
+			if err := t.HelmProcessor.ExtractHelmChart(ctx, deps, req); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 
-	return t.HelmProcessor.ExtractHelmChart(
-		ctx,
-		t.CmdRunner,
-		t.Globber,
-		t.App.Spec.Source.Chart,
-		t.App.Spec.Source.TargetRevision,
-		fmt.Sprintf("%s/%s", t.CacheDir, t.App.Spec.Source.RepoURL),
-		t.TmpDir,
-		t.Type,
-	)
+	req := ports.ChartExtractRequest{
+		ChartName:     t.App.Spec.Source.Chart,
+		ChartVersion:  t.App.Spec.Source.TargetRevision,
+		ChartLocation: fmt.Sprintf("%s/%s", t.CacheDir, t.App.Spec.Source.RepoURL),
+		TmpDir:        t.TmpDir,
+		TargetType:    t.Type,
+	}
+	return t.HelmProcessor.ExtractHelmChart(ctx, deps, req)
 }
 
 // renderAppSources runs Helm template rendering for each application source.
 // The context can be used to cancel rendering or set a timeout.
 func (t *Target) renderAppSources(ctx context.Context) error {
-	var releaseName string
-
-	if !t.App.Spec.MultiSource {
-		if t.App.Spec.Source.Helm.ReleaseName != "" {
-			releaseName = t.App.Spec.Source.Helm.ReleaseName
-		} else {
-			releaseName = t.App.Metadata.Name
-		}
-	}
-
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
+			releaseName := t.App.Metadata.Name
 			if source.Helm.ReleaseName != "" {
 				releaseName = source.Helm.ReleaseName
-			} else {
-				releaseName = t.App.Metadata.Name
 			}
-			if err := t.HelmProcessor.RenderAppSource(
-				ctx,
-				t.CmdRunner,
-				releaseName,
-				source.Chart,
-				source.TargetRevision,
-				t.TmpDir,
-				t.Type,
-				t.App.Spec.Destination.Namespace,
-			); err != nil {
+			req := ports.ChartRenderRequest{
+				ReleaseName:  releaseName,
+				ChartName:    source.Chart,
+				ChartVersion: source.TargetRevision,
+				TmpDir:       t.TmpDir,
+				TargetType:   t.Type,
+				Namespace:    t.App.Spec.Destination.Namespace,
+			}
+			if err := t.HelmProcessor.RenderAppSource(ctx, t.CmdRunner, req); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 
-	return t.HelmProcessor.RenderAppSource(
-		ctx,
-		t.CmdRunner,
-		releaseName,
-		t.App.Spec.Source.Chart,
-		t.App.Spec.Source.TargetRevision,
-		t.TmpDir,
-		t.Type,
-		t.App.Spec.Destination.Namespace,
-	)
+	releaseName := t.App.Metadata.Name
+	if t.App.Spec.Source.Helm.ReleaseName != "" {
+		releaseName = t.App.Spec.Source.Helm.ReleaseName
+	}
+	req := ports.ChartRenderRequest{
+		ReleaseName:  releaseName,
+		ChartName:    t.App.Spec.Source.Chart,
+		ChartVersion: t.App.Spec.Source.TargetRevision,
+		TmpDir:       t.TmpDir,
+		TargetType:   t.Type,
+		Namespace:    t.App.Spec.Destination.Namespace,
+	}
+	return t.HelmProcessor.RenderAppSource(ctx, t.CmdRunner, req)
 }

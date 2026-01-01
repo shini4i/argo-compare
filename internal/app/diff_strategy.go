@@ -110,16 +110,45 @@ func (s ExternalDiffStrategy) runSection(ctx context.Context, entries []DiffOutp
 	return errors.Join(errs...)
 }
 
+// isValidToolChar returns true if the rune is allowed in a tool name.
+// Allowed characters: alphanumeric, dash, underscore, dot, and forward slash (for paths).
+func isValidToolChar(r rune) bool {
+	return (r >= 'a' && r <= 'z') ||
+		(r >= 'A' && r <= 'Z') ||
+		(r >= '0' && r <= '9') ||
+		r == '-' || r == '_' || r == '.' || r == '/'
+}
+
+// validateToolName checks if the tool name contains only allowed characters.
+// Returns an error if the name contains invalid characters or path traversal patterns.
+func validateToolName(tool string) error {
+	if tool == "" {
+		return fmt.Errorf("invalid diff tool name: empty")
+	}
+
+	for _, r := range tool {
+		if !isValidToolChar(r) {
+			return fmt.Errorf("invalid diff tool name: %q", tool)
+		}
+	}
+
+	// Reject path traversal
+	if strings.Contains(tool, "..") {
+		return fmt.Errorf("invalid diff tool name: %q", tool)
+	}
+
+	return nil
+}
+
 // runTool executes the external diff command with the given diff content.
 // It validates the tool name to prevent command injection attacks.
 // The context is used for cancellation of the command execution.
 func (s ExternalDiffStrategy) runTool(ctx context.Context, diff string) error {
-	// Validate tool name - reject shell metacharacters and path traversal
-	if strings.ContainsAny(s.Tool, ";&|`$(){}[]<>!#\\\"'") || strings.Contains(s.Tool, "..") {
-		return fmt.Errorf("invalid diff tool name: %q", s.Tool)
+	if err := validateToolName(s.Tool); err != nil {
+		return err
 	}
 
-	cmd := exec.CommandContext(ctx, s.Tool) // #nosec G204
+	cmd := exec.CommandContext(ctx, s.Tool) // #nosec G204 -- tool name is validated above
 	cmd.Stdin = strings.NewReader(diff)
 
 	output, err := cmd.CombinedOutput()

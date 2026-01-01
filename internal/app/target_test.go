@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	"github.com/op/go-logging"
-	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/shini4i/argo-compare/internal/models"
 )
 
 type recordingHelmProcessor struct {
@@ -23,17 +24,17 @@ func (r *recordingHelmProcessor) GenerateValuesFile(chartName, tmpDir, targetTyp
 	return nil
 }
 
-func (r *recordingHelmProcessor) DownloadHelmChart(_ context.Context, _ ports.CmdRunner, _ ports.Globber, _, _, _, _ string, _ []models.RepoCredentials) error {
+func (r *recordingHelmProcessor) DownloadHelmChart(_ context.Context, _ ports.HelmDeps, _ ports.ChartDownloadRequest) error {
 	r.downloadCalls++
 	return nil
 }
 
-func (r *recordingHelmProcessor) ExtractHelmChart(_ context.Context, _ ports.CmdRunner, _ ports.Globber, _, _, _, _, _ string) error {
+func (r *recordingHelmProcessor) ExtractHelmChart(_ context.Context, _ ports.HelmDeps, _ ports.ChartExtractRequest) error {
 	r.extractCalls++
 	return nil
 }
 
-func (r *recordingHelmProcessor) RenderAppSource(_ context.Context, _ ports.CmdRunner, _, _, _, _, _, _ string) error {
+func (r *recordingHelmProcessor) RenderAppSource(_ context.Context, _ ports.CmdRunner, _ ports.ChartRenderRequest) error {
 	r.renderCalls++
 	return nil
 }

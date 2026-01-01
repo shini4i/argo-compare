@@ -59,7 +59,7 @@ linters-settings:
     min-complexity: 15
 
   gocognit:
-    min-complexity: 20
+    min-complexity: 15
 
   dupl:
     threshold: 100
@@ -100,10 +100,6 @@ linters-settings:
     checks:
       - all
       - -ST1000  # Package comments not required for all packages
-
-  gosec:
-    excludes:
-      - G304  # File path provided as taint input - common in CLI tools
 
   nolintlint:
     require-explanation: true

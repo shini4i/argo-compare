@@ -291,16 +291,15 @@ func TestCompareGenerateDiffMaskError(t *testing.T) {
 	assert.Contains(t, err.Error(), maskErr.Error())
 }
 
-// TestCompareFsHelperDefaultsToOsFs ensures the fs() helper returns OsFs when Fs is nil.
+// TestCompareFsHelperDefaultsToOsFs ensures the fs() helper returns the cached OsFs when Fs is nil.
 func TestCompareFsHelperDefaultsToOsFs(t *testing.T) {
 	// With Fs set
 	c := &Compare{Fs: afero.NewMemMapFs()}
 	assert.Equal(t, c.Fs, c.fs())
 
-	// With Fs nil - should return a non-nil OsFs
+	// With Fs nil - should return the cached defaultOsFs
 	c = &Compare{Fs: nil}
 	result := c.fs()
 	assert.NotNil(t, result)
-	_, isOsFs := result.(*afero.OsFs)
-	assert.True(t, isOsFs, "expected OsFs when Fs is nil")
+	assert.Equal(t, defaultOsFs, result, "expected cached defaultOsFs when Fs is nil")
 }
