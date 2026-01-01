@@ -20,7 +20,7 @@ var helmLabelRegex = regexp.MustCompile(`(?m)[\r\n]+^.*(app\.kubernetes\.io/mana
 
 // GetEnv retrieves the value of an environment variable specified by the given key.
 // If the environment variable is set, its value is returned.
-// If the environment variable is not set, the provided fallback value is returned.
+// GetEnv returns the value of the environment variable named by key or the provided fallback value when the variable is not set.
 func GetEnv(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
@@ -32,7 +32,10 @@ func GetEnv(key, fallback string) string {
 // The function takes a file path as input and returns the stripped file content as a byte slice.
 // It uses a pre-compiled regex to remove labels that change between Helm runs
 // (app.kubernetes.io/managed-by, helm.sh/chart, chart, app.kubernetes.io/version).
-// The function returns an error if there is an issue reading the file.
+// StripHelmLabels reads the named file and removes Helm-managed label lines (for example
+// `app.kubernetes.io/managed-by`, `helm.sh/chart`, `chart`, `app.kubernetes.io/version`)
+// from its content.
+// It returns the modified file content as a byte slice, or an error if reading the file fails.
 func StripHelmLabels(file string) ([]byte, error) {
 	fileData, err := os.ReadFile(file) // #nosec G304
 	if err != nil {
@@ -47,7 +50,8 @@ func StripHelmLabels(file string) ([]byte, error) {
 // WriteToFile writes the provided data to a file specified by the file path.
 // It takes a file path and a byte slice of data as input.
 // The function writes the data to the file with the specified file permissions (0644).
-// It returns an error if there is an issue writing to the file.
+// WriteToFile writes data to the named file using the provided afero filesystem with file mode 0644.
+// It returns an error if writing the file fails.
 func WriteToFile(fs afero.Fs, file string, data []byte) error {
 	return afero.WriteFile(fs, file, data, 0644)
 }
@@ -56,7 +60,9 @@ func WriteToFile(fs afero.Fs, file string, data []byte) error {
 // a unique name that has the prefix "compare-" and suffix ".yaml". It then writes the
 // provided content to this temporary file. The function returns a pointer to the created
 // os.File if it succeeds. If the function fails at any step, it returns an error wrapped
-// with context about what step of the process it failed at.
+// CreateTempFile creates a temporary YAML file, writes the provided content into it, and returns the open file handle.
+// The file is created with the prefix "compare-" and ".yaml" suffix in the system temporary directory.
+// Returns the created afero.File on success, or an error if file creation or writing fails.
 func CreateTempFile(fs afero.Fs, content string) (afero.File, error) {
 	// Empty string uses the system's default temp directory (os.TempDir())
 	tmpFile, err := afero.TempFile(fs, "", "compare-*.yaml")
@@ -73,7 +79,8 @@ func CreateTempFile(fs afero.Fs, content string) (afero.File, error) {
 
 // FindHelmRepoCredentials scans the provided array of RepoCredentials for a match to the
 // provided repository URL, and returns the associated username and password.
-// If no matching credentials are found, it returns two empty strings.
+// FindHelmRepoCredentials looks up credentials for the given repository URL.
+// It returns the username and password for the matching repository; if no match is found both strings are empty.
 func FindHelmRepoCredentials(url string, credentials []models.RepoCredentials) (string, string) {
 	for _, repoCred := range credentials {
 		if repoCred.Url == url {
@@ -95,7 +102,8 @@ type RetryConfig struct {
 	Multiplier float64
 }
 
-// DefaultRetryConfig returns a sensible default retry configuration.
+// DefaultRetryConfig returns a RetryConfig configured with sensible defaults for retrying operations.
+// The returned config sets MaxAttempts to 3, InitialDelay to 1s, MaxDelay to 10s, and Multiplier to 2.0.
 func DefaultRetryConfig() RetryConfig {
 	return RetryConfig{
 		MaxAttempts:  3,
@@ -127,7 +135,8 @@ func WrapPermanent(err error) error {
 	return &PermanentError{Err: err}
 }
 
-// IsPermanent returns true if the error is marked as permanent (should not be retried).
+// IsPermanent reports whether err is a PermanentError indicating the operation should not be retried.
+// It returns true if err is or wraps a PermanentError.
 func IsPermanent(err error) bool {
 	var permErr *PermanentError
 	return errors.As(err, &permErr)
@@ -136,7 +145,14 @@ func IsPermanent(err error) bool {
 // WithRetry executes the given function with retry logic using exponential backoff.
 // It respects context cancellation and returns early if the context is cancelled.
 // If the function returns a PermanentError, retry is skipped and the error is returned immediately.
-// The function returns nil on success, or the last error if all attempts fail.
+// WithRetry executes fn repeatedly according to cfg, applying exponential backoff and respecting context cancellation.
+// 
+// WithRetry normalizes cfg (ensuring at least one attempt and a multiplier of at least 1), then calls fn up to
+// cfg.MaxAttempts times. It waits with an initial delay of cfg.InitialDelay and multiplies the delay by cfg.Multiplier
+// between attempts, capping at cfg.MaxDelay. It returns immediately if ctx is cancelled or if fn returns a PermanentError.
+// 
+// On success, it returns nil. If the context is cancelled before or during attempts, it returns ctx.Err(). If all
+// attempts fail (or a permanent error is returned by fn), it returns the last error produced by fn.
 func WithRetry(ctx context.Context, cfg RetryConfig, fn func() error) error {
 	if cfg.MaxAttempts < 1 {
 		cfg.MaxAttempts = 1

@@ -87,7 +87,12 @@ func newRootCommand(opts Options) *cobra.Command {
 	return root
 }
 
-// newBranchCommand constructs the branch subcommand responsible for manifest comparisons.
+// newBranchCommand constructs the "branch" subcommand which compares Applications against a target branch.
+// The command requires a single argument (branch name), registers flags for single-file comparison, ignore
+// patterns, Helm label preservation, output controls, comment provider, and GitLab connection details, and
+// invokes the provided RunApp handler with a context that cancels on SIGINT/SIGTERM.
+// The dropCache function is consulted to short-circuit execution when a cache purge was requested, and the
+// debug function supplies the current debug mode for configuration.
 func newBranchCommand(opts Options, dropCache func() bool, debug func() bool) *cobra.Command {
 	flags := loadBranchDefaults()
 

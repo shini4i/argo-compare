@@ -48,7 +48,10 @@ type Poster struct {
 // Ensure Poster implements comment.Poster.
 var _ comment.Poster = (*Poster)(nil)
 
-// NewPoster builds a GitLab Merge Request comment poster.
+// NewPoster creates a Poster configured to post comments to a GitLab merge request using cfg.
+// It validates that cfg.BaseURL, cfg.Token, cfg.ProjectID and cfg.MergeRequestIID are provided and parses cfg.BaseURL;
+// returns an error if validation or URL parsing fails. If cfg.HTTPClient is nil, a default http.Client is created using
+// cfg.Timeout (or the package default). The Poster will use cfg.APIPrefix if set, otherwise the package default.
 func NewPoster(cfg Config) (*Poster, error) {
 	if cfg.BaseURL == "" {
 		return nil, fmt.Errorf("gitlab: base URL is required")
