@@ -10,9 +10,9 @@ import (
 	"github.com/op/go-logging"
 )
 
-// DiffStrategy presents comparison results to the user.
+// DiffPresenter presents comparison results to the user.
 // The context can be used for cancellation and timeout control.
-type DiffStrategy interface {
+type DiffPresenter interface {
 	Present(ctx context.Context, result ComparisonResult) error
 }
 

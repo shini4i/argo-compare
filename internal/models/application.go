@@ -49,6 +49,24 @@ type Source struct {
 	} `yaml:"helm"`
 }
 
+// validateHelmSources checks that all sources have a non-empty chart field.
+// Currently we support only helm repository based charts as a source.
+func (app *Application) validateHelmSources() error {
+	if len(app.Spec.Sources) != 0 {
+		for _, source := range app.Spec.Sources {
+			if len(source.Chart) == 0 {
+				return ErrUnsupportedAppConfiguration
+			}
+		}
+		return nil
+	}
+
+	if app.Spec.Source == nil || len(app.Spec.Source.Chart) == 0 {
+		return ErrUnsupportedAppConfiguration
+	}
+	return nil
+}
+
 // Validate performs validation checks on the Application struct.
 // It checks for the following:
 // - If the Application struct is empty, returns ErrEmptyFile.
@@ -71,17 +89,8 @@ func (app *Application) Validate() error {
 		return ErrNotApplication
 	}
 
-	// currently we support only helm repository based charts as a source
-	if len(app.Spec.Sources) != 0 {
-		for _, source := range app.Spec.Sources {
-			if len(source.Chart) == 0 {
-				return ErrUnsupportedAppConfiguration
-			}
-		}
-	} else {
-		if app.Spec.Source == nil || len(app.Spec.Source.Chart) == 0 {
-			return ErrUnsupportedAppConfiguration
-		}
+	if err := app.validateHelmSources(); err != nil {
+		return err
 	}
 
 	if app.Spec.Sources != nil {

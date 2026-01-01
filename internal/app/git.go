@@ -289,7 +289,7 @@ func GetGitRepoRoot() (string, error) {
 }
 
 // filterIgnored returns all files that are not present in the ignored list.
-func filterIgnored(files []string, ignored []string) []string {
+func filterIgnored(files, ignored []string) []string {
 	if len(ignored) == 0 {
 		return files
 	}

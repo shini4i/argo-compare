@@ -280,8 +280,8 @@ func (a *App) runComparison(ctx context.Context, tmpDir, applicationFile string)
 }
 
 // selectDiffStrategies picks the appropriate diff presentation implementations based on configuration.
-func (a *App) selectDiffStrategies(applicationFile string) ([]DiffStrategy, error) {
-	var strategies []DiffStrategy
+func (a *App) selectDiffStrategies(applicationFile string) ([]DiffPresenter, error) {
+	var strategies []DiffPresenter
 
 	if a.cfg.ExternalDiffTool != "" {
 		strategies = append(strategies, ExternalDiffStrategy{
