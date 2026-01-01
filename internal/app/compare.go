@@ -57,6 +57,14 @@ type Compare struct {
 	diffFiles    []File
 }
 
+// fs returns the filesystem to use, defaulting to the OS filesystem if none is configured.
+func (c *Compare) fs() afero.Fs {
+	if c.Fs == nil {
+		return afero.NewOsFs()
+	}
+	return c.Fs
+}
+
 // Execute orchestrates the comparison of rendered manifests.
 func (c *Compare) Execute() (ComparisonResult, error) {
 	if err := c.prepareFiles(); err != nil {
@@ -239,17 +247,12 @@ func (c *Compare) stripHelmLabels() error {
 		return err
 	}
 
-	fs := c.Fs
-	if fs == nil {
-		fs = afero.NewOsFs()
-	}
-
 	for _, helmFile := range helmFiles {
 		desiredState, err := helpers.StripHelmLabels(helmFile)
 		if err != nil {
 			return err
 		}
-		if err := helpers.WriteToFile(fs, helmFile, desiredState); err != nil {
+		if err := helpers.WriteToFile(c.fs(), helmFile, desiredState); err != nil {
 			return err
 		}
 	}
@@ -259,11 +262,7 @@ func (c *Compare) stripHelmLabels() error {
 
 // readFileContent loads file contents while tolerating missing files.
 func (c *Compare) readFileContent(path string) ([]byte, error) {
-	fs := c.Fs
-	if fs == nil {
-		fs = afero.NewOsFs()
-	}
-	data, err := afero.ReadFile(fs, path)
+	data, err := afero.ReadFile(c.fs(), path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}

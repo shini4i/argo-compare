@@ -47,10 +47,7 @@ func StripHelmLabels(file string) ([]byte, error) {
 // The function writes the data to the file with the specified file permissions (0644).
 // It returns an error if there is an issue writing to the file.
 func WriteToFile(fs afero.Fs, file string, data []byte) error {
-	if err := afero.WriteFile(fs, file, data, 0644); err != nil {
-		return err
-	}
-	return nil
+	return afero.WriteFile(fs, file, data, 0644)
 }
 
 // CreateTempFile creates a temporary file in the system's default temp directory with
