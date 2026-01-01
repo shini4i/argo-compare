@@ -1,3 +1,5 @@
+// Package main is the entry point for the argo-compare CLI tool that compares
+// ArgoCD Application manifests between git branches and displays the differences.
 package main
 
 import (

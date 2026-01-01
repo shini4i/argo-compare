@@ -1,3 +1,5 @@
+// Package utils provides utility implementations for file system operations,
+// command execution, and Helm chart processing used by the argo-compare CLI.
 package utils
 
 import (

@@ -1,3 +1,5 @@
+// Package sanitizer provides functionality for masking sensitive data in Kubernetes
+// manifests, particularly Secret resources, to prevent exposure in diff outputs.
 package sanitizer
 
 import (

@@ -1,3 +1,5 @@
+// Package models defines the data structures representing ArgoCD Application
+// manifests and related configuration parsed from YAML files.
 package models
 
 import (

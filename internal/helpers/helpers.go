@@ -1,3 +1,5 @@
+// Package helpers provides utility functions for environment variable handling,
+// file operations, Helm label stripping, and retry logic used throughout the application.
 package helpers
 
 import (

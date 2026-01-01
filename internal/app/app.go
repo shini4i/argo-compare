@@ -1,3 +1,5 @@
+// Package app implements the core application logic for comparing ArgoCD
+// Application manifests between git branches and presenting the differences.
 package app
 
 import (

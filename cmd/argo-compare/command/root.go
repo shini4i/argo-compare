@@ -1,3 +1,4 @@
+// Package command implements the CLI commands and flag parsing for argo-compare.
 package command
 
 import (

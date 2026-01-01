@@ -1,3 +1,5 @@
+// Package gitlab implements the comment.Poster interface for posting
+// diff comments to GitLab merge requests via the GitLab API.
 package gitlab
 
 import (
