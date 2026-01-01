@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"io"
 	"os"
 	"testing"
@@ -23,7 +24,7 @@ func TestFilterIgnored(t *testing.T) {
 
 type testPoster struct{}
 
-func (p *testPoster) Post(string) error {
+func (p *testPoster) Post(_ context.Context, _ string) error {
 	return nil
 }
 

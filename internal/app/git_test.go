@@ -111,7 +111,7 @@ func TestGitRepoTargetFileContent(t *testing.T) {
 	require.Contains(t, content, "replicaCount")
 
 	_, err = repoInstance.targetFileContent(tree, "main", "apps/missing.yaml", false)
-	require.ErrorIs(t, err, gitFileDoesNotExist)
+	require.ErrorIs(t, err, errGitFileDoesNotExist)
 
 	content, err = repoInstance.targetFileContent(tree, "main", "apps/missing.yaml", true)
 	require.NoError(t, err)

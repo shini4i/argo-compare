@@ -1,13 +1,14 @@
 package utils
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/fatih/color"
 	"github.com/shini4i/argo-compare/internal/helpers"
+	"github.com/shini4i/argo-compare/internal/ui"
 	"gopkg.in/yaml.v3"
 
 	"github.com/op/go-logging"
@@ -16,11 +17,8 @@ import (
 	"github.com/shini4i/argo-compare/internal/ports"
 )
 
-var (
-	cyan = color.New(color.FgCyan, color.Bold).SprintFunc()
-	// FailedToDownloadChart indicates Helm failed to pull the requested chart.
-	FailedToDownloadChart = errors.New("failed to download chart")
-)
+// ErrFailedToDownloadChart indicates Helm failed to pull the requested chart.
+var ErrFailedToDownloadChart = errors.New("failed to download chart")
 
 // RealHelmChartProcessor coordinates Helm CLI interactions for chart lifecycle tasks.
 type RealHelmChartProcessor struct {
@@ -68,9 +66,8 @@ func (g RealHelmChartProcessor) GenerateValuesFile(chartName, tmpDir, targetType
 // stores it in a cache directory. The function leverages the provided CmdRunner to execute
 // the helm pull command and Globber to deal with possible non-standard chart naming.
 // If the chart is already present in the cache, the function just logs the information and doesn't download it again.
-// The function is designed to handle potential errors during directory creation, globbing, and Helm chart downloading.
-// Any critical error during these operations terminates the program.
-func (g RealHelmChartProcessor) DownloadHelmChart(cmdRunner ports.CmdRunner, globber ports.Globber, cacheDir, repoUrl, chartName, targetRevision string, repoCredentials []models.RepoCredentials) error {
+// The context can be used to cancel the download or set a timeout.
+func (g RealHelmChartProcessor) DownloadHelmChart(ctx context.Context, cmdRunner ports.CmdRunner, globber ports.Globber, cacheDir, repoUrl, chartName, targetRevision string, repoCredentials []models.RepoCredentials) error {
 	chartLocation := fmt.Sprintf("%s/%s", cacheDir, repoUrl)
 
 	if err := os.MkdirAll(chartLocation, 0750); err != nil {
@@ -88,40 +85,48 @@ func (g RealHelmChartProcessor) DownloadHelmChart(cmdRunner ports.CmdRunner, glo
 		username, password := helpers.FindHelmRepoCredentials(repoUrl, repoCredentials)
 
 		g.Log.Debugf("Downloading version [%s] of [%s] chart...",
-			cyan(targetRevision),
-			cyan(chartName))
+			ui.Cyan(targetRevision),
+			ui.Cyan(chartName))
 
 		// we assume that if repoUrl does not have protocol, it is an OCI helm registry
 		// hence we mutate the content of chartName and remove content of repoUrl
+		pullChartName := chartName
+		pullRepoUrl := repoUrl
 		if !strings.Contains(repoUrl, "http") {
-			chartName = fmt.Sprintf("oci://%s/%s", repoUrl, chartName)
-			repoUrl = ""
+			pullChartName = fmt.Sprintf("oci://%s/%s", repoUrl, chartName)
+			pullRepoUrl = ""
 		}
 
-		stdout, stderr, err := cmdRunner.Run("helm",
-			"pull",
-			"--destination", chartLocation,
-			"--username", username,
-			"--password", password,
-			"--repo", repoUrl,
-			chartName,
-			"--version", targetRevision)
+		// Use retry logic for network operations
+		retryCfg := helpers.DefaultRetryConfig()
+		err := helpers.WithRetry(ctx, retryCfg, func() error {
+			stdout, stderr, runErr := cmdRunner.Run(ctx, "helm",
+				"pull",
+				"--destination", chartLocation,
+				"--username", username,
+				"--password", password,
+				"--repo", pullRepoUrl,
+				pullChartName,
+				"--version", targetRevision)
 
-		if len(stdout) > 0 {
-			g.Log.Info(stdout)
-		}
+			if len(stdout) > 0 {
+				g.Log.Info(stdout)
+			}
 
-		if len(stderr) > 0 {
-			g.Log.Error(stderr)
-		}
+			if len(stderr) > 0 {
+				g.Log.Error(stderr)
+			}
+
+			return runErr
+		})
 
 		if err != nil {
-			return FailedToDownloadChart
+			return fmt.Errorf("%w: %w", ErrFailedToDownloadChart, err)
 		}
 	} else {
 		g.Log.Debugf("Version [%s] of [%s] chart is present in the cache...",
-			cyan(targetRevision),
-			cyan(chartName))
+			ui.Cyan(targetRevision),
+			ui.Cyan(chartName))
 	}
 
 	return nil
@@ -131,12 +136,11 @@ func (g RealHelmChartProcessor) DownloadHelmChart(cmdRunner ports.CmdRunner, glo
 // and stores it in a temporary directory. The function uses the provided CmdRunner to
 // execute the tar command and Globber to match the chart file in the cache.
 // If multiple files matching the pattern are found, an error is returned.
-// The function logs any output (standard or error) from the tar command.
-// Any critical error during these operations, like directory creation or extraction failure, terminates the program.
-func (g RealHelmChartProcessor) ExtractHelmChart(cmdRunner ports.CmdRunner, globber ports.Globber, chartName, chartVersion, chartLocation, tmpDir, targetType string) error {
+// The context can be used to cancel the extraction or set a timeout.
+func (g RealHelmChartProcessor) ExtractHelmChart(ctx context.Context, cmdRunner ports.CmdRunner, globber ports.Globber, chartName, chartVersion, chartLocation, tmpDir, targetType string) error {
 	g.Log.Debugf("Extracting [%s] chart version [%s] to %s/charts/%s...",
-		cyan(chartName),
-		cyan(chartVersion),
+		ui.Cyan(chartName),
+		ui.Cyan(chartVersion),
 		tmpDir, targetType)
 
 	path := fmt.Sprintf("%s/charts/%s/%s", tmpDir, targetType, chartName)
@@ -164,7 +168,7 @@ func (g RealHelmChartProcessor) ExtractHelmChart(cmdRunner ports.CmdRunner, glob
 		return errors.New("more than one chart file found, please check your cache directory")
 	}
 
-	stdout, stderr, err := cmdRunner.Run("tar",
+	stdout, stderr, err := cmdRunner.Run(ctx, "tar",
 		"xf",
 		chartFileName[0],
 		"-C", fmt.Sprintf("%s/charts/%s", tmpDir, targetType),
@@ -185,15 +189,14 @@ func (g RealHelmChartProcessor) ExtractHelmChart(cmdRunner ports.CmdRunner, glob
 // It takes a cmdRunner to run the Helm command, a release name for the Helm release,
 // the chart name and version, a temporary directory for storing intermediate files,
 // and the target type which categorizes the application.
-// The function constructs the Helm command with the provided arguments, runs it, and checks for any errors.
-// If there are any errors, it returns them. Otherwise, it returns nil.
-func (g RealHelmChartProcessor) RenderAppSource(cmdRunner ports.CmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType, namespace string) error {
+// The context can be used to cancel the rendering or set a timeout.
+func (g RealHelmChartProcessor) RenderAppSource(ctx context.Context, cmdRunner ports.CmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType, namespace string) error {
 	g.Log.Debugf("Rendering [%s] chart's version [%s] templates using release name [%s]",
-		cyan(chartName),
-		cyan(chartVersion),
-		cyan(releaseName))
+		ui.Cyan(chartName),
+		ui.Cyan(chartVersion),
+		ui.Cyan(releaseName))
 
-	_, stderr, err := cmdRunner.Run(
+	_, stderr, err := cmdRunner.Run(ctx,
 		"helm",
 		"template",
 		"--release-name", releaseName,

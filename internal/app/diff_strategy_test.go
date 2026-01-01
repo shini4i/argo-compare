@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -44,7 +45,7 @@ func TestExternalDiffStrategyPresent(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, strategy.Present(result))
+	require.NoError(t, strategy.Present(context.Background(), result))
 
 	content, err := os.ReadFile(outputPath)
 	require.NoError(t, err)

@@ -1,11 +1,14 @@
 package command
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/shini4i/argo-compare/internal/app"
 	"github.com/shini4i/argo-compare/internal/helpers"
@@ -21,7 +24,7 @@ type Options struct {
 	CacheDir         string
 	TempDirBase      string
 	ExternalDiffTool string
-	RunApp           func(app.Config) error
+	RunApp           func(ctx context.Context, cfg app.Config) error
 	InitLogging      func(debug bool)
 }
 
@@ -113,7 +116,11 @@ func newBranchCommand(opts Options, dropCache func() bool, debug func() bool) *c
 				return errors.New("no run handler provided")
 			}
 
-			return opts.RunApp(cfg)
+			// Create a context that cancels on interrupt/terminate signals.
+			ctx, cancel := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+			defer cancel()
+
+			return opts.RunApp(ctx, cfg)
 		},
 	}
 

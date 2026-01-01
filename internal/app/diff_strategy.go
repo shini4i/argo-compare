@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -9,8 +11,9 @@ import (
 )
 
 // DiffStrategy presents comparison results to the user.
+// The context can be used for cancellation and timeout control.
 type DiffStrategy interface {
-	Present(result ComparisonResult) error
+	Present(ctx context.Context, result ComparisonResult) error
 }
 
 const currentFilePrintPattern = "▶ %s"
@@ -31,7 +34,8 @@ type ExternalDiffStrategy struct {
 }
 
 // Present prints comparison results using the configured stdout logger.
-func (s StdoutStrategy) Present(result ComparisonResult) error {
+// The context parameter is accepted for interface compliance but not used.
+func (s StdoutStrategy) Present(_ context.Context, result ComparisonResult) error {
 	if result.IsEmpty() {
 		s.Log.Info("No diff was found in rendered manifests!")
 		return nil
@@ -70,40 +74,52 @@ func (s StdoutStrategy) printSection(operation string, entries []DiffOutput) {
 }
 
 // Present streams diff content to the configured external tool.
-func (s ExternalDiffStrategy) Present(result ComparisonResult) error {
+// The context is used for cancellation of external tool execution.
+func (s ExternalDiffStrategy) Present(ctx context.Context, result ComparisonResult) error {
 	if result.IsEmpty() {
 		s.Log.Info("No diff was found in rendered manifests!")
 		return nil
 	}
 
 	if s.ShowAdded {
-		if err := s.runSection(result.Added); err != nil {
+		if err := s.runSection(ctx, result.Added); err != nil {
 			return err
 		}
 	}
 
 	if s.ShowRemoved {
-		if err := s.runSection(result.Removed); err != nil {
+		if err := s.runSection(ctx, result.Removed); err != nil {
 			return err
 		}
 	}
 
-	return s.runSection(result.Changed)
+	return s.runSection(ctx, result.Changed)
 }
 
 // runSection streams a set of diff outputs through the configured external diff tool.
-func (s ExternalDiffStrategy) runSection(entries []DiffOutput) error {
+// It collects and returns all errors encountered during execution.
+// The context is used for cancellation of each tool invocation.
+func (s ExternalDiffStrategy) runSection(ctx context.Context, entries []DiffOutput) error {
+	var errs []error
 	for _, entry := range entries {
-		if err := s.runTool(entry.Diff); err != nil {
+		if err := s.runTool(ctx, entry.Diff); err != nil {
 			s.Log.Errorf("External diff tool failed for %s: %v", entry.File.Name, err)
+			errs = append(errs, fmt.Errorf("%s: %w", entry.File.Name, err))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // runTool executes the external diff command with the given diff content.
-func (s ExternalDiffStrategy) runTool(diff string) error {
-	cmd := exec.Command(s.Tool) // #nosec G204
+// It validates the tool name to prevent command injection attacks.
+// The context is used for cancellation of the command execution.
+func (s ExternalDiffStrategy) runTool(ctx context.Context, diff string) error {
+	// Validate tool name - reject shell metacharacters and path traversal
+	if strings.ContainsAny(s.Tool, ";&|`$(){}[]<>!#\\\"'") || strings.Contains(s.Tool, "..") {
+		return fmt.Errorf("invalid diff tool name: %q", s.Tool)
+	}
+
+	cmd := exec.CommandContext(ctx, s.Tool) // #nosec G204
 	cmd.Stdin = strings.NewReader(diff)
 
 	output, err := cmd.CombinedOutput()

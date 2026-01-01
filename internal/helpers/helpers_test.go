@@ -1,9 +1,12 @@
 package helpers
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/spf13/afero"
@@ -164,4 +167,162 @@ func TestFindHelmRepoCredentials(t *testing.T) {
 			assert.Equal(t, tt.expectedPass, password)
 		})
 	}
+}
+
+func TestDefaultRetryConfig(t *testing.T) {
+	cfg := DefaultRetryConfig()
+	assert.Equal(t, 3, cfg.MaxAttempts)
+	assert.Equal(t, 1*time.Second, cfg.InitialDelay)
+	assert.Equal(t, 10*time.Second, cfg.MaxDelay)
+	assert.Equal(t, 2.0, cfg.Multiplier)
+}
+
+func TestWithRetrySucceedsFirstAttempt(t *testing.T) {
+	attempts := 0
+	cfg := RetryConfig{
+		MaxAttempts:  3,
+		InitialDelay: 1 * time.Millisecond,
+		MaxDelay:     10 * time.Millisecond,
+		Multiplier:   2.0,
+	}
+
+	err := WithRetry(context.Background(), cfg, func() error {
+		attempts++
+		return nil
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, attempts)
+}
+
+func TestWithRetrySucceedsAfterRetries(t *testing.T) {
+	attempts := 0
+	cfg := RetryConfig{
+		MaxAttempts:  5,
+		InitialDelay: 1 * time.Millisecond,
+		MaxDelay:     10 * time.Millisecond,
+		Multiplier:   2.0,
+	}
+
+	err := WithRetry(context.Background(), cfg, func() error {
+		attempts++
+		if attempts < 3 {
+			return errors.New("temporary failure")
+		}
+		return nil
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 3, attempts)
+}
+
+func TestWithRetryExhaustsAttempts(t *testing.T) {
+	attempts := 0
+	cfg := RetryConfig{
+		MaxAttempts:  3,
+		InitialDelay: 1 * time.Millisecond,
+		MaxDelay:     10 * time.Millisecond,
+		Multiplier:   2.0,
+	}
+
+	expectedErr := errors.New("persistent failure")
+	err := WithRetry(context.Background(), cfg, func() error {
+		attempts++
+		return expectedErr
+	})
+
+	require.Error(t, err)
+	assert.Equal(t, expectedErr, err)
+	assert.Equal(t, 3, attempts)
+}
+
+func TestWithRetryRespectsContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	attempts := 0
+	cfg := RetryConfig{
+		MaxAttempts:  10,
+		InitialDelay: 100 * time.Millisecond,
+		MaxDelay:     1 * time.Second,
+		Multiplier:   2.0,
+	}
+
+	// Cancel context after a short delay
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	err := WithRetry(ctx, cfg, func() error {
+		attempts++
+		return errors.New("keep failing")
+	})
+
+	require.Error(t, err)
+	assert.Equal(t, context.Canceled, err)
+	// Should have stopped early due to cancellation
+	assert.Less(t, attempts, cfg.MaxAttempts)
+}
+
+func TestWithRetryHandlesInvalidConfig(t *testing.T) {
+	attempts := 0
+
+	// Test with MaxAttempts < 1 (should be normalized to 1)
+	cfg := RetryConfig{
+		MaxAttempts:  0,
+		InitialDelay: 1 * time.Millisecond,
+		MaxDelay:     10 * time.Millisecond,
+		Multiplier:   0.5, // Less than 1, should be normalized to 1
+	}
+
+	err := WithRetry(context.Background(), cfg, func() error {
+		attempts++
+		return errors.New("failure")
+	})
+
+	require.Error(t, err)
+	assert.Equal(t, 1, attempts) // Should only attempt once
+}
+
+func TestWithRetryStopsOnPermanentError(t *testing.T) {
+	attempts := 0
+	cfg := RetryConfig{
+		MaxAttempts:  5,
+		InitialDelay: 1 * time.Millisecond,
+		MaxDelay:     10 * time.Millisecond,
+		Multiplier:   2.0,
+	}
+
+	permanentErr := WrapPermanent(errors.New("client error - do not retry"))
+	err := WithRetry(context.Background(), cfg, func() error {
+		attempts++
+		return permanentErr
+	})
+
+	require.Error(t, err)
+	assert.True(t, IsPermanent(err))
+	assert.Equal(t, 1, attempts) // Should only attempt once due to permanent error
+}
+
+func TestWrapPermanentNil(t *testing.T) {
+	err := WrapPermanent(nil)
+	assert.Nil(t, err)
+}
+
+func TestIsPermanent(t *testing.T) {
+	regularErr := errors.New("regular error")
+	permanentErr := WrapPermanent(errors.New("permanent error"))
+
+	assert.False(t, IsPermanent(nil))
+	assert.False(t, IsPermanent(regularErr))
+	assert.True(t, IsPermanent(permanentErr))
+}
+
+func TestPermanentErrorUnwrap(t *testing.T) {
+	originalErr := errors.New("original error")
+	permanentErr := WrapPermanent(originalErr)
+
+	// Test that we can unwrap to get the original error
+	var permErr *PermanentError
+	require.True(t, errors.As(permanentErr, &permErr))
+	assert.Equal(t, originalErr, permErr.Unwrap())
 }

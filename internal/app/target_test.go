@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"testing"
 
 	"github.com/op/go-logging"
@@ -22,28 +23,34 @@ func (r *recordingHelmProcessor) GenerateValuesFile(chartName, tmpDir, targetTyp
 	return nil
 }
 
-func (r *recordingHelmProcessor) DownloadHelmChart(cmdRunner ports.CmdRunner, globber ports.Globber, cacheDir, repoUrl, chartName, targetRevision string, repoCredentials []models.RepoCredentials) error {
+func (r *recordingHelmProcessor) DownloadHelmChart(_ context.Context, _ ports.CmdRunner, _ ports.Globber, _, _, _, _ string, _ []models.RepoCredentials) error {
 	r.downloadCalls++
 	return nil
 }
 
-func (r *recordingHelmProcessor) ExtractHelmChart(cmdRunner ports.CmdRunner, globber ports.Globber, chartName, chartVersion, chartLocation, tmpDir, targetType string) error {
+func (r *recordingHelmProcessor) ExtractHelmChart(_ context.Context, _ ports.CmdRunner, _ ports.Globber, _, _, _, _, _ string) error {
 	r.extractCalls++
 	return nil
 }
 
-func (r *recordingHelmProcessor) RenderAppSource(cmdRunner ports.CmdRunner, releaseName, chartName, chartVersion, tmpDir, targetType, namespace string) error {
+func (r *recordingHelmProcessor) RenderAppSource(_ context.Context, _ ports.CmdRunner, _, _, _, _, _, _ string) error {
 	r.renderCalls++
 	return nil
 }
 
 type noopCmdRunner struct{}
 
-func (noopCmdRunner) Run(string, ...string) (string, string, error) { return "", "", nil }
+func (noopCmdRunner) Run(_ context.Context, _ string, _ ...string) (string, string, error) {
+	return "", "", nil
+}
 
 type noopFileReader struct{}
 
 func (noopFileReader) ReadFile(string) []byte { return nil }
+
+type noopGlobber struct{}
+
+func (noopGlobber) Glob(string) ([]string, error) { return nil, nil }
 
 func TestTargetMultiSourceInvokesHelmPerSource(t *testing.T) {
 	processor := &recordingHelmProcessor{}
@@ -52,11 +59,12 @@ func TestTargetMultiSourceInvokesHelmPerSource(t *testing.T) {
 		CmdRunner:       noopCmdRunner{},
 		FileReader:      noopFileReader{},
 		HelmProcessor:   processor,
+		Globber:         noopGlobber{},
 		CacheDir:        "cache",
 		TmpDir:          "tmp",
 		RepoCredentials: nil,
 		Log:             logging.MustGetLogger("target-test"),
-		Type:            "src",
+		Type:            TargetTypeSource,
 		App: models.Application{
 			Spec: struct {
 				Source      *models.Source      `yaml:"source"`
@@ -100,9 +108,9 @@ func TestTargetMultiSourceInvokesHelmPerSource(t *testing.T) {
 	}
 
 	require.NoError(t, target.generateValuesFiles())
-	require.NoError(t, target.ensureHelmCharts())
-	require.NoError(t, target.extractCharts())
-	require.NoError(t, target.renderAppSources())
+	require.NoError(t, target.ensureHelmCharts(context.Background()))
+	require.NoError(t, target.extractCharts(context.Background()))
+	require.NoError(t, target.renderAppSources(context.Background()))
 
 	assert.Equal(t, 2, processor.generateValuesCalls)
 	assert.Equal(t, 2, processor.downloadCalls)

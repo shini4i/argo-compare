@@ -1,14 +1,20 @@
 package helpers
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
-	"strings"
+	"time"
 
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/spf13/afero"
 )
+
+// helmLabelRegex matches Helm-managed labels that should be stripped from manifests.
+// Compiled once at package initialization for performance.
+var helmLabelRegex = regexp.MustCompile(`(?m)[\r\n]+^.*(app\.kubernetes\.io/managed-by|helm\.sh/chart|chart|app\.kubernetes\.io/version):.*$`)
 
 // GetEnv retrieves the value of an environment variable specified by the given key.
 // If the environment variable is set, its value is returned.
@@ -20,33 +26,18 @@ func GetEnv(key, fallback string) string {
 	return fallback
 }
 
-// StripHelmLabels removes the specified Helm labels from the content of a file.
+// StripHelmLabels removes Helm-managed labels from the content of a file.
 // The function takes a file path as input and returns the stripped file content as a byte slice.
-// It removes the labels listed in the `labels` slice using regular expressions.
+// It uses a pre-compiled regex to remove labels that change between Helm runs
+// (app.kubernetes.io/managed-by, helm.sh/chart, chart, app.kubernetes.io/version).
 // The function returns an error if there is an issue reading the file.
 func StripHelmLabels(file string) ([]byte, error) {
-	// list of labels to remove
-	labels := []string{
-		"app.kubernetes.io/managed-by",
-		"helm.sh/chart",
-		"chart",
-		"app.kubernetes.io/version",
-	}
-
-	regex := strings.Join(labels, "|")
-
-	// remove helm labels as they are not needed for comparison
-	// it might be error-prone, as those labels are not always the same
-	re := regexp.MustCompile("(?m)[\r\n]+^.*(" + regex + "):.*$")
-
-	var fileData []byte
-	var err error
-
-	if fileData, err = os.ReadFile(file); err != nil /* #nosec G304 */ {
+	fileData, err := os.ReadFile(file) // #nosec G304
+	if err != nil {
 		return nil, err
 	}
 
-	strippedFileData := re.ReplaceAll(fileData, []byte(""))
+	strippedFileData := helmLabelRegex.ReplaceAll(fileData, []byte(""))
 
 	return strippedFileData, nil
 }
@@ -62,13 +53,14 @@ func WriteToFile(fs afero.Fs, file string, data []byte) error {
 	return nil
 }
 
-// CreateTempFile creates a temporary file in the "/tmp" directory with a unique name
-// that has the prefix "compare-" and suffix ".yaml". It then writes the provided content
-// to this temporary file. The function returns a pointer to the created os.File if it
-// succeeds. If the function fails at any step, it returns an error wrapped with context
-// about what step of the process it failed at.
+// CreateTempFile creates a temporary file in the system's default temp directory with
+// a unique name that has the prefix "compare-" and suffix ".yaml". It then writes the
+// provided content to this temporary file. The function returns a pointer to the created
+// os.File if it succeeds. If the function fails at any step, it returns an error wrapped
+// with context about what step of the process it failed at.
 func CreateTempFile(fs afero.Fs, content string) (afero.File, error) {
-	tmpFile, err := afero.TempFile(fs, "/tmp", "compare-*.yaml")
+	// Empty string uses the system's default temp directory (os.TempDir())
+	tmpFile, err := afero.TempFile(fs, "", "compare-*.yaml")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary file: %w", err)
 	}
@@ -90,4 +82,107 @@ func FindHelmRepoCredentials(url string, credentials []models.RepoCredentials) (
 		}
 	}
 	return "", ""
+}
+
+// RetryConfig holds configuration for retry operations.
+type RetryConfig struct {
+	// MaxAttempts is the maximum number of attempts (must be >= 1).
+	MaxAttempts int
+	// InitialDelay is the delay before the first retry.
+	InitialDelay time.Duration
+	// MaxDelay is the maximum delay between retries (caps exponential backoff).
+	MaxDelay time.Duration
+	// Multiplier is the factor by which the delay increases after each retry.
+	Multiplier float64
+}
+
+// DefaultRetryConfig returns a sensible default retry configuration.
+func DefaultRetryConfig() RetryConfig {
+	return RetryConfig{
+		MaxAttempts:  3,
+		InitialDelay: 1 * time.Second,
+		MaxDelay:     10 * time.Second,
+		Multiplier:   2.0,
+	}
+}
+
+// PermanentError wraps an error to signal that retry should not be attempted.
+// Use WrapPermanent to create a permanent error.
+type PermanentError struct {
+	Err error
+}
+
+func (e *PermanentError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *PermanentError) Unwrap() error {
+	return e.Err
+}
+
+// WrapPermanent wraps an error to indicate it should not be retried.
+func WrapPermanent(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &PermanentError{Err: err}
+}
+
+// IsPermanent returns true if the error is marked as permanent (should not be retried).
+func IsPermanent(err error) bool {
+	var permErr *PermanentError
+	return errors.As(err, &permErr)
+}
+
+// WithRetry executes the given function with retry logic using exponential backoff.
+// It respects context cancellation and returns early if the context is cancelled.
+// If the function returns a PermanentError, retry is skipped and the error is returned immediately.
+// The function returns nil on success, or the last error if all attempts fail.
+func WithRetry(ctx context.Context, cfg RetryConfig, fn func() error) error {
+	if cfg.MaxAttempts < 1 {
+		cfg.MaxAttempts = 1
+	}
+	if cfg.Multiplier < 1 {
+		cfg.Multiplier = 1
+	}
+
+	var lastErr error
+	delay := cfg.InitialDelay
+
+	for attempt := 1; attempt <= cfg.MaxAttempts; attempt++ {
+		// Check context before each attempt
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		lastErr = fn()
+		if lastErr == nil {
+			return nil
+		}
+
+		// Don't retry permanent errors
+		if IsPermanent(lastErr) {
+			return lastErr
+		}
+
+		// Don't sleep after the last attempt
+		if attempt == cfg.MaxAttempts {
+			break
+		}
+
+		// Wait with context cancellation support
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+
+		// Increase delay for next iteration (exponential backoff)
+		delay = time.Duration(float64(delay) * cfg.Multiplier)
+		if delay > cfg.MaxDelay {
+			delay = cfg.MaxDelay
+		}
+	}
+
+	return lastErr
 }

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/shini4i/argo-compare/internal/sanitizer"
+	"github.com/shini4i/argo-compare/internal/ui"
 	"github.com/spf13/afero"
 )
 
@@ -93,7 +95,8 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 }
 
 // Run executes the comparison workflow and returns any terminal error.
-func (a *App) Run() error {
+// The context can be used for cancellation and timeout control.
+func (a *App) Run(ctx context.Context) error {
 	if err := a.collectRepoCredentials(); err != nil {
 		return err
 	}
@@ -103,7 +106,7 @@ func (a *App) Run() error {
 		return err
 	}
 
-	a.logger.Infof("===> Running Argo Compare version [%s]", cyan(a.cfg.Version))
+	a.logger.Infof("===> Running Argo Compare version [%s]", ui.Cyan(a.cfg.Version))
 
 	var (
 		changedFiles []string
@@ -131,7 +134,7 @@ func (a *App) Run() error {
 		return nil
 	}
 
-	if err := a.compareFiles(repo, changedFiles); err != nil {
+	if err := a.compareFiles(ctx, repo, changedFiles); err != nil {
 		return err
 	}
 
@@ -139,9 +142,9 @@ func (a *App) Run() error {
 }
 
 // compareFiles renders and evaluates each changed Application manifest against the target branch.
-func (a *App) compareFiles(repo *GitRepo, changedFiles []string) error {
+func (a *App) compareFiles(ctx context.Context, repo *GitRepo, changedFiles []string) error {
 	for _, file := range changedFiles {
-		if err := a.processChangedFile(repo, file); err != nil {
+		if err := a.processChangedFile(ctx, repo, file); err != nil {
 			return err
 		}
 	}
@@ -157,8 +160,8 @@ const (
 )
 
 // processChangedFile orchestrates comparison for a single manifest, optionally skipping targets.
-func (a *App) processChangedFile(repo *GitRepo, file string) (err error) {
-	a.logger.Infof("===> Processing changed application: [%s]", cyan(file))
+func (a *App) processChangedFile(ctx context.Context, repo *GitRepo, file string) (err error) {
+	a.logger.Infof("===> Processing changed application: [%s]", ui.Cyan(file))
 
 	tmpDir, err := afero.TempDir(a.fs, a.cfg.TempDirBase, "argo-compare-")
 	if err != nil {
@@ -171,7 +174,7 @@ func (a *App) processChangedFile(repo *GitRepo, file string) (err error) {
 		}
 	}()
 
-	if err = a.processFile(file, "src", models.Application{}, tmpDir); err != nil {
+	if err = a.processFile(ctx, file, TargetTypeSource, models.Application{}, tmpDir); err != nil {
 		return err
 	}
 
@@ -185,12 +188,12 @@ func (a *App) processChangedFile(repo *GitRepo, file string) (err error) {
 	}
 
 	if action == destinationProcess {
-		if destErr := a.processFile(file, "dst", targetApp, tmpDir); destErr != nil && !a.cfg.PrintAddedManifests {
+		if destErr := a.processFile(ctx, file, TargetTypeDestination, targetApp, tmpDir); destErr != nil && !a.cfg.PrintAddedManifests {
 			return destErr
 		}
 	}
 
-	return a.runComparison(tmpDir, file)
+	return a.runComparison(ctx, tmpDir, file)
 }
 
 // resolveTargetApplication retrieves the target branch manifest and determines follow-up actions.
@@ -198,9 +201,9 @@ func (a *App) resolveTargetApplication(repo *GitRepo, file string) (models.Appli
 	app, err := repo.GetChangedFileContent(a.cfg.TargetBranch, file, a.cfg.PrintAddedManifests)
 
 	switch {
-	case errors.Is(err, gitFileDoesNotExist) && !a.cfg.PrintAddedManifests:
+	case errors.Is(err, errGitFileDoesNotExist) && !a.cfg.PrintAddedManifests:
 		return models.Application{}, destinationSkip, nil
-	case errors.Is(err, models.EmptyFileError):
+	case errors.Is(err, models.ErrEmptyFile):
 		return models.Application{}, destinationNone, nil
 	case err != nil:
 		a.logger.Errorf("Could not get the target Application from branch [%s]: %s", a.cfg.TargetBranch, err)
@@ -211,11 +214,12 @@ func (a *App) resolveTargetApplication(repo *GitRepo, file string) (models.Appli
 }
 
 // processFile prepares Helm inputs for a single manifest and renders its templates.
-func (a *App) processFile(fileName string, fileType string, application models.Application, tmpDir string) error {
+func (a *App) processFile(ctx context.Context, fileName string, fileType string, application models.Application, tmpDir string) error {
 	target := Target{
 		CmdRunner:       a.cmdRunner,
 		FileReader:      a.fileReader,
 		HelmProcessor:   a.helmProcessor,
+		Globber:         a.globber,
 		CacheDir:        a.cfg.CacheDir,
 		TmpDir:          tmpDir,
 		RepoCredentials: a.repoCredentials,
@@ -225,7 +229,7 @@ func (a *App) processFile(fileName string, fileType string, application models.A
 		App:             application,
 	}
 
-	if fileType == "src" {
+	if fileType == TargetTypeSource {
 		if err := target.parse(); err != nil {
 			return err
 		}
@@ -235,20 +239,21 @@ func (a *App) processFile(fileName string, fileType string, application models.A
 		return err
 	}
 
-	if err := target.ensureHelmCharts(); err != nil {
+	if err := target.ensureHelmCharts(ctx); err != nil {
 		return err
 	}
 
-	if err := target.extractCharts(); err != nil {
+	if err := target.extractCharts(ctx); err != nil {
 		return err
 	}
 
-	return target.renderAppSources()
+	return target.renderAppSources(ctx)
 }
 
 // runComparison executes the diff strategy for the prepared temporary workspace.
-func (a *App) runComparison(tmpDir, applicationFile string) error {
+func (a *App) runComparison(ctx context.Context, tmpDir, applicationFile string) error {
 	comparer := Compare{
+		Fs:                 a.fs,
 		Globber:            a.globber,
 		TmpDir:             tmpDir,
 		PreserveHelmLabels: a.cfg.PreserveHelmLabels,
@@ -266,7 +271,7 @@ func (a *App) runComparison(tmpDir, applicationFile string) error {
 	}
 
 	for _, strategy := range strategies {
-		if err := strategy.Present(result); err != nil {
+		if err := strategy.Present(ctx, result); err != nil {
 			return err
 		}
 	}
@@ -331,7 +336,7 @@ func (a *App) collectRepoCredentials() error {
 	}
 
 	for _, repo := range a.repoCredentials {
-		a.logger.Debugf("▶ Found repo credentials for [%s]", cyan(repo.Url))
+		a.logger.Debugf("▶ Found repo credentials for [%s]", ui.Cyan(repo.Url))
 	}
 
 	return nil

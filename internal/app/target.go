@@ -1,14 +1,20 @@
 package app
 
 import (
+	"context"
 	"fmt"
-	"strings"
+	"path/filepath"
 
 	"github.com/op/go-logging"
-	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"gopkg.in/yaml.v3"
+)
+
+// Target type constants identify the source and destination manifests for comparison.
+const (
+	TargetTypeSource      = "src"
+	TargetTypeDestination = "dst"
 )
 
 // Target encapsulates the chart rendering workflow for a single application source.
@@ -16,6 +22,7 @@ type Target struct {
 	CmdRunner       ports.CmdRunner
 	FileReader      ports.FileReader
 	HelmProcessor   ports.HelmChartsProcessor
+	Globber         ports.Globber
 	CacheDir        string
 	TmpDir          string
 	RepoCredentials []models.RepoCredentials
@@ -32,14 +39,15 @@ func (t *Target) parse() error {
 
 	var file string
 
-	if !strings.Contains(t.File, "/tmp/") {
+	// Use filepath.IsAbs to check if the path is absolute rather than checking for /tmp/
+	if filepath.IsAbs(t.File) {
+		file = t.File
+	} else {
 		gitRepoRoot, err := GetGitRepoRoot()
 		if err != nil {
 			return err
 		}
-		file = fmt.Sprintf("%s/%s", gitRepoRoot, t.File)
-	} else {
-		file = t.File
+		file = filepath.Join(gitRepoRoot, t.File)
 	}
 
 	t.Log.Debugf("Parsing %s...", file)
@@ -79,12 +87,14 @@ func (t *Target) generateValuesFiles() error {
 }
 
 // ensureHelmCharts downloads required Helm charts into the configured cache.
-func (t *Target) ensureHelmCharts() error {
+// The context can be used to cancel downloads or set a timeout.
+func (t *Target) ensureHelmCharts(ctx context.Context) error {
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
 			if err := t.HelmProcessor.DownloadHelmChart(
+				ctx,
 				t.CmdRunner,
-				utils.CustomGlobber{},
+				t.Globber,
 				t.CacheDir,
 				source.RepoURL,
 				source.Chart,
@@ -98,8 +108,9 @@ func (t *Target) ensureHelmCharts() error {
 	}
 
 	return t.HelmProcessor.DownloadHelmChart(
+		ctx,
 		t.CmdRunner,
-		utils.CustomGlobber{},
+		t.Globber,
 		t.CacheDir,
 		t.App.Spec.Source.RepoURL,
 		t.App.Spec.Source.Chart,
@@ -109,12 +120,14 @@ func (t *Target) ensureHelmCharts() error {
 }
 
 // extractCharts unpacks cached Helm charts into the working directories.
-func (t *Target) extractCharts() error {
+// The context can be used to cancel extraction or set a timeout.
+func (t *Target) extractCharts(ctx context.Context) error {
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
 			if err := t.HelmProcessor.ExtractHelmChart(
+				ctx,
 				t.CmdRunner,
-				utils.CustomGlobber{},
+				t.Globber,
 				source.Chart,
 				source.TargetRevision,
 				fmt.Sprintf("%s/%s", t.CacheDir, source.RepoURL),
@@ -128,8 +141,9 @@ func (t *Target) extractCharts() error {
 	}
 
 	return t.HelmProcessor.ExtractHelmChart(
+		ctx,
 		t.CmdRunner,
-		utils.CustomGlobber{},
+		t.Globber,
 		t.App.Spec.Source.Chart,
 		t.App.Spec.Source.TargetRevision,
 		fmt.Sprintf("%s/%s", t.CacheDir, t.App.Spec.Source.RepoURL),
@@ -139,7 +153,8 @@ func (t *Target) extractCharts() error {
 }
 
 // renderAppSources runs Helm template rendering for each application source.
-func (t *Target) renderAppSources() error {
+// The context can be used to cancel rendering or set a timeout.
+func (t *Target) renderAppSources(ctx context.Context) error {
 	var releaseName string
 
 	if !t.App.Spec.MultiSource {
@@ -158,6 +173,7 @@ func (t *Target) renderAppSources() error {
 				releaseName = t.App.Metadata.Name
 			}
 			if err := t.HelmProcessor.RenderAppSource(
+				ctx,
 				t.CmdRunner,
 				releaseName,
 				source.Chart,
@@ -173,6 +189,7 @@ func (t *Target) renderAppSources() error {
 	}
 
 	return t.HelmProcessor.RenderAppSource(
+		ctx,
 		t.CmdRunner,
 		releaseName,
 		t.App.Spec.Source.Chart,

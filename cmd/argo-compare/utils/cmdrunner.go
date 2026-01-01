@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"context"
 	"os/exec"
 )
 
@@ -9,8 +10,9 @@ import (
 type RealCmdRunner struct{}
 
 // Run executes cmd with args and captures stdout and stderr strings.
-func (r *RealCmdRunner) Run(cmd string, args ...string) (string, string, error) {
-	command := exec.Command(cmd, args...)
+// The context can be used to cancel the command or set a timeout.
+func (r *RealCmdRunner) Run(ctx context.Context, cmd string, args ...string) (string, string, error) {
+	command := exec.CommandContext(ctx, cmd, args...)
 
 	var stdoutBuffer, stderrBuffer bytes.Buffer
 	command.Stdout = &stdoutBuffer

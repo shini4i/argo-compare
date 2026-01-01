@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -27,13 +28,14 @@ const (
 )
 
 // Present formats comparison results and pushes them as one or more comments depending on size.
-func (s CommentStrategy) Present(result ComparisonResult) error {
+// The context is used for cancellation and timeout control when posting comments.
+func (s CommentStrategy) Present(ctx context.Context, result ComparisonResult) error {
 	if err := s.validate(); err != nil {
 		return err
 	}
 
 	bodies := buildCommentBodies(result, s.ShowAdded, s.ShowRemoved, s.ApplicationPath)
-	if err := s.postBodies(bodies); err != nil {
+	if err := s.postBodies(ctx, bodies); err != nil {
 		return err
 	}
 
@@ -51,13 +53,13 @@ func (s CommentStrategy) validate() error {
 	return nil
 }
 
-func (s CommentStrategy) postBodies(bodies []string) error {
+func (s CommentStrategy) postBodies(ctx context.Context, bodies []string) error {
 	for idx, body := range bodies {
 		bodyToPost := body
 		if len(bodies) > 1 {
 			bodyToPost = ensureTrailingNewline(strings.TrimRight(body, "\n") + fmt.Sprintf("\n\n_Part %d of %d_", idx+1, len(bodies)))
 		}
-		if err := s.Poster.Post(bodyToPost); err != nil {
+		if err := s.Poster.Post(ctx, bodyToPost); err != nil {
 			if len(bodies) > 1 {
 				return fmt.Errorf("post diff comment (part %d/%d): %w", idx+1, len(bodies), err)
 			}

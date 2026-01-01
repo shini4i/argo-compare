@@ -1,7 +1,6 @@
 package models
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,14 +10,14 @@ func TestApplication_Validate(t *testing.T) {
 	// Test case 1: Empty application
 	app := &Application{}
 	err := app.Validate()
-	assert.True(t, errors.Is(err, EmptyFileError), "Expected validation error: %v, but got: %v", EmptyFileError, err)
+	assert.ErrorIs(t, err, ErrEmptyFile, "expected ErrEmptyFile")
 
 	// Test case 2: Application with invalid kind
 	app = &Application{
 		Kind: "InvalidKind",
 	}
 	err = app.Validate()
-	assert.True(t, errors.Is(err, NotApplicationError), "Expected validation error: %v, but got: %v", NotApplicationError, err)
+	assert.ErrorIs(t, err, ErrNotApplication, "expected ErrNotApplication")
 
 	// Test case 3: Unsupported app configuration - empty chart name
 	appWithEmptyChart := &Application{
@@ -37,7 +36,7 @@ func TestApplication_Validate(t *testing.T) {
 		},
 	}
 	err = appWithEmptyChart.Validate()
-	assert.ErrorIs(t, err, UnsupportedAppConfigurationError, "expected UnsupportedAppConfigurationError")
+	assert.ErrorIs(t, err, ErrUnsupportedAppConfiguration, "expected ErrUnsupportedAppConfiguration")
 
 	// Test case 4: Valid application with multiple sources
 	appWithMultipleSources := &Application{
@@ -116,5 +115,22 @@ func TestApplication_Validate(t *testing.T) {
 		},
 	}
 	err = appWithMultipleSourcesUnsupported.Validate()
-	assert.ErrorIs(t, err, UnsupportedAppConfigurationError, "expected UnsupportedAppConfigurationError")
+	assert.ErrorIs(t, err, ErrUnsupportedAppConfiguration, "expected ErrUnsupportedAppConfiguration")
+
+	// Test case 7: Nil Source and empty Sources - should not panic
+	appWithNilSource := &Application{
+		Kind: "Application",
+		Spec: struct {
+			Source      *Source      `yaml:"source"`
+			Sources     []*Source    `yaml:"sources"`
+			MultiSource bool         `yaml:"-"`
+			Destination *Destination `yaml:"destination"`
+		}{
+			Source:      nil,
+			Sources:     nil,
+			MultiSource: false,
+		},
+	}
+	err = appWithNilSource.Validate()
+	assert.ErrorIs(t, err, ErrUnsupportedAppConfiguration, "expected ErrUnsupportedAppConfiguration for nil source")
 }

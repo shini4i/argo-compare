@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -75,11 +76,12 @@ func resolveCacheDir() string {
 }
 
 // runApplication constructs and executes the application using the supplied configuration.
-func runApplication(cfg app.Config) error {
+// The context is used for cancellation and timeout control.
+func runApplication(ctx context.Context, cfg app.Config) error {
 	deps := setupDependencies(log)
 	application, err := app.New(cfg, deps)
 	if err != nil {
 		return err
 	}
-	return application.Run()
+	return application.Run(ctx)
 }

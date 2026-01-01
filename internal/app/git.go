@@ -13,6 +13,7 @@ import (
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
+	"github.com/shini4i/argo-compare/internal/ui"
 	"github.com/spf13/afero"
 )
 
@@ -31,7 +32,7 @@ type ChangedFilesResult struct {
 	Invalid      []string
 }
 
-var gitFileDoesNotExist = errors.New("file does not exist in target branch")
+var errGitFileDoesNotExist = errors.New("file does not exist in target branch")
 
 // NewGitRepo opens the current repository and prepares helpers for git operations.
 func NewGitRepo(fs afero.Fs, cmdRunner ports.CmdRunner, fileReader ports.FileReader, log *logging.Logger) (*GitRepo, error) {
@@ -42,7 +43,7 @@ func NewGitRepo(fs afero.Fs, cmdRunner ports.CmdRunner, fileReader ports.FileRea
 
 	repo, err := git.PlainOpen(repoRoot)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open repository: %v", err)
+		return nil, fmt.Errorf("failed to open repository: %w", err)
 	}
 
 	return &GitRepo{
@@ -58,40 +59,41 @@ func NewGitRepo(fs afero.Fs, cmdRunner ports.CmdRunner, fileReader ports.FileRea
 func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string) (ChangedFilesResult, error) {
 	targetRef, err := g.repo.Reference(plumbing.ReferenceName(fmt.Sprintf("refs/remotes/origin/%s", targetBranch)), true)
 	if err != nil {
-		return ChangedFilesResult{}, fmt.Errorf("failed to resolve target branch %s: %v", targetBranch, err)
+		return ChangedFilesResult{}, fmt.Errorf("failed to resolve target branch %s: %w", targetBranch, err)
 	}
 
 	headRef, err := g.repo.Head()
 	if err != nil {
-		return ChangedFilesResult{}, fmt.Errorf("failed to get HEAD: %v", err)
+		return ChangedFilesResult{}, fmt.Errorf("failed to get HEAD: %w", err)
 	}
 
 	targetCommit, err := g.repo.CommitObject(targetRef.Hash())
 	if err != nil {
-		return ChangedFilesResult{}, fmt.Errorf("failed to get commit object for target branch %s: %v", targetBranch, err)
+		return ChangedFilesResult{}, fmt.Errorf("failed to get commit object for target branch %s: %w", targetBranch, err)
 	}
 
 	headCommit, err := g.repo.CommitObject(headRef.Hash())
 	if err != nil {
-		return ChangedFilesResult{}, fmt.Errorf("failed to get commit object for current branch: %v", err)
+		return ChangedFilesResult{}, fmt.Errorf("failed to get commit object for current branch: %w", err)
 	}
 
 	targetTree, err := targetCommit.Tree()
 	if err != nil {
-		return ChangedFilesResult{}, fmt.Errorf("failed to get tree for target commit: %v", err)
+		return ChangedFilesResult{}, fmt.Errorf("failed to get tree for target commit: %w", err)
 	}
 
 	headTree, err := headCommit.Tree()
 	if err != nil {
-		return ChangedFilesResult{}, fmt.Errorf("failed to get tree for head commit: %v", err)
+		return ChangedFilesResult{}, fmt.Errorf("failed to get tree for head commit: %w", err)
 	}
 
 	changes, err := object.DiffTree(targetTree, headTree)
 	if err != nil {
-		return ChangedFilesResult{}, fmt.Errorf("failed to get diff between trees: %v", err)
+		return ChangedFilesResult{}, fmt.Errorf("failed to get diff between trees: %w", err)
 	}
 
-	var foundFiles, removedFiles []string
+	foundFiles := make([]string, 0, len(changes))
+	removedFiles := make([]string, 0, len(changes))
 	for _, change := range changes {
 		if change.To.Name == "" {
 			removedFiles = append(removedFiles, change.From.Name)
@@ -129,17 +131,17 @@ func (g *GitRepo) GetChangedFileContent(targetBranch, targetFile string, printAd
 func (g *GitRepo) treeForBranch(targetBranch string) (*object.Tree, error) {
 	targetRef, err := g.repo.Reference(plumbing.ReferenceName("refs/remotes/origin/"+targetBranch), true)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve target branch %s: %v", targetBranch, err)
+		return nil, fmt.Errorf("failed to resolve target branch %s: %w", targetBranch, err)
 	}
 
 	targetCommit, err := g.repo.CommitObject(targetRef.Hash())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get commit object for target branch %s: %v", targetBranch, err)
+		return nil, fmt.Errorf("failed to get commit object for target branch %s: %w", targetBranch, err)
 	}
 
 	targetTree, err := targetCommit.Tree()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get tree for target commit: %v", err)
+		return nil, fmt.Errorf("failed to get tree for target commit: %w", err)
 	}
 
 	return targetTree, nil
@@ -150,13 +152,13 @@ func (g *GitRepo) targetFileContent(targetTree *object.Tree, targetBranch, targe
 	fileEntry, err := targetTree.File(targetFile)
 	if err != nil {
 		if errors.Is(err, object.ErrFileNotFound) {
-			g.log.Warning(yellow(fmt.Sprintf("The requested file %s does not exist in target branch %s, assuming it is a new Application", targetFile, targetBranch)))
+			g.log.Warning(ui.Yellow(fmt.Sprintf("The requested file %s does not exist in target branch %s, assuming it is a new Application", targetFile, targetBranch)))
 			if !printAdded {
-				return "", gitFileDoesNotExist
+				return "", errGitFileDoesNotExist
 			}
 			return "", nil
 		}
-		return "", fmt.Errorf("failed to find file %s in target branch %s: %v", targetFile, targetBranch, err)
+		return "", fmt.Errorf("failed to find file %s in target branch %s: %w", targetFile, targetBranch, err)
 	}
 
 	if fileEntry == nil {
@@ -165,7 +167,7 @@ func (g *GitRepo) targetFileContent(targetTree *object.Tree, targetBranch, targe
 
 	fileContent, err := fileEntry.Contents()
 	if err != nil {
-		return "", fmt.Errorf("failed to get contents of file %s: %v", targetFile, err)
+		return "", fmt.Errorf("failed to get contents of file %s: %w", targetFile, err)
 	}
 
 	return fileContent, nil
@@ -208,7 +210,7 @@ func (g *GitRepo) printChangeFile(addedFiles, removed []string) {
 	g.log.Debug("===> Found the following removed files:")
 	for _, file := range removed {
 		if file != "" {
-			g.log.Debugf("▶ %s", red(file))
+			g.log.Debugf("▶ %s", ui.Red(file))
 		}
 	}
 }
@@ -221,11 +223,11 @@ func (g *GitRepo) sortChangedFiles(files []string) (applications []string, inval
 		}
 
 		switch isApp, err := g.checkIfApp(file); {
-		case errors.Is(err, models.NotApplicationError):
+		case errors.Is(err, models.ErrNotApplication):
 			g.log.Debugf("Skipping non-application file [%s]", file)
-		case errors.Is(err, models.UnsupportedAppConfigurationError):
+		case errors.Is(err, models.ErrUnsupportedAppConfiguration):
 			g.log.Warningf("Skipping unsupported application configuration [%s]", file)
-		case errors.Is(err, models.EmptyFileError):
+		case errors.Is(err, models.ErrEmptyFile):
 			g.log.Debugf("Skipping empty file [%s]", file)
 		case err != nil:
 			g.log.Errorf("Error checking if [%s] is an Application: %s", file, err)
@@ -238,7 +240,7 @@ func (g *GitRepo) sortChangedFiles(files []string) (applications []string, inval
 	if len(applications) > 0 {
 		g.log.Info("===> Found the following changed Application files")
 		for _, file := range applications {
-			g.log.Infof("▶ %s", yellow(file))
+			g.log.Infof("▶ %s", ui.Yellow(file))
 		}
 	}
 
@@ -247,7 +249,7 @@ func (g *GitRepo) sortChangedFiles(files []string) (applications []string, inval
 
 // checkIfApp determines whether the provided path points to a valid Application manifest.
 func (g *GitRepo) checkIfApp(file string) (bool, error) {
-	g.log.Debugf("===> Checking if [%s] is an Application", cyan(file))
+	g.log.Debugf("===> Checking if [%s] is an Application", ui.Cyan(file))
 
 	target := Target{
 		CmdRunner:  g.cmdRunner,
@@ -266,7 +268,7 @@ func (g *GitRepo) checkIfApp(file string) (bool, error) {
 func GetGitRepoRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("failed to get current working directory: %v", err)
+		return "", fmt.Errorf("failed to get current working directory: %w", err)
 	}
 
 	for {
@@ -297,7 +299,7 @@ func filterIgnored(files []string, ignored []string) []string {
 		ignoredSet[file] = struct{}{}
 	}
 
-	var filtered []string
+	filtered := make([]string, 0, len(files))
 	for _, file := range files {
 		if _, ok := ignoredSet[file]; ok {
 			continue
