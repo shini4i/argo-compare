@@ -133,4 +133,9 @@ func TestApplication_Validate(t *testing.T) {
 	}
 	err = appWithNilSource.Validate()
 	assert.ErrorIs(t, err, ErrUnsupportedAppConfiguration, "expected ErrUnsupportedAppConfiguration for nil source")
+
+	// Test case 8: Nil receiver - should not panic
+	var nilApp *Application
+	err = nilApp.Validate()
+	assert.ErrorIs(t, err, ErrEmptyFile, "expected ErrEmptyFile for nil receiver")
 }

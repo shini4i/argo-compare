@@ -52,7 +52,7 @@ type Source struct {
 // validateHelmSources checks that all sources have a non-empty chart field.
 // Currently we support only helm repository based charts as a source.
 func (app *Application) validateHelmSources() error {
-	if len(app.Spec.Sources) != 0 {
+	if len(app.Spec.Sources) > 0 {
 		for _, source := range app.Spec.Sources {
 			if len(source.Chart) == 0 {
 				return ErrUnsupportedAppConfiguration
@@ -76,6 +76,10 @@ func (app *Application) validateHelmSources() error {
 // - Sets the 'MultiSource' field to true if sources are specified.
 // - Returns nil if all validation checks pass.
 func (app *Application) Validate() error {
+	if app == nil {
+		return ErrEmptyFile
+	}
+
 	// Check if the required fields 'Kind', 'Metadata.Name', and 'Metadata.Namespace' are set.
 	if app.Kind == "" && app.Metadata.Name == "" && app.Metadata.Namespace == "" {
 		return ErrEmptyFile
