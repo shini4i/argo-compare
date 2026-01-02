@@ -1,6 +1,9 @@
+// Package main is the entry point for the argo-compare CLI tool that compares
+// ArgoCD Application manifests between git branches and displays the differences.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -69,17 +72,20 @@ func buildOptions() command.Options {
 	}
 }
 
-// resolveCacheDir determines the cache directory path honoring environment overrides.
+// resolveCacheDir returns the cache directory path, using the ARGO_COMPARE_CACHE_DIR
+// environment variable if set; otherwise it defaults to "$HOME/.cache/argo-compare".
 func resolveCacheDir() string {
 	return helpers.GetEnv("ARGO_COMPARE_CACHE_DIR", fmt.Sprintf("%s/.cache/argo-compare", os.Getenv("HOME")))
 }
 
 // runApplication constructs and executes the application using the supplied configuration.
-func runApplication(cfg app.Config) error {
+// runApplication creates application dependencies, instantiates the app with the provided config, and runs it using ctx for cancellation and timeouts.
+// It returns any error encountered while constructing or running the application.
+func runApplication(ctx context.Context, cfg app.Config) error {
 	deps := setupDependencies(log)
 	application, err := app.New(cfg, deps)
 	if err != nil {
 		return err
 	}
-	return application.Run()
+	return application.Run(ctx)
 }

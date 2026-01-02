@@ -43,7 +43,11 @@ func (r ComparisonResult) IsEmpty() bool {
 // Compare analyses rendered manifest trees to produce diff results.
 const yamlGlob = "*.yaml"
 
+// defaultOsFs is a cached instance of the OS filesystem to avoid repeated allocations.
+var defaultOsFs = afero.NewOsFs()
+
 type Compare struct {
+	Fs                 afero.Fs
 	Globber            ports.Globber
 	TmpDir             string
 	PreserveHelmLabels bool
@@ -54,6 +58,14 @@ type Compare struct {
 	addedFiles   []File
 	removedFiles []File
 	diffFiles    []File
+}
+
+// fs returns the filesystem to use, defaulting to the cached OS filesystem if none is configured.
+func (c *Compare) fs() afero.Fs {
+	if c.Fs == nil {
+		return defaultOsFs
+	}
+	return c.Fs
 }
 
 // Execute orchestrates the comparison of rendered manifests.
@@ -75,7 +87,7 @@ func (c *Compare) prepareFiles() error {
 		}
 	}
 
-	srcPattern := filepath.Join(c.TmpDir, "templates", "src", "**", yamlGlob)
+	srcPattern := filepath.Join(c.TmpDir, "templates", TargetTypeSource, "**", yamlGlob)
 	srcFiles, err := c.Globber.Glob(srcPattern)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -83,12 +95,12 @@ func (c *Compare) prepareFiles() error {
 		}
 		srcFiles = nil
 	}
-	c.srcFiles, err = c.processFiles(srcFiles, "src")
+	c.srcFiles, err = c.processFiles(srcFiles, TargetTypeSource)
 	if err != nil {
 		return err
 	}
 
-	dstPattern := filepath.Join(c.TmpDir, "templates", "dst", "**", yamlGlob)
+	dstPattern := filepath.Join(c.TmpDir, "templates", TargetTypeDestination, "**", yamlGlob)
 	dstFiles, err := c.Globber.Glob(dstPattern)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -96,7 +108,7 @@ func (c *Compare) prepareFiles() error {
 		}
 		dstFiles = nil
 	}
-	c.dstFiles, err = c.processFiles(dstFiles, "dst")
+	c.dstFiles, err = c.processFiles(dstFiles, TargetTypeDestination)
 	if err != nil {
 		return err
 	}
@@ -106,7 +118,7 @@ func (c *Compare) prepareFiles() error {
 
 // processFiles records manifest metadata for the supplied file set.
 func (c *Compare) processFiles(files []string, filesType string) ([]File, error) {
-	var processedFiles []File
+	processedFiles := make([]File, 0, len(files))
 
 	path := filepath.Join(c.TmpDir, "templates", filesType)
 
@@ -176,7 +188,7 @@ func (c *Compare) buildResult() (ComparisonResult, error) {
 
 // generateDiffs collects unified diff outputs for each provided file.
 func (c *Compare) generateDiffs(files []File) ([]DiffOutput, error) {
-	var outputs []DiffOutput
+	outputs := make([]DiffOutput, 0, len(files))
 
 	for _, f := range files {
 		diff, err := c.generateDiff(f)
@@ -191,14 +203,14 @@ func (c *Compare) generateDiffs(files []File) ([]DiffOutput, error) {
 
 // generateDiff creates the unified diff for a single manifest entry.
 func (c *Compare) generateDiff(f File) (string, error) {
-	dstFilePath := filepath.Join(c.TmpDir, "templates", "dst", f.Name)
-	srcFilePath := filepath.Join(c.TmpDir, "templates", "src", f.Name)
+	dstFilePath := filepath.Join(c.TmpDir, "templates", TargetTypeDestination, f.Name)
+	srcFilePath := filepath.Join(c.TmpDir, "templates", TargetTypeSource, f.Name)
 
-	srcFile, err := readFileContent(srcFilePath)
+	srcFile, err := c.readFileContent(srcFilePath)
 	if err != nil {
 		return "", err
 	}
-	dstFile, err := readFileContent(dstFilePath)
+	dstFile, err := c.readFileContent(dstFilePath)
 	if err != nil {
 		return "", err
 	}
@@ -243,7 +255,7 @@ func (c *Compare) stripHelmLabels() error {
 		if err != nil {
 			return err
 		}
-		if err := helpers.WriteToFile(afero.NewOsFs(), helmFile, desiredState); err != nil {
+		if err := helpers.WriteToFile(c.fs(), helmFile, desiredState); err != nil {
 			return err
 		}
 	}
@@ -252,8 +264,8 @@ func (c *Compare) stripHelmLabels() error {
 }
 
 // readFileContent loads file contents while tolerating missing files.
-func readFileContent(path string) ([]byte, error) {
-	data, err := os.ReadFile(path) // #nosec G304
+func (c *Compare) readFileContent(path string) ([]byte, error) {
+	data, err := afero.ReadFile(c.fs(), path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}

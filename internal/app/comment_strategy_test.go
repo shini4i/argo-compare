@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -17,7 +18,7 @@ type stubPoster struct {
 	err    error
 }
 
-func (s *stubPoster) Post(body string) error {
+func (s *stubPoster) Post(_ context.Context, body string) error {
 	s.bodies = append(s.bodies, body)
 	return s.err
 }
@@ -55,7 +56,7 @@ func TestCommentStrategyPresentWithDiff(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, strategy.Present(result))
+	require.NoError(t, strategy.Present(context.Background(), result))
 	require.Len(t, poster.bodies, 1)
 	body := poster.bodies[0]
 	assert.Contains(t, body, "## Argo Compare Results")
@@ -85,7 +86,7 @@ func TestCommentStrategyPresentNoDiff(t *testing.T) {
 		ApplicationPath: "apps/foo.yaml",
 	}
 
-	require.NoError(t, strategy.Present(ComparisonResult{}))
+	require.NoError(t, strategy.Present(context.Background(), ComparisonResult{}))
 	require.Len(t, poster.bodies, 1)
 	assert.Contains(t, poster.bodies[0], "No manifest differences detected")
 	assert.Contains(t, poster.bodies[0], "**Application:** `apps/foo.yaml`")
@@ -99,7 +100,7 @@ func TestCommentStrategyRequiresPoster(t *testing.T) {
 		ApplicationPath: "apps/foo.yaml",
 	}
 
-	err := strategy.Present(ComparisonResult{})
+	err := strategy.Present(context.Background(), ComparisonResult{})
 	require.Error(t, err)
 }
 
@@ -109,7 +110,7 @@ func TestCommentStrategyRequiresLogger(t *testing.T) {
 		ApplicationPath: "apps/foo.yaml",
 	}
 
-	err := strategy.Present(ComparisonResult{})
+	err := strategy.Present(context.Background(), ComparisonResult{})
 	require.Error(t, err)
 }
 
@@ -130,7 +131,7 @@ func TestCommentStrategySplitsLargeBody(t *testing.T) {
 		Added: []DiffOutput{{File: File{Name: "big.yaml"}, Diff: largeDiff}},
 	}
 
-	require.NoError(t, strategy.Present(result))
+	require.NoError(t, strategy.Present(context.Background(), result))
 	assert.Greater(t, len(poster.bodies), 1)
 	assert.Contains(t, poster.bodies[0], "Part 1 of")
 	assert.Contains(t, poster.bodies[len(poster.bodies)-1], "Part "+fmt.Sprint(len(poster.bodies))+" of "+fmt.Sprint(len(poster.bodies)))
@@ -153,7 +154,7 @@ func TestCommentStrategyNotesHiddenSections(t *testing.T) {
 		Removed: []DiffOutput{{File: File{Name: "/old.yaml"}, Diff: "- old"}},
 	}
 
-	require.NoError(t, strategy.Present(result))
+	require.NoError(t, strategy.Present(context.Background(), result))
 	require.Len(t, poster.bodies, 1)
 	body := poster.bodies[0]
 	assert.Contains(t, body, "(not shown)")
@@ -176,7 +177,7 @@ func TestCommentStrategyStripsDiffHeaders(t *testing.T) {
 		Changed: []DiffOutput{{File: File{Name: "/manifests/sample.yaml"}, Diff: diff}},
 	}
 
-	require.NoError(t, strategy.Present(result))
+	require.NoError(t, strategy.Present(context.Background(), result))
 	require.Len(t, poster.bodies, 1)
 	body := poster.bodies[0]
 	assert.NotContains(t, body, "--- ")
@@ -201,7 +202,7 @@ func TestCommentStrategySkipsCRDManifests(t *testing.T) {
 		Changed: []DiffOutput{{File: File{Name: "/crds/crd.yaml"}, Diff: diff}},
 	}
 
-	require.NoError(t, strategy.Present(result))
+	require.NoError(t, strategy.Present(context.Background(), result))
 	require.Len(t, poster.bodies, 1)
 	body := poster.bodies[0]
 	assert.Contains(t, body, "**CRD Notes**")
@@ -229,7 +230,7 @@ func TestCommentStrategyIgnoresNonCRDManifests(t *testing.T) {
 		Changed: []DiffOutput{{File: File{Name: "/config/credentials.yaml"}, Diff: diff}},
 	}
 
-	require.NoError(t, strategy.Present(result))
+	require.NoError(t, strategy.Present(context.Background(), result))
 	require.Len(t, poster.bodies, 1)
 	body := poster.bodies[0]
 	assert.Contains(t, body, "credentials.yaml")

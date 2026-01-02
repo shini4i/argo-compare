@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/sanitizer"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -107,6 +109,7 @@ func TestCompareFindAndStripHelmLabels(t *testing.T) {
 	require.NoError(t, os.WriteFile(testFile, []byte(helmDeploymentWithManagedLabels), 0o644))
 
 	c := &Compare{
+		Fs:      afero.NewOsFs(),
 		Globber: utils.CustomGlobber{},
 		TmpDir:  tmpDir,
 	}
@@ -132,13 +135,13 @@ func TestCompareProcessFiles(t *testing.T) {
 	c := &Compare{TmpDir: tmpDir}
 
 	files := []string{file1, file2}
-	found, err := c.processFiles(files, "src")
+	found, err := c.processFiles(files, TargetTypeSource)
 	require.NoError(t, err)
 
 	assert.Len(t, found, 2)
-	assert.Equal(t, strings.TrimPrefix(file1, filepath.Join(tmpDir, "templates", "src")), found[0].Name)
+	assert.Equal(t, strings.TrimPrefix(file1, filepath.Join(tmpDir, "templates", TargetTypeSource)), found[0].Name)
 	assert.NotEmpty(t, found[0].Sha)
-	assert.Equal(t, strings.TrimPrefix(file2, filepath.Join(tmpDir, "templates", "src")), found[1].Name)
+	assert.Equal(t, strings.TrimPrefix(file2, filepath.Join(tmpDir, "templates", TargetTypeSource)), found[1].Name)
 	assert.NotEmpty(t, found[1].Sha)
 }
 
@@ -157,7 +160,7 @@ func TestStdoutStrategyPresent(t *testing.T) {
 	}
 
 	result := ComparisonResult{}
-	require.NoError(t, strategy.Present(result))
+	require.NoError(t, strategy.Present(context.Background(), result))
 	assert.Contains(t, buf.String(), "No diff was found in rendered manifests!")
 
 	buf.Reset()
@@ -168,7 +171,7 @@ func TestStdoutStrategyPresent(t *testing.T) {
 		Changed: []DiffOutput{{File: File{Name: "file3"}, Diff: "diff-changed"}},
 	}
 
-	require.NoError(t, strategy.Present(result))
+	require.NoError(t, strategy.Present(context.Background(), result))
 	logs := buf.String()
 	assert.Contains(t, logs, "The following 1 file would be added")
 	assert.Contains(t, logs, "The following 1 file would be removed")
@@ -195,6 +198,7 @@ func TestCompareExecuteProducesDiffs(t *testing.T) {
 	write(dstDir, "changed.yaml", "kind: ConfigMap\nmetadata:\n  name: changed\n  labels:\n    side: dst\n")
 
 	compare := Compare{
+		Fs:                 afero.NewOsFs(),
 		Globber:            utils.CustomGlobber{},
 		TmpDir:             tmpDir,
 		PreserveHelmLabels: true,
@@ -242,6 +246,7 @@ data:
 	require.NoError(t, os.WriteFile(filepath.Join(dstDir, "secret.yaml"), []byte(dstSecret), 0o644))
 
 	compare := Compare{
+		Fs:                 afero.NewOsFs(),
 		Globber:            utils.CustomGlobber{},
 		TmpDir:             tmpDir,
 		PreserveHelmLabels: true,
@@ -275,6 +280,7 @@ func TestCompareGenerateDiffMaskError(t *testing.T) {
 
 	maskErr := fmt.Errorf("simulated masking failure")
 	compare := Compare{
+		Fs:     afero.NewOsFs(),
 		TmpDir: tmpDir,
 		Masker: failingMasker{err: maskErr},
 	}
@@ -283,4 +289,17 @@ func TestCompareGenerateDiffMaskError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mask manifest content")
 	assert.Contains(t, err.Error(), maskErr.Error())
+}
+
+// TestCompareFsHelperDefaultsToOsFs ensures the fs() helper returns the cached OsFs when Fs is nil.
+func TestCompareFsHelperDefaultsToOsFs(t *testing.T) {
+	// With Fs set
+	c := &Compare{Fs: afero.NewMemMapFs()}
+	assert.Equal(t, c.Fs, c.fs())
+
+	// With Fs nil - should return the cached defaultOsFs
+	c = &Compare{Fs: nil}
+	result := c.fs()
+	assert.NotNil(t, result)
+	assert.Equal(t, defaultOsFs, result, "expected cached defaultOsFs when Fs is nil")
 }

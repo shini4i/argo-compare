@@ -1,3 +1,5 @@
+// Package models defines the data structures representing ArgoCD Application
+// manifests and related configuration parsed from YAML files.
 package models
 
 import (
@@ -6,12 +8,12 @@ import (
 )
 
 var (
-	// NotApplicationError signals that the provided manifest is not an ArgoCD Application.
-	NotApplicationError = errors.New("file is not an Application")
-	// UnsupportedAppConfigurationError identifies manifests that use unsupported configuration.
-	UnsupportedAppConfigurationError = errors.New("unsupported Application configuration")
-	// EmptyFileError indicates that the manifest file contained no data.
-	EmptyFileError = errors.New("file is empty")
+	// ErrNotApplication signals that the provided manifest is not an ArgoCD Application.
+	ErrNotApplication = errors.New("file is not an Application")
+	// ErrUnsupportedAppConfiguration identifies manifests that use unsupported configuration.
+	ErrUnsupportedAppConfiguration = errors.New("unsupported Application configuration")
+	// ErrEmptyFile indicates that the manifest file contained no data.
+	ErrEmptyFile = errors.New("file is empty")
 )
 
 // Application models the subset of ArgoCD Application fields used by the tool.
@@ -49,18 +51,40 @@ type Source struct {
 	} `yaml:"helm"`
 }
 
+// validateHelmSources checks that all sources have a non-empty chart field.
+// Currently we support only helm repository based charts as a source.
+func (app *Application) validateHelmSources() error {
+	if len(app.Spec.Sources) > 0 {
+		for _, source := range app.Spec.Sources {
+			if len(source.Chart) == 0 {
+				return ErrUnsupportedAppConfiguration
+			}
+		}
+		return nil
+	}
+
+	if app.Spec.Source == nil || len(app.Spec.Source.Chart) == 0 {
+		return ErrUnsupportedAppConfiguration
+	}
+	return nil
+}
+
 // Validate performs validation checks on the Application struct.
 // It checks for the following:
-// - If the Application struct is empty, returns EmptyFileError.
+// - If the Application struct is empty, returns ErrEmptyFile.
 // - If both the 'source' and 'sources' fields are set at the same time, returns an error.
-// - If the kind of the application is not "Application", returns NotApplicationError.
+// - If the kind of the application is not "Application", returns ErrNotApplication.
 // - If the application specifies sources, ensures that each source has a non-empty 'chart' field.
 // - Sets the 'MultiSource' field to true if sources are specified.
 // - Returns nil if all validation checks pass.
 func (app *Application) Validate() error {
+	if app == nil {
+		return ErrEmptyFile
+	}
+
 	// Check if the required fields 'Kind', 'Metadata.Name', and 'Metadata.Namespace' are set.
 	if app.Kind == "" && app.Metadata.Name == "" && app.Metadata.Namespace == "" {
-		return EmptyFileError
+		return ErrEmptyFile
 	}
 
 	if app.Spec.Source != nil && len(app.Spec.Sources) > 0 {
@@ -68,20 +92,11 @@ func (app *Application) Validate() error {
 	}
 
 	if app.Kind != "Application" {
-		return NotApplicationError
+		return ErrNotApplication
 	}
 
-	// currently we support only helm repository based charts as a source
-	if len(app.Spec.Sources) != 0 {
-		for _, source := range app.Spec.Sources {
-			if len(source.Chart) == 0 {
-				return UnsupportedAppConfigurationError
-			}
-		}
-	} else {
-		if len(app.Spec.Source.Chart) == 0 {
-			return UnsupportedAppConfigurationError
-		}
+	if err := app.validateHelmSources(); err != nil {
+		return err
 	}
 
 	if app.Spec.Sources != nil {

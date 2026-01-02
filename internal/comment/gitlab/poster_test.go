@@ -1,13 +1,16 @@
 package gitlab
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
+	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -46,7 +49,7 @@ func TestPosterPost(t *testing.T) {
 	poster, err := NewPoster(cfg)
 	require.NoError(t, err)
 
-	err = poster.Post("hello world")
+	err = poster.Post(context.Background(), "hello world")
 	require.NoError(t, err)
 
 	assert.Equal(t, http.MethodPost, received.Method)
@@ -76,7 +79,7 @@ func TestPosterPostErrorStatus(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = poster.Post("body")
+	err = poster.Post(context.Background(), "body")
 	require.Error(t, err)
 }
 
@@ -98,4 +101,68 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func TestPosterPost4xxIsPermanentError(t *testing.T) {
+	attempts := 0
+	client := &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			attempts++
+			resp := httptest.NewRecorder()
+			resp.WriteHeader(http.StatusBadRequest)
+			return resp.Result(), nil
+		}),
+	}
+
+	poster, err := NewPoster(Config{
+		BaseURL:         "https://gitlab.example",
+		Token:           "token",
+		ProjectID:       "1",
+		MergeRequestIID: 1,
+		HTTPClient:      client,
+	})
+	require.NoError(t, err)
+
+	// Use short retry delays for faster tests
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err = poster.Post(ctx, "body")
+	require.Error(t, err)
+	assert.True(t, helpers.IsPermanent(err))
+	assert.Equal(t, 1, attempts) // Should not retry 4xx
+}
+
+func TestPosterPost5xxIsRetried(t *testing.T) {
+	attempts := 0
+	client := &http.Client{
+		Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			attempts++
+			if attempts < 3 {
+				resp := httptest.NewRecorder()
+				resp.WriteHeader(http.StatusServiceUnavailable)
+				return resp.Result(), nil
+			}
+			resp := httptest.NewRecorder()
+			resp.WriteHeader(http.StatusCreated)
+			return resp.Result(), nil
+		}),
+	}
+
+	poster, err := NewPoster(Config{
+		BaseURL:         "https://gitlab.example",
+		Token:           "token",
+		ProjectID:       "1",
+		MergeRequestIID: 1,
+		HTTPClient:      client,
+	})
+	require.NoError(t, err)
+
+	// Use a context with enough time for retries
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err = poster.Post(ctx, "body")
+	require.NoError(t, err)
+	assert.Equal(t, 3, attempts) // Should have retried twice before success
 }

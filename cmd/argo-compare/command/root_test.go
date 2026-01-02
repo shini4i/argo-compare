@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -20,7 +21,7 @@ func TestExecuteRunsAppWithFlags(t *testing.T) {
 		TempDirBase:      os.TempDir(),
 		ExternalDiffTool: "diff-tool",
 		InitLogging:      func(bool) {},
-		RunApp: func(cfg app.Config) error {
+		RunApp: func(_ context.Context, cfg app.Config) error {
 			receivedConfig = cfg
 			return nil
 		},
@@ -57,7 +58,7 @@ func TestExecuteHonoursFullOutputFlag(t *testing.T) {
 		TempDirBase:      os.TempDir(),
 		ExternalDiffTool: "",
 		InitLogging:      func(bool) {},
-		RunApp: func(cfg app.Config) error {
+		RunApp: func(_ context.Context, cfg app.Config) error {
 			receivedConfig = cfg
 			return nil
 		},
@@ -85,7 +86,7 @@ func TestExecuteDropCache(t *testing.T) {
 		TempDirBase:      os.TempDir(),
 		ExternalDiffTool: "",
 		InitLogging:      func(bool) {},
-		RunApp: func(app.Config) error {
+		RunApp: func(_ context.Context, _ app.Config) error {
 			called = true
 			return nil
 		},
@@ -130,7 +131,7 @@ func TestExecuteErrorScenarios(t *testing.T) {
 					TempDirBase:      t.TempDir(),
 					ExternalDiffTool: "",
 					InitLogging:      func(bool) {},
-					RunApp: func(app.Config) error {
+					RunApp: func(_ context.Context, _ app.Config) error {
 						return errors.New("execution failed")
 					},
 				}
@@ -147,7 +148,7 @@ func TestExecuteErrorScenarios(t *testing.T) {
 					TempDirBase:      t.TempDir(),
 					ExternalDiffTool: "",
 					InitLogging:      func(bool) {},
-					RunApp: func(app.Config) error {
+					RunApp: func(_ context.Context, _ app.Config) error {
 						t.Fatalf("RunApp should not be called")
 						return nil
 					},
@@ -178,7 +179,7 @@ func TestExecuteUsesGitLabCIEnvDefaults(t *testing.T) {
 		TempDirBase:      os.TempDir(),
 		ExternalDiffTool: "",
 		InitLogging:      func(bool) {},
-		RunApp: func(cfg app.Config) error {
+		RunApp: func(_ context.Context, cfg app.Config) error {
 			receivedConfig = cfg
 			return nil
 		},
