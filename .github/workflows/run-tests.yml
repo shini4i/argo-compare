@@ -29,16 +29,6 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Load secrets from 1Password
-        uses: 1password/load-secrets-action@v1
-        with:
-          export-env: true
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          SONAR_TOKEN: op://github-actions/sonarcloud/token
-          GITHUB_TOKEN: op://github-actions/github/token
-          CODECOV_TOKEN: op://github-actions/codecov/argo-compare
-
       - name: Install project dependencies
         run: make install-deps
 
@@ -48,5 +38,5 @@ jobs:
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
         with:
-          token: ${{ env.CODECOV_TOKEN }}
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
