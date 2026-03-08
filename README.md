@@ -119,6 +119,29 @@ Where `EXAMPLE` is an identifier that is not used by the application.
 
 Argo Compare will look for all `REPO_CREDS_*` environment variables and use them if `url` will match the `repoURL` from Application manifest.
 
+#### OCI Registries
+
+Argo Compare supports charts hosted in OCI registries. Following the ArgoCD convention for Helm charts, the `repoURL` field should contain the bare registry hostname without the `oci://` scheme prefix:
+
+```yaml
+source:
+  chart: my-chart
+  repoURL: registry-1.docker.io/randomcharts
+  targetRevision: 15.9.0
+```
+
+For **public OCI registries** (e.g., `ghcr.io`), no additional configuration is required.
+
+For **private OCI registries**, credentials can be provided via `REPO_CREDS_*` environment variables (same format as above), or resolved automatically in the case of AWS ECR.
+
+#### AWS ECR
+
+Charts hosted in AWS ECR are authenticated automatically using the standard AWS credential chain (environment variables, IRSA, instance profiles, shared config). No manual credential configuration is needed — Argo Compare detects ECR registry URLs, extracts the region, and calls `ecr:GetAuthorizationToken` to obtain a short-lived token.
+
+Tokens are cached for the duration of the comparison run to avoid redundant API calls when multiple charts are hosted in the same registry.
+
+If AWS credentials are not available (e.g., running locally without AWS access), ECR authentication is skipped gracefully — public ECR charts will still work, and private charts will produce a clear error from Helm.
+
 
 ## How it works
 
@@ -138,6 +161,7 @@ Argo Compare will look for all `REPO_CREDS_*` environment variables and use them
 
 - [ ] Add support for Application using git as a source of helm chart
 - [x] Add support for providing credentials for password protected helm repositories
+- [x] Add support for OCI registries (including AWS ECR with automatic authentication)
 - [x] Add support for posting diff as a comment to MR (GitLab)
 - [ ] Add support for posting diff as a comment to PR (GitHub)
 
