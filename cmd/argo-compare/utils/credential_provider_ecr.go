@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -36,22 +35,16 @@ type awsConfigLoader func(ctx context.Context, optFns ...func(*config.LoadOption
 // Verify interface compliance at compile time.
 var _ ports.CredentialProvider = (*ECRCredentialProvider)(nil)
 
-// cachedToken holds a cached ECR authorization token and its expiry.
-type cachedToken struct {
-	creds     ports.RegistryCredentials
-	expiresAt time.Time
-}
-
 // ECRCredentialProvider resolves credentials for AWS ECR registries by calling
-// ecr:GetAuthorizationToken. Tokens are cached until their expiry (up to 12 hours)
-// to avoid redundant API calls when comparing multiple charts from the same registry.
+// ecr:GetAuthorizationToken. Tokens are cached per registry URL to avoid redundant
+// API calls when comparing multiple charts from the same registry within a single run.
 type ECRCredentialProvider struct {
 	log       *logging.Logger
 	loadCfg   awsConfigLoader
 	clientFor func(cfg aws.Config, region string) AuthorizationTokenGetter
 
-	mu    sync.RWMutex
-	cache map[string]cachedToken
+	mu    sync.Mutex
+	cache map[string]ports.RegistryCredentials
 }
 
 // NewECRCredentialProvider creates an ECRCredentialProvider that uses the default
@@ -65,7 +58,7 @@ func NewECRCredentialProvider(log *logging.Logger) *ECRCredentialProvider {
 				o.Region = region
 			})
 		},
-		cache: make(map[string]cachedToken),
+		cache: make(map[string]ports.RegistryCredentials),
 	}
 }
 
@@ -87,10 +80,13 @@ func (p *ECRCredentialProvider) GetCredentials(ctx context.Context, registryURL 
 	}
 
 	// Check cache first.
-	if creds, ok := p.getCached(registryURL); ok {
+	p.mu.Lock()
+	if creds, ok := p.cache[registryURL]; ok {
+		p.mu.Unlock()
 		p.log.Debugf("Using cached ECR token for [%s]", registryURL)
 		return creds, nil
 	}
+	p.mu.Unlock()
 
 	// Load AWS config.
 	cfg, err := p.loadCfg(ctx, config.WithRegion(region))
@@ -122,10 +118,10 @@ func (p *ECRCredentialProvider) GetCredentials(ctx context.Context, registryURL 
 
 	creds := ports.RegistryCredentials{Username: username, Password: password}
 
-	// Cache the token until its expiry.
-	if authData.ExpiresAt != nil {
-		p.setCached(registryURL, creds, *authData.ExpiresAt)
-	}
+	// Cache the token for subsequent calls within this run.
+	p.mu.Lock()
+	p.cache[registryURL] = creds
+	p.mu.Unlock()
 
 	return creds, nil
 }
@@ -163,30 +159,3 @@ func isCredentialError(err error) bool {
 		strings.Contains(msg, "NoCredentialProviders")
 }
 
-// getCached returns cached credentials if they exist and haven't expired.
-// Expired entries are not eagerly deleted; they will be overwritten by setCached
-// after a fresh token is fetched.
-func (p *ECRCredentialProvider) getCached(registryURL string) (ports.RegistryCredentials, bool) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	entry, ok := p.cache[registryURL]
-	if !ok {
-		return ports.RegistryCredentials{}, false
-	}
-
-	// Add a safety margin: consider expired 5 minutes before actual expiry.
-	if time.Now().After(entry.expiresAt.Add(-5 * time.Minute)) {
-		return ports.RegistryCredentials{}, false
-	}
-
-	return entry.creds, true
-}
-
-// setCached stores credentials in the cache with the given expiry time.
-func (p *ECRCredentialProvider) setCached(registryURL string, creds ports.RegistryCredentials, expiresAt time.Time) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	p.cache[registryURL] = cachedToken{creds: creds, expiresAt: expiresAt}
-}

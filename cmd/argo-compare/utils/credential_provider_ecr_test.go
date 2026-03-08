@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -38,7 +37,7 @@ func newTestECRProvider(log *logging.Logger, client *mockECRClient) *ECRCredenti
 		clientFor: func(_ aws.Config, _ string) AuthorizationTokenGetter {
 			return client
 		},
-		cache: make(map[string]cachedToken),
+		cache: make(map[string]ports.RegistryCredentials),
 	}
 }
 
@@ -71,14 +70,12 @@ func TestECRCredentialProvider_Matches(t *testing.T) {
 func TestECRCredentialProvider_GetCredentials_Success(t *testing.T) {
 	log := logging.MustGetLogger("test-ecr")
 	token := base64.StdEncoding.EncodeToString([]byte("AWS:my-secret-token"))
-	expiresAt := time.Now().Add(12 * time.Hour)
 
 	client := &mockECRClient{
 		output: &ecr.GetAuthorizationTokenOutput{
 			AuthorizationData: []types.AuthorizationData{
 				{
 					AuthorizationToken: aws.String(token),
-					ExpiresAt:          &expiresAt,
 				},
 			},
 		},
@@ -96,14 +93,12 @@ func TestECRCredentialProvider_GetCredentials_Success(t *testing.T) {
 func TestECRCredentialProvider_GetCredentials_CachedToken(t *testing.T) {
 	log := logging.MustGetLogger("test-ecr")
 	token := base64.StdEncoding.EncodeToString([]byte("AWS:cached-token"))
-	expiresAt := time.Now().Add(12 * time.Hour)
 
 	client := &mockECRClient{
 		output: &ecr.GetAuthorizationTokenOutput{
 			AuthorizationData: []types.AuthorizationData{
 				{
 					AuthorizationToken: aws.String(token),
-					ExpiresAt:          &expiresAt,
 				},
 			},
 		},
@@ -136,7 +131,7 @@ func TestECRCredentialProvider_GetCredentials_AWSCredsUnavailable(t *testing.T) 
 		clientFor: func(_ aws.Config, _ string) AuthorizationTokenGetter {
 			return &mockECRClient{}
 		},
-		cache: make(map[string]cachedToken),
+		cache: make(map[string]ports.RegistryCredentials),
 	}
 
 	creds, err := provider.GetCredentials(context.Background(), "123456789012.dkr.ecr.us-east-1.amazonaws.com")
@@ -241,38 +236,22 @@ func TestECRCredentialProvider_GetCredentials_EmptyAuthData(t *testing.T) {
 	assert.Contains(t, err.Error(), "no authorization data")
 }
 
-func TestECRCredentialProvider_GetCredentials_ExpiredCacheTriggersRefresh(t *testing.T) {
+func TestECRCredentialProvider_GetCredentials_MalformedToken(t *testing.T) {
 	log := logging.MustGetLogger("test-ecr")
-	token := base64.StdEncoding.EncodeToString([]byte("AWS:fresh-token"))
-	freshExpiry := time.Now().Add(12 * time.Hour)
 
 	client := &mockECRClient{
 		output: &ecr.GetAuthorizationTokenOutput{
 			AuthorizationData: []types.AuthorizationData{
-				{
-					AuthorizationToken: aws.String(token),
-					ExpiresAt:          &freshExpiry,
-				},
+				{AuthorizationToken: aws.String("not-valid-base64!!!")},
 			},
 		},
 	}
 
 	provider := newTestECRProvider(log, client)
-	registryURL := "123456789012.dkr.ecr.us-east-1.amazonaws.com"
+	_, err := provider.GetCredentials(context.Background(), "123456789012.dkr.ecr.us-east-1.amazonaws.com")
 
-	// Manually insert an expired cache entry (within the 5-minute safety margin).
-	provider.mu.Lock()
-	provider.cache[registryURL] = cachedToken{
-		creds:     ports.RegistryCredentials{Username: "AWS", Password: "stale-token"},
-		expiresAt: time.Now().Add(3 * time.Minute), // Within 5-min margin, so considered expired.
-	}
-	provider.mu.Unlock()
-
-	// Should bypass cache and call the API.
-	creds, err := provider.GetCredentials(context.Background(), registryURL)
-	require.NoError(t, err)
-	assert.Equal(t, "fresh-token", creds.Password)
-	assert.Equal(t, 1, client.calls, "expected API call because cached token is expired")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to decode ECR auth token")
 }
 
 func TestIsCredentialError(t *testing.T) {
