@@ -57,15 +57,15 @@ func TestTargetMultiSourceInvokesHelmPerSource(t *testing.T) {
 	processor := &recordingHelmProcessor{}
 
 	target := Target{
-		CmdRunner:       noopCmdRunner{},
-		FileReader:      noopFileReader{},
-		HelmProcessor:   processor,
-		Globber:         noopGlobber{},
-		CacheDir:        "cache",
-		TmpDir:          "tmp",
-		RepoCredentials: nil,
-		Log:             logging.MustGetLogger("target-test"),
-		Type:            TargetTypeSource,
+		CmdRunner:           noopCmdRunner{},
+		FileReader:          noopFileReader{},
+		HelmProcessor:       processor,
+		Globber:             noopGlobber{},
+		CacheDir:            "cache",
+		TmpDir:              "tmp",
+		CredentialProviders: nil,
+		Log:                 logging.MustGetLogger("target-test"),
+		Type:                TargetTypeSource,
 		App: models.Application{
 			Spec: struct {
 				Source      *models.Source      `yaml:"source"`

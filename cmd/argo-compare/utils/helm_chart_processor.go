@@ -19,6 +19,13 @@ import (
 // ErrFailedToDownloadChart indicates Helm failed to pull the requested chart.
 var ErrFailedToDownloadChart = errors.New("failed to download chart")
 
+// isOCIRegistry returns true if the repo URL refers to an OCI registry (no http/https scheme).
+func isOCIRegistry(repoURL string) bool {
+	return repoURL != "" &&
+		!strings.HasPrefix(repoURL, "http://") &&
+		!strings.HasPrefix(repoURL, "https://")
+}
+
 // RealHelmChartProcessor coordinates Helm CLI interactions for chart lifecycle tasks.
 type RealHelmChartProcessor struct {
 	Log *logging.Logger
@@ -81,7 +88,7 @@ func (g RealHelmChartProcessor) DownloadHelmChart(ctx context.Context, deps port
 	}
 
 	if len(chartFileName) == 0 {
-		if err := g.downloadChartFromRepo(ctx, deps.CmdRunner, req, chartLocation); err != nil {
+		if err := g.downloadChartFromRepo(ctx, deps, req, chartLocation); err != nil {
 			return err
 		}
 	} else {
@@ -94,42 +101,71 @@ func (g RealHelmChartProcessor) DownloadHelmChart(ctx context.Context, deps port
 }
 
 // downloadChartFromRepo performs the actual helm pull operation with retry logic.
-func (g RealHelmChartProcessor) downloadChartFromRepo(ctx context.Context, cmdRunner ports.CmdRunner, req ports.ChartDownloadRequest, chartLocation string) error {
-	username, password := helpers.FindHelmRepoCredentials(req.RepoURL, req.RepoCredentials)
+// It resolves credentials via the provider chain and delegates to OCI or HTTP-specific pull methods.
+func (g RealHelmChartProcessor) downloadChartFromRepo(ctx context.Context, deps ports.HelmDeps, req ports.ChartDownloadRequest, chartLocation string) error {
+	creds := resolveCredentials(ctx, g.Log, deps.CredentialProviders, req.RepoURL)
 
 	g.Log.Debugf("Downloading version [%s] of [%s] chart...",
 		ui.Cyan(req.TargetRevision),
 		ui.Cyan(req.ChartName))
 
-	// we assume that if repoUrl does not have protocol, it is an OCI helm registry
-	// hence we mutate the content of chartName and remove content of repoUrl
-	pullChartName := req.ChartName
-	pullRepoURL := req.RepoURL
-	if !strings.Contains(req.RepoURL, "http") {
-		pullChartName = fmt.Sprintf("oci://%s/%s", req.RepoURL, req.ChartName)
-		pullRepoURL = ""
+	if isOCIRegistry(req.RepoURL) {
+		return g.pullOCIChart(ctx, deps.CmdRunner, req, creds, chartLocation)
 	}
 
-	// Use retry logic for network operations
+	return g.pullHTTPChart(ctx, deps.CmdRunner, req, creds, chartLocation)
+}
+
+// resolveCredentials iterates the provider chain and returns the first matching credentials.
+// Returns empty credentials if no provider matches. Provider errors are logged and cause
+// fallthrough to the next provider in the chain.
+func resolveCredentials(ctx context.Context, log *logging.Logger, providers []ports.CredentialProvider, registryURL string) ports.RegistryCredentials {
+	for _, p := range providers {
+		if p.Matches(registryURL) {
+			creds, err := p.GetCredentials(ctx, registryURL)
+			if err != nil {
+				log.Warningf("Credential provider failed for [%s]: %v; trying next provider", registryURL, err)
+				continue
+			}
+			if creds.Username != "" && creds.Password != "" {
+				return creds
+			}
+		}
+	}
+	return ports.RegistryCredentials{}
+}
+
+// pullOCIChart downloads a chart from an OCI registry.
+// If credentials are available, it first runs "helm registry login" before pulling.
+func (g RealHelmChartProcessor) pullOCIChart(ctx context.Context, cmdRunner ports.CmdRunner, req ports.ChartDownloadRequest, creds ports.RegistryCredentials, chartLocation string) error {
+	// Authenticate with the OCI registry if credentials are available.
+	if creds.Username != "" && creds.Password != "" {
+		g.Log.Debugf("Logging into OCI registry [%s]...", ui.Cyan(req.RepoURL))
+
+		stdout, stderr, err := cmdRunner.Run(ctx, "helm",
+			"registry", "login",
+			req.RepoURL,
+			"--username", creds.Username,
+			"--password", creds.Password)
+
+		g.logOutput(stdout, stderr)
+
+		if err != nil {
+			return fmt.Errorf("failed to login to OCI registry %q: %w", req.RepoURL, err)
+		}
+	}
+
+	// Pull the chart from OCI registry (no --repo, --username, --password flags).
+	pullRef := fmt.Sprintf("oci://%s/%s", req.RepoURL, req.ChartName)
+
 	retryCfg := helpers.DefaultRetryConfig()
 	err := helpers.WithRetry(ctx, retryCfg, func() error {
 		stdout, stderr, runErr := cmdRunner.Run(ctx, "helm",
-			"pull",
+			"pull", pullRef,
 			"--destination", chartLocation,
-			"--username", username,
-			"--password", password,
-			"--repo", pullRepoURL,
-			pullChartName,
 			"--version", req.TargetRevision)
 
-		if len(stdout) > 0 {
-			g.Log.Info(stdout)
-		}
-
-		if len(stderr) > 0 {
-			g.Log.Error(stderr)
-		}
-
+		g.logOutput(stdout, stderr)
 		return runErr
 	})
 
@@ -138,6 +174,46 @@ func (g RealHelmChartProcessor) downloadChartFromRepo(ctx context.Context, cmdRu
 	}
 
 	return nil
+}
+
+// pullHTTPChart downloads a chart from an HTTP/HTTPS Helm repository.
+// Username and password flags are only appended when credentials are non-empty.
+func (g RealHelmChartProcessor) pullHTTPChart(ctx context.Context, cmdRunner ports.CmdRunner, req ports.ChartDownloadRequest, creds ports.RegistryCredentials, chartLocation string) error {
+	retryCfg := helpers.DefaultRetryConfig()
+	err := helpers.WithRetry(ctx, retryCfg, func() error {
+		args := []string{
+			"pull",
+			"--repo", req.RepoURL,
+			req.ChartName,
+			"--version", req.TargetRevision,
+			"--destination", chartLocation,
+		}
+
+		if creds.Username != "" && creds.Password != "" {
+			args = append(args, "--username", creds.Username, "--password", creds.Password)
+		}
+
+		stdout, stderr, runErr := cmdRunner.Run(ctx, "helm", args...)
+
+		g.logOutput(stdout, stderr)
+		return runErr
+	})
+
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrFailedToDownloadChart, err)
+	}
+
+	return nil
+}
+
+// logOutput logs stdout and stderr from command execution if non-empty.
+func (g RealHelmChartProcessor) logOutput(stdout, stderr string) {
+	if len(stdout) > 0 {
+		g.Log.Info(stdout)
+	}
+	if len(stderr) > 0 {
+		g.Log.Error(stderr)
+	}
 }
 
 // ExtractHelmChart extracts a specific version of a Helm chart from a cache directory
@@ -182,13 +258,7 @@ func (g RealHelmChartProcessor) ExtractHelmChart(ctx context.Context, deps ports
 		"-C", fmt.Sprintf("%s/charts/%s", req.TmpDir, req.TargetType),
 	)
 
-	if len(stdout) > 0 {
-		g.Log.Info(stdout)
-	}
-
-	if len(stderr) > 0 {
-		g.Log.Error(stderr)
-	}
+	g.logOutput(stdout, stderr)
 
 	return err
 }

@@ -5,8 +5,6 @@ package ports
 import (
 	"context"
 	"os"
-
-	"github.com/shini4i/argo-compare/internal/models"
 )
 
 // CmdRunner executes shell commands and returns captured output.
@@ -36,19 +34,40 @@ type SensitiveDataMasker interface {
 	Mask(content []byte) ([]byte, bool, error)
 }
 
+// RegistryCredentials holds authentication details for a Helm registry.
+type RegistryCredentials struct {
+	Username string
+	Password string
+}
+
+// CredentialProvider resolves authentication credentials for a registry URL.
+//
+// Usage protocol: callers must invoke Matches first. GetCredentials must only be
+// called when Matches returns true. Matches is expected to be a cheap, local check
+// (e.g. regex or string comparison). GetCredentials may perform network calls (e.g.
+// token exchange) and should respect the context for cancellation and timeouts.
+type CredentialProvider interface {
+	// Matches reports whether this provider can supply credentials for the given registry URL.
+	Matches(registryURL string) bool
+	// GetCredentials returns credentials for the given registry URL.
+	// It must only be called after Matches returns true.
+	// Implementations may perform network calls (e.g. token exchange) and should respect the context.
+	GetCredentials(ctx context.Context, registryURL string) (RegistryCredentials, error)
+}
+
 // HelmDeps bundles the external dependencies required by Helm operations.
 type HelmDeps struct {
-	CmdRunner CmdRunner
-	Globber   Globber
+	CmdRunner           CmdRunner
+	Globber             Globber
+	CredentialProviders []CredentialProvider
 }
 
 // ChartDownloadRequest contains the parameters for downloading a Helm chart.
 type ChartDownloadRequest struct {
-	CacheDir        string
-	RepoURL         string
-	ChartName       string
-	TargetRevision  string
-	RepoCredentials []models.RepoCredentials
+	CacheDir       string
+	RepoURL        string
+	ChartName      string
+	TargetRevision string
 }
 
 // ChartExtractRequest contains the parameters for extracting a Helm chart.

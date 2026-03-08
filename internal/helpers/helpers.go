@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/spf13/afero"
 )
 
@@ -75,19 +74,6 @@ func CreateTempFile(fs afero.Fs, content string) (afero.File, error) {
 	}
 
 	return tmpFile, nil
-}
-
-// FindHelmRepoCredentials scans the provided array of RepoCredentials for a match to the
-// provided repository URL, and returns the associated username and password.
-// FindHelmRepoCredentials looks up credentials for the given repository URL.
-// It returns the username and password for the matching repository; if no match is found both strings are empty.
-func FindHelmRepoCredentials(url string, credentials []models.RepoCredentials) (string, string) {
-	for _, repoCred := range credentials {
-		if repoCred.Url == url {
-			return repoCred.Username, repoCred.Password
-		}
-	}
-	return "", ""
 }
 
 // RetryConfig holds configuration for retry operations.
