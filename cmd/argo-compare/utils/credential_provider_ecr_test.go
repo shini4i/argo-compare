@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockECRClient implements ecrAPI for testing.
+// mockECRClient implements the AuthorizationTokenGetter interface for testing.
 type mockECRClient struct {
 	output *ecr.GetAuthorizationTokenOutput
 	err    error
@@ -35,7 +35,7 @@ func newTestECRProvider(log *logging.Logger, client *mockECRClient) *ECRCredenti
 		loadCfg: func(_ context.Context, _ ...func(*config.LoadOptions) error) (aws.Config, error) {
 			return aws.Config{}, nil
 		},
-		clientFor: func(_ aws.Config, _ string) ecrAPI {
+		clientFor: func(_ aws.Config, _ string) AuthorizationTokenGetter {
 			return client
 		},
 		cache: make(map[string]cachedToken),
@@ -133,7 +133,7 @@ func TestECRCredentialProvider_GetCredentials_AWSCredsUnavailable(t *testing.T) 
 		loadCfg: func(_ context.Context, _ ...func(*config.LoadOptions) error) (aws.Config, error) {
 			return aws.Config{}, errors.New("failed to retrieve credentials")
 		},
-		clientFor: func(_ aws.Config, _ string) ecrAPI {
+		clientFor: func(_ aws.Config, _ string) AuthorizationTokenGetter {
 			return &mockECRClient{}
 		},
 		cache: make(map[string]cachedToken),

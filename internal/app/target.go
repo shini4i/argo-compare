@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/internal/models"
@@ -126,10 +127,11 @@ func (t *Target) extractCharts(ctx context.Context) error {
 
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
+			repoURL := strings.TrimPrefix(source.RepoURL, "oci://")
 			req := ports.ChartExtractRequest{
 				ChartName:     source.Chart,
 				ChartVersion:  source.TargetRevision,
-				ChartLocation: fmt.Sprintf("%s/%s", t.CacheDir, source.RepoURL),
+				ChartLocation: fmt.Sprintf("%s/%s", t.CacheDir, repoURL),
 				TmpDir:        t.TmpDir,
 				TargetType:    t.Type,
 			}
@@ -140,10 +142,11 @@ func (t *Target) extractCharts(ctx context.Context) error {
 		return nil
 	}
 
+	repoURL := strings.TrimPrefix(t.App.Spec.Source.RepoURL, "oci://")
 	req := ports.ChartExtractRequest{
 		ChartName:     t.App.Spec.Source.Chart,
 		ChartVersion:  t.App.Spec.Source.TargetRevision,
-		ChartLocation: fmt.Sprintf("%s/%s", t.CacheDir, t.App.Spec.Source.RepoURL),
+		ChartLocation: fmt.Sprintf("%s/%s", t.CacheDir, repoURL),
 		TmpDir:        t.TmpDir,
 		TargetType:    t.Type,
 	}

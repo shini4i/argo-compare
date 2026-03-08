@@ -74,6 +74,10 @@ func (g RealHelmChartProcessor) GenerateValuesFile(chartName, tmpDir, targetType
 // If the chart is already present in the cache, the function just logs the information and doesn't download it again.
 // The context can be used to cancel the download or set a timeout.
 func (g RealHelmChartProcessor) DownloadHelmChart(ctx context.Context, deps ports.HelmDeps, req ports.ChartDownloadRequest) error {
+	// Normalize OCI URLs: ArgoCD manifests may specify repoURL with an "oci://" scheme prefix.
+	// Strip it so that cache paths, credential matching, and helm commands receive a bare hostname.
+	req.RepoURL = strings.TrimPrefix(req.RepoURL, "oci://")
+
 	chartLocation := fmt.Sprintf("%s/%s", req.CacheDir, req.RepoURL)
 
 	if err := os.MkdirAll(chartLocation, 0750); err != nil {

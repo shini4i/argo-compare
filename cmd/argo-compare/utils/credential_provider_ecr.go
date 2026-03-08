@@ -23,9 +23,9 @@ import (
 // ecr:GetAuthorizationToken for anonymous pulls.
 var ecrURLRegex = regexp.MustCompile(`^(\d+)\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com`)
 
-// ecrAPI abstracts the subset of the AWS ECR client used by ECRCredentialProvider,
+// AuthorizationTokenGetter abstracts the subset of the AWS ECR client used by ECRCredentialProvider,
 // enabling unit testing without real AWS calls.
-type ecrAPI interface {
+type AuthorizationTokenGetter interface {
 	GetAuthorizationToken(ctx context.Context, params *ecr.GetAuthorizationTokenInput, optFns ...func(*ecr.Options)) (*ecr.GetAuthorizationTokenOutput, error)
 }
 
@@ -48,7 +48,7 @@ type cachedToken struct {
 type ECRCredentialProvider struct {
 	log       *logging.Logger
 	loadCfg   awsConfigLoader
-	clientFor func(cfg aws.Config, region string) ecrAPI
+	clientFor func(cfg aws.Config, region string) AuthorizationTokenGetter
 
 	mu    sync.RWMutex
 	cache map[string]cachedToken
@@ -60,7 +60,7 @@ func NewECRCredentialProvider(log *logging.Logger) *ECRCredentialProvider {
 	return &ECRCredentialProvider{
 		log:     log,
 		loadCfg: config.LoadDefaultConfig,
-		clientFor: func(cfg aws.Config, region string) ecrAPI {
+		clientFor: func(cfg aws.Config, region string) AuthorizationTokenGetter {
 			return ecr.NewFromConfig(cfg, func(o *ecr.Options) {
 				o.Region = region
 			})

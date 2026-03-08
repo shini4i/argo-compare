@@ -244,6 +244,36 @@ func TestDownloadHelmChart_OCIWithoutCredentials(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestDownloadHelmChart_OCIPrefixNormalization(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	helmChartProcessor := RealHelmChartProcessor{Log: logging.MustGetLogger("test")}
+	cacheDir := t.TempDir()
+
+	mockGlobber := mocks.NewMockGlobber(ctrl)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	deps := ports.HelmDeps{CmdRunner: mockCmdRunner, Globber: mockGlobber}
+
+	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{}, nil)
+
+	// Even though RepoURL has "oci://" prefix, the pull ref should not double it
+	// and helm registry login should receive a bare hostname.
+	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+		"pull", "oci://ghcr.io/my-org/my-chart",
+		"--destination", gomock.Any(),
+		"--version", "2.0.0").Return("", "", nil)
+
+	req := ports.ChartDownloadRequest{
+		CacheDir:       filepath.Join(cacheDir, "cache"),
+		RepoURL:        "oci://ghcr.io/my-org",
+		ChartName:      "my-chart",
+		TargetRevision: "2.0.0",
+	}
+	err := helmChartProcessor.DownloadHelmChart(context.Background(), deps, req)
+	assert.NoError(t, err)
+}
+
 func TestExtractHelmChart(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
