@@ -13,25 +13,24 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Set up QEMU # required for multi architecture build - https://goreleaser.com/cookbooks/multi-platform-docker-images/?h=multi#other-things-to-pay-attention-to
-        uses: docker/setup-qemu-action@v2
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
 
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0 # this is important, otherwise it won't checkout the full tree (i.e. no previous tags)
 
       - name: Login to GHCR
-        uses: docker/login-action@v2
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-go@v4
-        with:
-          go-version-file: go.mod
+      - name: Install Nix
+        uses: cachix/install-nix-action@19effe9fe722874e6d46dd7182e4b8b7a43c4a99 # v31.10.0
 
-      - uses: goreleaser/goreleaser-action@v5
-        with:
-          version: v1.25.1
-          args: release --rm-dist
+      - name: Run GoReleaser
+        run: nix develop --command goreleaser release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

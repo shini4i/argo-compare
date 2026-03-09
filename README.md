@@ -23,10 +23,10 @@ are merged into the target branch.
 
 ### How to install
 
-The binary can be installed using homebrew:
+Download the binary from the [Releases](https://github.com/shini4i/argo-compare/releases) page, or pull the Docker image:
 
 ```bash
-brew install shini4i/tap/argo-compare
+docker pull ghcr.io/shini4i/argo-compare:<version>
 ```
 
 ### How to use

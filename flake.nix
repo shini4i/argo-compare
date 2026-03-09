@@ -12,10 +12,14 @@
         };
 
         goToolchain = with pkgs; [
-          go_1_24
+          go_1_25
           gopls
           gotools
           mockgen
+          goreleaser
+          gosec
+          go-junit-report
+          go-task
         ];
 
         preCommitTools = with pkgs; [
