@@ -11,6 +11,7 @@ jobs:
     name: Tests
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       checks: write
       pull-requests: write
 
