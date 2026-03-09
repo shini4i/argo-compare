@@ -25,6 +25,11 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@19effe9fe722874e6d46dd7182e4b8b7a43c4a99 # v31.10.0
 
+      - name: Check go.mod is tidy
+        run: |
+          nix develop --command go mod tidy
+          git diff --exit-code go.mod go.sum
+
       - name: Run Gosec Security Scanner
         run: nix develop --command gosec -exclude-dir=.gomod -exclude-dir=.go ./...
 

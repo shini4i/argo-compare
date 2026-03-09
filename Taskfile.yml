@@ -32,6 +32,7 @@ tasks:
       - CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/argo-compare ./cmd/argo-compare
 
   clean:
-    desc: Remove build artifacts
+    desc: Remove build and test artifacts
     cmds:
-      - rm -rf bin
+      - rm -rf bin .tmp
+      - rm -f coverage.out coverage.html report.xml

@@ -9,8 +9,11 @@ WORKDIR /tmp
 
 RUN apk add --no-cache wget git patch \
     && wget --progress=dot:giga -O helm.tar.gz "https://get.helm.sh/helm-v${HELM_VERSION}-linux-${TARGETARCH}.tar.gz" \
+    && wget -qO helm.tar.gz.sha256 "https://get.helm.sh/helm-v${HELM_VERSION}-linux-${TARGETARCH}.tar.gz.sha256sum" \
+    && echo "$(awk '{print $1}' helm.tar.gz.sha256)  helm.tar.gz" | sha256sum -c - \
     && tar -xf helm.tar.gz "linux-${TARGETARCH}/helm" \
-    && mv "linux-${TARGETARCH}/helm" /usr/bin/helm
+    && mv "linux-${TARGETARCH}/helm" /usr/bin/helm \
+    && rm -f helm.tar.gz helm.tar.gz.sha256
 
 RUN git clone -b v${DIFF_SO_FANCY_VERSION} https://github.com/so-fancy/diff-so-fancy /diff-so-fancy \
  && mv /diff-so-fancy/diff-so-fancy /usr/local/bin/diff-so-fancy \
