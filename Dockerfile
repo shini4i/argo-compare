@@ -31,6 +31,8 @@ RUN patch < /tmp/diff-so-fancy.patch
 
 FROM alpine:3.23.3
 
+ARG TARGETARCH
+
 RUN apk add --no-cache perl ncurses \
  && adduser --disabled-password --gecos '' app
 
@@ -38,7 +40,7 @@ COPY --from=downloader /usr/bin/helm /usr/bin/helm
 COPY --from=downloader /usr/local/bin/lib /usr/local/bin/lib
 COPY --from=downloader /usr/local/bin/diff-so-fancy /usr/local/bin/diff-so-fancy
 
-COPY argo-compare /bin/argo-compare
+COPY linux/${TARGETARCH}/argo-compare /bin/argo-compare
 
 USER app
 
