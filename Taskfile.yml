@@ -1,0 +1,38 @@
+version: '3'
+
+tasks:
+  mocks:
+    desc: Generate mocks
+    cmds:
+      - mockgen --source=internal/ports/ports.go --destination=cmd/argo-compare/mocks/interfaces.go --package=mocks
+
+  test:
+    desc: Run tests
+    deps: [mocks]
+    cmds:
+      - go test -v ./... -count=1
+
+  test-coverage:
+    desc: Run tests with coverage
+    deps: [mocks]
+    cmds:
+      - mkdir -p .tmp/repo.git/refs/heads .tmp/repo.git/refs/tags
+      - go test -v -coverprofile=coverage.out ./... -count=1 2>&1 | tee /dev/stderr | go-junit-report -set-exit-code > report.xml
+
+  test-coverage-html:
+    desc: Run tests with coverage and open HTML report
+    deps: [test-coverage]
+    cmds:
+      - go tool cover -html=coverage.out -o coverage.html
+
+  build:
+    desc: Build the binary
+    cmds:
+      - mkdir -p bin
+      - CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/argo-compare ./cmd/argo-compare
+
+  clean:
+    desc: Remove build and test artifacts
+    cmds:
+      - rm -rf bin .tmp
+      - rm -f coverage.out coverage.html report.xml

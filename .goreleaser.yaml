@@ -1,9 +1,10 @@
+version: 2
+
 project_name: argo-compare
 
 before:
   hooks:
-    - make install-deps mocks
-    - go mod tidy
+    - task mocks
 
 builds:
   - env:
@@ -17,59 +18,29 @@ builds:
     mod_timestamp: '{{ .CommitTimestamp }}'
     main: ./cmd/argo-compare
 
-brews:
-  - repository:
-      owner: shini4i
-      name: homebrew-tap
-    folder: Formula
-    homepage: https://github.com/shini4i/argo-compare
-    dependencies:
-      - name: helm
-    description: "A comparison tool for displaying the differences between ArgoCD Applications in different Git branches"
-    license: "MIT"
-
-dockers:
-  - image_templates: [ "ghcr.io/shini4i/{{ .ProjectName }}:{{ .Version }}-amd64" ]
+dockers_v2:
+  - images:
+      - "ghcr.io/shini4i/{{ .ProjectName }}"
+    tags:
+      - "{{ .Version }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
     dockerfile: Dockerfile
-    use: buildx
-    build_flag_templates:
-      - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title={{.ProjectName}}"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--label=org.opencontainers.image.licenses=MIT"
-    goos: linux
-    goarch: amd64
     extra_files:
       - patch/diff-so-fancy.patch
-  - image_templates: [ "ghcr.io/shini4i/{{ .ProjectName }}:{{ .Version }}-arm64" ]
-    dockerfile: Dockerfile
-    use: buildx
-    build_flag_templates:
-      - "--platform=linux/arm64"
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title={{.ProjectName}}"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
-      - "--label=org.opencontainers.image.licenses=MIT"
-    goos: linux
-    goarch: arm64
-    extra_files:
-      - patch/diff-so-fancy.patch
-
-docker_manifests:
-  - name_template: 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Version }}'
-    image_templates:
-      - 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Version }}-amd64'
-      - 'ghcr.io/shini4i/{{.ProjectName}}:{{ .Version }}-arm64'
+    labels:
+      org.opencontainers.image.created: "{{ .Date }}"
+      org.opencontainers.image.title: "{{ .ProjectName }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.licenses: "MIT"
 
 snapshot:
-  name_template: '{{ incpatch .Version }}-dev'
+  version_template: '{{ incpatch .Version }}-dev'
 
 changelog:
-  use:
-    github-native
+  use: github-native
 
 release:
   prerelease: auto
@@ -78,5 +49,3 @@ release:
   footer: |
     ## Docker Images
     - `ghcr.io/shini4i/{{ .ProjectName }}:{{ .Version }}`
-    - `ghcr.io/shini4i/{{ .ProjectName }}:{{ .Version }}-amd64`
-    - `ghcr.io/shini4i/{{ .ProjectName }}:{{ .Version }}-arm64`

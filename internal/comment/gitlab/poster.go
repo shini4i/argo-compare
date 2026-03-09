@@ -127,7 +127,7 @@ func (p *Poster) doRequest(ctx context.Context, endpoint string, payload []byte)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(privateTokenHeader, p.token)
 
-	resp, err := p.client.Do(req)
+	resp, err := p.client.Do(req) // #nosec G107 G704 -- endpoint is built from operator-configured BaseURL, not user input
 	if err != nil {
 		// Network errors are retryable
 		return fmt.Errorf("gitlab: perform request: %w", err)
