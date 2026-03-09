@@ -37,7 +37,7 @@ type SensitiveDataMasker interface {
 // RegistryCredentials holds authentication details for a Helm registry.
 type RegistryCredentials struct {
 	Username string
-	Password string
+	Password string // #nosec G117 -- credential field for registry auth, populated from provider
 }
 
 // CredentialProvider resolves authentication credentials for a registry URL.
