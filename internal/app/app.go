@@ -32,7 +32,8 @@ type Dependencies struct {
 	Globber              ports.Globber
 	Logger               *logging.Logger
 	CommentPosterFactory CommentPosterFactory
-	SensitiveDataMasker  ports.SensitiveDataMasker // Responsible for redacting sensitive manifest fields.
+	SensitiveDataMasker  ports.SensitiveDataMasker   // Responsible for redacting sensitive manifest fields.
+	CredentialProviders  []ports.CredentialProvider   // Dynamic credential providers (e.g. ECR). Optional; defaults include ECR.
 }
 
 // App orchestrates the end-to-end comparison workflow.
@@ -45,6 +46,8 @@ type App struct {
 	globber             ports.Globber
 	logger              *logging.Logger
 	repoCredentials     []models.RepoCredentials
+	credentialProviders []ports.CredentialProvider // Base providers (e.g. ECR) set at construction time.
+	activeProviders     []ports.CredentialProvider // Run-scoped chain: base providers + static fallback.
 	commentFactory      CommentPosterFactory
 	sensitiveDataMasker ports.SensitiveDataMasker // Applied to manifest content prior to diff generation.
 }
@@ -88,6 +91,11 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 	if deps.SensitiveDataMasker == nil {
 		deps.SensitiveDataMasker = sanitizer.NewKubernetesSecretMasker()
 	}
+	if deps.CredentialProviders == nil {
+		deps.CredentialProviders = []ports.CredentialProvider{
+			utils.NewECRCredentialProvider(deps.Logger),
+		}
+	}
 
 	return &App{
 		cfg:                 cfg,
@@ -97,6 +105,7 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 		helmProcessor:       deps.HelmProcessor,
 		globber:             deps.Globber,
 		logger:              deps.Logger,
+		credentialProviders: deps.CredentialProviders,
 		commentFactory:      deps.CommentPosterFactory,
 		sensitiveDataMasker: deps.SensitiveDataMasker,
 	}, nil
@@ -108,6 +117,13 @@ func (a *App) Run(ctx context.Context) error {
 	if err := a.collectRepoCredentials(); err != nil {
 		return err
 	}
+
+	// Build the final provider chain: dynamic providers + static fallback.
+	// Use a local slice to avoid mutating a.credentialProviders on repeated calls.
+	providers := make([]ports.CredentialProvider, len(a.credentialProviders))
+	copy(providers, a.credentialProviders)
+	providers = append(providers, utils.NewStaticCredentialProvider(a.repoCredentials))
+	a.activeProviders = providers
 
 	repo, err := NewGitRepo(a.fs, a.cmdRunner, a.fileReader, a.logger)
 	if err != nil {
@@ -224,17 +240,17 @@ func (a *App) resolveTargetApplication(repo *GitRepo, file string) (models.Appli
 // processFile prepares Helm inputs for a single manifest and renders its templates.
 func (a *App) processFile(ctx context.Context, fileName string, fileType string, application models.Application, tmpDir string) error {
 	target := Target{
-		CmdRunner:       a.cmdRunner,
-		FileReader:      a.fileReader,
-		HelmProcessor:   a.helmProcessor,
-		Globber:         a.globber,
-		CacheDir:        a.cfg.CacheDir,
-		TmpDir:          tmpDir,
-		RepoCredentials: a.repoCredentials,
-		Log:             a.logger,
-		File:            fileName,
-		Type:            fileType,
-		App:             application,
+		CmdRunner:           a.cmdRunner,
+		FileReader:          a.fileReader,
+		HelmProcessor:       a.helmProcessor,
+		Globber:             a.globber,
+		CacheDir:            a.cfg.CacheDir,
+		TmpDir:              tmpDir,
+		CredentialProviders: a.activeProviders,
+		Log:                 a.logger,
+		File:                fileName,
+		Type:                fileType,
+		App:                 application,
 	}
 
 	if fileType == TargetTypeSource {
