@@ -296,3 +296,102 @@ func TestDefaultCommentPosterFactoryGitLab(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, poster)
 }
+
+func TestNewWithValidationEnabledCreatesValidator(t *testing.T) {
+	cfg, err := NewConfig("main",
+		WithCacheDir("/tmp/cache"),
+		WithValidateManifests(true),
+	)
+	require.NoError(t, err)
+
+	logger := setupTestLogger(t, "app-validator-enabled")
+
+	appInstance, err := New(cfg, Dependencies{
+		FS:     afero.NewMemMapFs(),
+		Logger: logger,
+	})
+	require.NoError(t, err)
+
+	require.NotNil(t, appInstance.validator, "validator should be initialized when validation is enabled")
+
+	kubeconformValidator, ok := appInstance.validator.(*KubeconformValidator)
+	require.True(t, ok, "default validator should be KubeconformValidator")
+	assert.Equal(t, "kubeconform", kubeconformValidator.Path)
+}
+
+func TestNewWithValidationDisabledOmitsValidator(t *testing.T) {
+	cfg, err := NewConfig("main",
+		WithCacheDir("/tmp/cache"),
+	)
+	require.NoError(t, err)
+
+	logger := setupTestLogger(t, "app-validator-disabled")
+
+	appInstance, err := New(cfg, Dependencies{
+		FS:     afero.NewMemMapFs(),
+		Logger: logger,
+	})
+	require.NoError(t, err)
+
+	assert.Nil(t, appInstance.validator, "validator should be nil when validation is disabled")
+}
+
+func TestNewWithCustomKubeconformPath(t *testing.T) {
+	cfg, err := NewConfig("main",
+		WithCacheDir("/tmp/cache"),
+		WithValidateManifests(true),
+		WithKubeconformPath("/opt/kubeconform"),
+		WithValidateSkipKinds([]string{"ServiceMonitor", "ArgoApplication"}),
+	)
+	require.NoError(t, err)
+
+	logger := setupTestLogger(t, "app-validator-custom")
+
+	appInstance, err := New(cfg, Dependencies{
+		FS:     afero.NewMemMapFs(),
+		Logger: logger,
+	})
+	require.NoError(t, err)
+
+	kubeconformValidator, ok := appInstance.validator.(*KubeconformValidator)
+	require.True(t, ok)
+	assert.Equal(t, "/opt/kubeconform", kubeconformValidator.Path)
+	assert.Equal(t, []string{"ServiceMonitor", "ArgoApplication"}, kubeconformValidator.SkipKinds)
+}
+
+func TestNewWithInjectedValidator(t *testing.T) {
+	cfg, err := NewConfig("main",
+		WithCacheDir("/tmp/cache"),
+		WithValidateManifests(false),
+	)
+	require.NoError(t, err)
+
+	logger := setupTestLogger(t, "app-validator-injected")
+
+	injectedValidator := &KubeconformValidator{Path: "injected"}
+	appInstance, err := New(cfg, Dependencies{
+		FS:                afero.NewMemMapFs(),
+		Logger:            logger,
+		ManifestValidator: injectedValidator,
+	})
+	require.NoError(t, err)
+
+	require.NotNil(t, appInstance.validator, "injected validator should be used")
+	assert.Same(t, injectedValidator, appInstance.validator)
+}
+
+func TestNewInitializesValidationResultsMap(t *testing.T) {
+	cfg, err := NewConfig("main", WithCacheDir("/tmp/cache"))
+	require.NoError(t, err)
+
+	logger := setupTestLogger(t, "app-validation-map")
+
+	appInstance, err := New(cfg, Dependencies{
+		FS:     afero.NewMemMapFs(),
+		Logger: logger,
+	})
+	require.NoError(t, err)
+
+	require.NotNil(t, appInstance.validationResults)
+	assert.Empty(t, appInstance.validationResults)
+}

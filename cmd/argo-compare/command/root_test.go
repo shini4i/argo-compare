@@ -201,3 +201,120 @@ func TestExecuteUsesGitLabCIEnvDefaults(t *testing.T) {
 	assert.Equal(t, 42, receivedConfig.Comment.GitLab.MergeRequestIID)
 	assert.Equal(t, "job-token", receivedConfig.Comment.GitLab.Token)
 }
+
+func TestExecuteValidationFlags(t *testing.T) {
+	var receivedConfig app.Config
+
+	opts := Options{
+		Version:          "test-version",
+		CacheDir:         t.TempDir(),
+		TempDirBase:      os.TempDir(),
+		ExternalDiffTool: "",
+		InitLogging:      func(bool) {},
+		RunApp: func(_ context.Context, cfg app.Config) error {
+			receivedConfig = cfg
+			return nil
+		},
+	}
+
+	args := []string{
+		"branch", "main",
+		"--validate-manifests",
+		"--kubeconform-path", "/usr/local/bin/kubeconform",
+		"--skip-validation-kinds", "ServiceMonitor,ArgoApplication",
+	}
+
+	err := Execute(opts, args)
+	require.NoError(t, err)
+
+	assert.True(t, receivedConfig.ValidateManifests)
+	assert.Equal(t, "/usr/local/bin/kubeconform", receivedConfig.KubeconformPath)
+	assert.Equal(t, []string{"ServiceMonitor", "ArgoApplication"}, receivedConfig.ValidateSkipKinds)
+}
+
+func TestExecuteValidationDisabledByDefault(t *testing.T) {
+	var receivedConfig app.Config
+
+	opts := Options{
+		Version:          "test-version",
+		CacheDir:         t.TempDir(),
+		TempDirBase:      os.TempDir(),
+		ExternalDiffTool: "",
+		InitLogging:      func(bool) {},
+		RunApp: func(_ context.Context, cfg app.Config) error {
+			receivedConfig = cfg
+			return nil
+		},
+	}
+
+	err := Execute(opts, []string{"branch", "main"})
+	require.NoError(t, err)
+
+	assert.False(t, receivedConfig.ValidateManifests)
+	assert.Empty(t, receivedConfig.KubeconformPath)
+	assert.Empty(t, receivedConfig.ValidateSkipKinds)
+}
+
+func TestExecuteValidationEnvVars(t *testing.T) {
+	var receivedConfig app.Config
+
+	opts := Options{
+		Version:          "test-version",
+		CacheDir:         t.TempDir(),
+		TempDirBase:      os.TempDir(),
+		ExternalDiffTool: "",
+		InitLogging:      func(bool) {},
+		RunApp: func(_ context.Context, cfg app.Config) error {
+			receivedConfig = cfg
+			return nil
+		},
+	}
+
+	t.Setenv("ARGO_COMPARE_VALIDATE_MANIFESTS", "true")
+	t.Setenv("ARGO_COMPARE_KUBECONFORM_PATH", "/opt/kubeconform")
+	t.Setenv("ARGO_COMPARE_SKIP_VALIDATION_KINDS", "CustomResource,AnotherKind")
+
+	err := Execute(opts, []string{"branch", "main"})
+	require.NoError(t, err)
+
+	assert.True(t, receivedConfig.ValidateManifests)
+	assert.Equal(t, "/opt/kubeconform", receivedConfig.KubeconformPath)
+	assert.Equal(t, []string{"CustomResource", "AnotherKind"}, receivedConfig.ValidateSkipKinds)
+}
+
+func TestExecuteValidationEnvVarFalsyValues(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+	}{
+		{"empty", ""},
+		{"false", "false"},
+		{"zero", "0"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			var receivedConfig app.Config
+
+			opts := Options{
+				Version:          "test-version",
+				CacheDir:         t.TempDir(),
+				TempDirBase:      os.TempDir(),
+				ExternalDiffTool: "",
+				InitLogging:      func(bool) {},
+				RunApp: func(_ context.Context, cfg app.Config) error {
+					receivedConfig = cfg
+					return nil
+				},
+			}
+
+			t.Setenv("ARGO_COMPARE_VALIDATE_MANIFESTS", tc.value)
+
+			err := Execute(opts, []string{"branch", "main"})
+			require.NoError(t, err)
+
+			assert.False(t, receivedConfig.ValidateManifests)
+		})
+	}
+}
