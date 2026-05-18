@@ -117,7 +117,7 @@ ARGO_COMPARE_SKIP_VALIDATION_KINDS=ServiceMonitor,ArgoApplication \
 argo-compare branch <target-branch>
 ```
 
-`kubeconform` must be available in the runtime environment when validation is enabled. When running via the published Docker image, the binary is not bundled — extend the image to include `kubeconform`, or mount it from the host and point `--kubeconform-path` at the mount target.
+`kubeconform` must be available in the runtime environment when validation is enabled. The published Docker image (`ghcr.io/shini4i/argo-compare`) bundles it; for standalone binary installs, install [kubeconform](https://github.com/yannh/kubeconform) separately.
 
 ### Sensitive data handling
 
