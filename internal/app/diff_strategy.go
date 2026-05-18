@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"sort"
 	"strings"
 
 	"github.com/op/go-logging"
+	"github.com/shini4i/argo-compare/internal/ports"
 )
 
 // DiffPresenter presents comparison results to the user.
@@ -36,6 +38,8 @@ type ExternalDiffStrategy struct {
 // Present prints comparison results using the configured stdout logger.
 // The context parameter is accepted for interface compliance but not used.
 func (s StdoutStrategy) Present(_ context.Context, result ComparisonResult) error {
+	s.printValidationResults(result.ValidationResults)
+
 	if result.IsEmpty() {
 		s.Log.Info("No diff was found in rendered manifests!")
 		return nil
@@ -52,6 +56,36 @@ func (s StdoutStrategy) Present(_ context.Context, result ComparisonResult) erro
 	s.printSection("changed", result.Changed)
 
 	return nil
+}
+
+// printValidationResults outputs validation status for each target in a stable order.
+func (s StdoutStrategy) printValidationResults(results map[string]ports.ValidationResult) {
+	if len(results) == 0 {
+		return
+	}
+
+	keys := make([]string, 0, len(results))
+	for k := range results {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	s.Log.Info("===> Manifest Validation Results")
+	for _, target := range keys {
+		result := results[target]
+		if result.InvocationError != "" {
+			s.Log.Warningf("  %s: validator could not run: %s", target, result.InvocationError)
+			continue
+		}
+		status := "✓"
+		if !result.Valid {
+			status = "✗"
+		}
+		s.Log.Infof("%s %s: %d resources validated", status, target, result.ResourceCount)
+		for _, err := range result.Errors {
+			s.Log.Warningf("  - %s.%s: %s", err.Kind, err.Name, err.Message)
+		}
+	}
 }
 
 // printSection logs a summary of diff entries and prints their unified diffs.
@@ -119,28 +153,31 @@ func isValidToolChar(r rune) bool {
 		r == '-' || r == '_' || r == '.' || r == '/'
 }
 
-// validateToolName checks if the tool name contains only allowed characters.
-// validateToolName checks that a tool name is non-empty, contains only allowed
-// characters (letters, digits, '-', '_', '.', '/') and does not include path
-// traversal sequences like "..". It returns an error describing the invalid name
-// when a check fails.
-func validateToolName(tool string) error {
-	if tool == "" {
-		return fmt.Errorf("invalid diff tool name: empty")
+// validateExecutable checks that a named executable path is non-empty, contains
+// only allowed characters (letters, digits, '-', '_', '.', '/'), and does not
+// include path-traversal sequences. kind labels the executable in error messages
+// (e.g. "diff tool name", "kubeconform binary path").
+func validateExecutable(kind, name string) error {
+	if name == "" {
+		return fmt.Errorf("invalid %s: empty", kind)
 	}
 
-	for _, r := range tool {
+	for _, r := range name {
 		if !isValidToolChar(r) {
-			return fmt.Errorf("invalid diff tool name: %q", tool)
+			return fmt.Errorf("invalid %s: %q", kind, name)
 		}
 	}
 
-	// Reject path traversal
-	if strings.Contains(tool, "..") {
-		return fmt.Errorf("invalid diff tool name: %q", tool)
+	if strings.Contains(name, "..") {
+		return fmt.Errorf("invalid %s: %q", kind, name)
 	}
 
 	return nil
+}
+
+// validateToolName delegates to validateExecutable with the "diff tool name" label.
+func validateToolName(tool string) error {
+	return validateExecutable("diff tool name", tool)
 }
 
 // runTool executes the external diff command with the given diff content.

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/op/go-logging"
@@ -23,17 +24,24 @@ import (
 
 const repoCredsPrefix = "REPO_CREDS_" // #nosec G101
 
+// ErrManifestValidationFailed indicates that at least one rendered manifest failed schema
+// validation (or the validator itself failed to run when validation was enabled).
+// The comparison still ran to completion; this error is returned at the end of Run so
+// callers/CI can fail the job after the diff and any comments have been emitted.
+var ErrManifestValidationFailed = errors.New("manifest validation failed")
+
 // Dependencies aggregates runtime collaborators required by App.
 type Dependencies struct {
-	FS                   afero.Fs
-	CmdRunner            ports.CmdRunner
-	FileReader           ports.FileReader
-	HelmProcessor        ports.HelmChartsProcessor
-	Globber              ports.Globber
-	Logger               *logging.Logger
-	CommentPosterFactory CommentPosterFactory
-	SensitiveDataMasker  ports.SensitiveDataMasker   // Responsible for redacting sensitive manifest fields.
-	CredentialProviders  []ports.CredentialProvider   // Dynamic credential providers (e.g. ECR). Optional; defaults include ECR.
+	FS                    afero.Fs
+	CmdRunner             ports.CmdRunner
+	FileReader            ports.FileReader
+	HelmProcessor         ports.HelmChartsProcessor
+	Globber               ports.Globber
+	Logger                *logging.Logger
+	CommentPosterFactory  CommentPosterFactory
+	SensitiveDataMasker   ports.SensitiveDataMasker   // Responsible for redacting sensitive manifest fields.
+	CredentialProviders   []ports.CredentialProvider   // Dynamic credential providers (e.g. ECR). Optional; defaults include ECR.
+	ManifestValidator     ports.ManifestValidator      // Validator for rendered manifests. Optional; defaults to KubeconformValidator if validation is enabled.
 }
 
 // App orchestrates the end-to-end comparison workflow.
@@ -50,6 +58,7 @@ type App struct {
 	activeProviders     []ports.CredentialProvider // Run-scoped chain: base providers + static fallback.
 	commentFactory      CommentPosterFactory
 	sensitiveDataMasker ports.SensitiveDataMasker // Applied to manifest content prior to diff generation.
+	validator           ports.ManifestValidator   // Optional validator for rendered manifests.
 }
 
 // CommentPosterFactory builds a comment poster based on the active configuration.
@@ -97,6 +106,21 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 		}
 	}
 
+	var validator ports.ManifestValidator
+	if deps.ManifestValidator != nil {
+		validator = deps.ManifestValidator
+	} else if cfg.ValidateManifests {
+		kubeconformPath := cfg.KubeconformPath
+		if kubeconformPath == "" {
+			kubeconformPath = "kubeconform"
+		}
+		validator = &KubeconformValidator{
+			CmdRunner: deps.CmdRunner,
+			Path:      kubeconformPath,
+			SkipKinds: cfg.ValidateSkipKinds,
+		}
+	}
+
 	return &App{
 		cfg:                 cfg,
 		fs:                  deps.FS,
@@ -108,6 +132,7 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 		credentialProviders: deps.CredentialProviders,
 		commentFactory:      deps.CommentPosterFactory,
 		sensitiveDataMasker: deps.SensitiveDataMasker,
+		validator:           validator,
 	}, nil
 }
 
@@ -158,21 +183,38 @@ func (a *App) Run(ctx context.Context) error {
 		return nil
 	}
 
-	if err := a.compareFiles(ctx, repo, changedFiles); err != nil {
+	validationFailed, err := a.compareFiles(ctx, repo, changedFiles)
+	if err != nil {
 		return err
 	}
 
-	return a.reportInvalidFiles(invalidFiles)
+	if err := a.reportInvalidFiles(invalidFiles); err != nil {
+		return err
+	}
+
+	if validationFailed {
+		return ErrManifestValidationFailed
+	}
+
+	return nil
 }
 
 // compareFiles renders and evaluates each changed Application manifest against the target branch.
-func (a *App) compareFiles(ctx context.Context, repo *GitRepo, changedFiles []string) error {
+// Returns true if any application produced a non-Valid validation result (schema failure or
+// validator invocation error). The bool is independent of err so the caller can complete the
+// run (post comments, etc.) before deciding to exit non-zero.
+func (a *App) compareFiles(ctx context.Context, repo *GitRepo, changedFiles []string) (bool, error) {
+	anyFailed := false
 	for _, file := range changedFiles {
-		if err := a.processChangedFile(ctx, repo, file); err != nil {
-			return err
+		failed, err := a.processChangedFile(ctx, repo, file)
+		if err != nil {
+			return anyFailed, err
+		}
+		if failed {
+			anyFailed = true
 		}
 	}
-	return nil
+	return anyFailed, nil
 }
 
 type destinationAction int
@@ -184,12 +226,13 @@ const (
 )
 
 // processChangedFile orchestrates comparison for a single manifest, optionally skipping targets.
-func (a *App) processChangedFile(ctx context.Context, repo *GitRepo, file string) (err error) {
+// Returns a flag indicating whether any validation result for this application was non-Valid.
+func (a *App) processChangedFile(ctx context.Context, repo *GitRepo, file string) (validationFailed bool, err error) {
 	a.logger.Infof("===> Processing changed application: [%s]", ui.Cyan(file))
 
 	tmpDir, err := afero.TempDir(a.fs, a.cfg.TempDirBase, "argo-compare-")
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	defer func() {
@@ -198,26 +241,39 @@ func (a *App) processChangedFile(ctx context.Context, repo *GitRepo, file string
 		}
 	}()
 
-	if err = a.processFile(ctx, file, TargetTypeSource, models.Application{}, tmpDir); err != nil {
-		return err
+	// Scoped per-comparison: keeps state local and avoids cross-app leakage.
+	validationResults := make(map[string]ports.ValidationResult)
+
+	if err = a.processFile(ctx, file, TargetTypeSource, models.Application{}, tmpDir, validationResults); err != nil {
+		return false, err
 	}
 
 	targetApp, action, err := a.resolveTargetApplication(repo, file)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if action == destinationSkip {
-		return nil
+		return false, nil
 	}
 
 	if action == destinationProcess {
-		if destErr := a.processFile(ctx, file, TargetTypeDestination, targetApp, tmpDir); destErr != nil && !a.cfg.PrintAddedManifests {
-			return destErr
+		if destErr := a.processFile(ctx, file, TargetTypeDestination, targetApp, tmpDir, validationResults); destErr != nil && !a.cfg.PrintAddedManifests {
+			return false, destErr
 		}
 	}
 
-	return a.runComparison(ctx, tmpDir, file)
+	if err := a.runComparison(ctx, tmpDir, file, validationResults); err != nil {
+		return false, err
+	}
+
+	for _, r := range validationResults {
+		if !r.Valid {
+			validationFailed = true
+			break
+		}
+	}
+	return validationFailed, nil
 }
 
 // resolveTargetApplication retrieves the target branch manifest and determines follow-up actions.
@@ -238,7 +294,8 @@ func (a *App) resolveTargetApplication(repo *GitRepo, file string) (models.Appli
 }
 
 // processFile prepares Helm inputs for a single manifest and renders its templates.
-func (a *App) processFile(ctx context.Context, fileName string, fileType string, application models.Application, tmpDir string) error {
+// validationResults is populated when a validator is configured; entries are keyed by fileType.
+func (a *App) processFile(ctx context.Context, fileName, fileType string, application models.Application, tmpDir string, validationResults map[string]ports.ValidationResult) error {
 	target := Target{
 		CmdRunner:           a.cmdRunner,
 		FileReader:          a.fileReader,
@@ -271,11 +328,34 @@ func (a *App) processFile(ctx context.Context, fileName string, fileType string,
 		return err
 	}
 
-	return target.renderAppSources(ctx)
+	if err := target.renderAppSources(ctx); err != nil {
+		return err
+	}
+
+	if a.validator != nil {
+		// Rendered manifests land at <tmpDir>/templates/<src|dst> (set by RenderAppSource).
+		manifests := filepath.Join(tmpDir, "templates", fileType)
+		result, err := a.validator.Validate(ctx, fileType, manifests)
+		if err != nil {
+			a.logger.Warningf("Manifest validation failed for %s: %v", fileType, err)
+			// Record a synthetic result so the failure surfaces in presenters.
+			validationResults[fileType] = ports.ValidationResult{
+				Target:          fileType,
+				InvocationError: err.Error(),
+			}
+		} else {
+			validationResults[fileType] = result
+			if !result.Valid {
+				a.logger.Warningf("Validation errors in %s: %d issues found", fileType, result.ErrorCount)
+			}
+		}
+	}
+
+	return nil
 }
 
 // runComparison executes the diff strategy for the prepared temporary workspace.
-func (a *App) runComparison(ctx context.Context, tmpDir, applicationFile string) error {
+func (a *App) runComparison(ctx context.Context, tmpDir, applicationFile string, validationResults map[string]ports.ValidationResult) error {
 	comparer := Compare{
 		Fs:                 a.fs,
 		Globber:            a.globber,
@@ -287,6 +367,10 @@ func (a *App) runComparison(ctx context.Context, tmpDir, applicationFile string)
 	result, err := comparer.Execute()
 	if err != nil {
 		return err
+	}
+
+	if len(validationResults) > 0 {
+		result.ValidationResults = validationResults
 	}
 
 	strategies, err := a.selectDiffStrategies(applicationFile)

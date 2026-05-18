@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/internal/comment"
+	"github.com/shini4i/argo-compare/internal/ports"
 )
 
 // CommentStrategy delivers comparison results to an upstream comment system.
@@ -96,6 +98,10 @@ func buildCommentBodies(result ComparisonResult, showAdded, showRemoved bool, ap
 	headerBuilder.WriteString("## Argo Compare Results\n\n")
 	headerBuilder.WriteString(fmt.Sprintf("**Application:** `%s`\n\n", appDisplay))
 
+	if validationSummary := buildValidationSummary(result.ValidationResults); validationSummary != "" {
+		headerBuilder.WriteString(validationSummary)
+	}
+
 	if summary := buildSummaryLines(result, showAdded, showRemoved); summary != "" {
 		headerBuilder.WriteString(summary)
 	}
@@ -127,6 +133,52 @@ func buildCommentBodies(result ComparisonResult, showAdded, showRemoved bool, ap
 	}
 
 	return assembleCommentBodies(header, chunks)
+}
+
+// escapeInlineMarkdown sanitizes a string for safe interpolation into Markdown.
+// Backticks would break inline-code spans; newlines/carriage returns would break the bullet structure.
+func escapeInlineMarkdown(s string) string {
+	s = strings.ReplaceAll(s, "`", "\\`")
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	return s
+}
+
+// buildValidationSummary formats validation results for a GitLab comment in a stable order.
+func buildValidationSummary(results map[string]ports.ValidationResult) string {
+	if len(results) == 0 {
+		return ""
+	}
+
+	keys := make([]string, 0, len(results))
+	for k := range results {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var lines []string
+	lines = append(lines, "**Validation**")
+
+	for _, target := range keys {
+		result := results[target]
+		if result.InvocationError != "" {
+			lines = append(lines, fmt.Sprintf("- ✗ %s: validator could not run: %s", target, escapeInlineMarkdown(result.InvocationError)))
+			continue
+		}
+		status := "✓"
+		if !result.Valid {
+			status = "✗"
+		}
+		lines = append(lines, fmt.Sprintf("- %s %s: %d/%d valid", status, target, result.ResourceCount-result.ErrorCount, result.ResourceCount))
+		for _, err := range result.Errors {
+			lines = append(lines, fmt.Sprintf("  - `%s.%s`: %s",
+				escapeInlineMarkdown(err.Kind),
+				escapeInlineMarkdown(err.Name),
+				escapeInlineMarkdown(err.Message)))
+		}
+	}
+
+	return strings.Join(lines, "\n") + "\n\n"
 }
 
 func buildSummaryLines(result ComparisonResult, showAdded, showRemoved bool) string {

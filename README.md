@@ -93,6 +93,32 @@ When running inside GitLab CI, most settings are detected automatically:
 - `--gitlab-merge-request-iid` falls back to `CI_MERGE_REQUEST_IID`.
 - `--gitlab-token` falls back to `CI_JOB_TOKEN` if no explicit token is provided (ensure the token has the necessary scope to post notes).
 
+### Manifest validation
+
+`argo-compare` can validate rendered manifests against Kubernetes OpenAPI schemas using [kubeconform](https://github.com/yannh/kubeconform). Validation runs after rendering, helping catch schema violations before deployment. Results are included in stdout output and (when configured) GitLab MR comments.
+
+Validation is **opt-in**. The comparison always runs to completion (diff is printed and any configured MR comment is posted) — but if any resource fails schema validation, or the validator itself cannot run, `argo-compare` exits with a non-zero status so CI can gate the merge.
+
+```bash
+argo-compare branch <target-branch> --validate-manifests
+```
+
+Optional flags:
+
+- `--kubeconform-path <path>` — Override the kubeconform binary location (defaults to `kubeconform` resolved via `PATH`).
+- `--skip-validation-kinds <Kind1,Kind2>` — Comma-separated list of resource kinds to skip (useful for custom resources without published schemas, e.g. `ServiceMonitor,ArgoApplication`).
+
+Equivalent environment variables (CLI flags take precedence when both are set):
+
+```bash
+ARGO_COMPARE_VALIDATE_MANIFESTS=true \
+ARGO_COMPARE_KUBECONFORM_PATH=/usr/local/bin/kubeconform \
+ARGO_COMPARE_SKIP_VALIDATION_KINDS=ServiceMonitor,ArgoApplication \
+argo-compare branch <target-branch>
+```
+
+`kubeconform` must be available in the runtime environment when validation is enabled. The published Docker image (`ghcr.io/shini4i/argo-compare`) bundles it; for standalone binary installs, install [kubeconform](https://github.com/yannh/kubeconform) separately.
+
 ### Sensitive data handling
 
 `argo-compare` masks the rendered contents of Kubernetes `Secret` manifests before they reach stdout logs, external diff tools, or merge request comments. Each secret entry is replaced with a deterministic hash placeholder, allowing reviewers to spot that a value changed without exposing the underlying secret material.
@@ -149,7 +175,8 @@ If AWS credentials are not available (e.g., running locally without AWS access),
 2) It will get the content of the changed Application files from the target branch.
 3) It will render manifests using the helm template using source and target branch values.
 4) It will get rid of helm related labels as they are not important for the comparison. (It can be skipped by providing `--preserve-helm-labels` flag)
-5) As the last step, it will compare rendered manifest from the source and destination branches and print the
+5) Optionally, when `--validate-manifests` is enabled, rendered manifests are validated against Kubernetes schemas via `kubeconform`.
+6) As the last step, it will compare rendered manifest from the source and destination branches and print the
    difference.
 
 ## Current limitations
@@ -164,6 +191,7 @@ If AWS credentials are not available (e.g., running locally without AWS access),
 - [x] Add support for OCI registries (including AWS ECR with automatic authentication)
 - [x] Add support for posting diff as a comment to MR (GitLab)
 - [ ] Add support for posting diff as a comment to PR (GitHub)
+- [x] Add manifest validation via kubeconform
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.

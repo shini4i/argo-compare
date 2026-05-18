@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/op/go-logging"
+	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -235,4 +236,116 @@ func TestCommentStrategyIgnoresNonCRDManifests(t *testing.T) {
 	body := poster.bodies[0]
 	assert.Contains(t, body, "credentials.yaml")
 	assert.NotContains(t, body, "CRD Notes")
+}
+
+func TestBuildValidationSummaryEmpty(t *testing.T) {
+	result := buildValidationSummary(nil)
+	assert.Empty(t, result)
+
+	result = buildValidationSummary(map[string]ports.ValidationResult{})
+	assert.Empty(t, result)
+}
+
+func TestBuildValidationSummaryAllValid(t *testing.T) {
+	results := map[string]ports.ValidationResult{
+		"src": {Target: "src", Valid: true, ResourceCount: 5},
+	}
+
+	summary := buildValidationSummary(results)
+
+	assert.Contains(t, summary, "**Validation**")
+	assert.Contains(t, summary, "✓")
+	assert.Contains(t, summary, "src: 5/5 valid")
+}
+
+func TestBuildValidationSummaryWithErrors(t *testing.T) {
+	results := map[string]ports.ValidationResult{
+		"dst": {
+			Target:        "dst",
+			Valid:         false,
+			ResourceCount: 3,
+			ErrorCount:    2,
+			Errors: []ports.ValidationError{
+				{Kind: "Deployment", Name: "broken", Message: "missing field spec.selector"},
+				{Kind: "Service", Name: "svc", Message: "invalid port"},
+			},
+		},
+	}
+
+	summary := buildValidationSummary(results)
+
+	assert.Contains(t, summary, "**Validation**")
+	assert.Contains(t, summary, "✗")
+	assert.Contains(t, summary, "dst: 1/3 valid")
+	assert.Contains(t, summary, "`Deployment.broken`")
+	assert.Contains(t, summary, "missing field spec.selector")
+	assert.Contains(t, summary, "`Service.svc`")
+	assert.Contains(t, summary, "invalid port")
+}
+
+func TestBuildValidationSummaryInvocationError(t *testing.T) {
+	results := map[string]ports.ValidationResult{
+		"src": {Target: "src", InvocationError: "executable file not found in $PATH"},
+	}
+
+	summary := buildValidationSummary(results)
+
+	assert.Contains(t, summary, "**Validation**")
+	assert.Contains(t, summary, "✗")
+	assert.Contains(t, summary, "validator could not run")
+	assert.Contains(t, summary, "executable file not found")
+}
+
+func TestBuildValidationSummaryEscapesMarkdownInjection(t *testing.T) {
+	// Crafted manifest fields could otherwise break out of the inline-code span or
+	// inject newlines that disrupt the bullet structure of the comment.
+	results := map[string]ports.ValidationResult{
+		"src": {
+			Target:        "src",
+			Valid:         false,
+			ResourceCount: 1,
+			ErrorCount:    1,
+			Errors: []ports.ValidationError{
+				{
+					Kind:    "Deployment`hax",
+					Name:    "evil`name",
+					Message: "line1\nline2\rwith CR",
+				},
+			},
+		},
+	}
+
+	summary := buildValidationSummary(results)
+
+	assert.NotContains(t, summary, "Deployment`hax", "raw backtick must be escaped")
+	assert.NotContains(t, summary, "evil`name", "raw backtick must be escaped")
+	assert.Contains(t, summary, "Deployment\\`hax")
+	assert.Contains(t, summary, "evil\\`name")
+	// Newlines/CR must be normalized so they don't break the bullet layout.
+	assert.NotContains(t, summary, "line1\nline2", "newlines in Message must be normalized")
+	assert.NotContains(t, summary, "line2\rwith", "carriage returns in Message must be normalized")
+}
+
+func TestCommentStrategyIncludesValidationResults(t *testing.T) {
+	poster := &stubPoster{}
+	logger := setupSilentLogger("comment-validation", t)
+
+	strategy := CommentStrategy{
+		Log:             logger,
+		Poster:          poster,
+		ApplicationPath: "apps/app.yaml",
+	}
+
+	result := ComparisonResult{
+		Changed: []DiffOutput{{File: File{Name: "/test.yaml"}, Diff: "--- a\n+++ b\n+ added"}},
+		ValidationResults: map[string]ports.ValidationResult{
+			"src": {Target: "src", Valid: true, ResourceCount: 3},
+		},
+	}
+
+	require.NoError(t, strategy.Present(context.Background(), result))
+	require.Len(t, poster.bodies, 1)
+	body := poster.bodies[0]
+	assert.Contains(t, body, "**Validation**")
+	assert.Contains(t, body, "src: 3/3 valid")
 }

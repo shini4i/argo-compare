@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/op/go-logging"
+	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -273,6 +274,87 @@ func TestExternalDiffStrategyPresentShowFlags(t *testing.T) {
 	assert.Contains(t, err.Error(), "changed.yaml")
 	assert.NotContains(t, err.Error(), "added.yaml")
 	assert.NotContains(t, err.Error(), "removed.yaml")
+}
+
+func TestStdoutStrategyPresentEmptyResult(t *testing.T) {
+	logger := logging.MustGetLogger("test-stdout")
+	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+	t.Cleanup(func() {
+		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
+	})
+
+	strategy := StdoutStrategy{Log: logger}
+	err := strategy.Present(context.Background(), ComparisonResult{})
+	require.NoError(t, err)
+}
+
+func TestStdoutStrategyPresentWithValidationResults(t *testing.T) {
+	logger := logging.MustGetLogger("test-stdout-validation")
+	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+	t.Cleanup(func() {
+		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
+	})
+
+	strategy := StdoutStrategy{Log: logger}
+	result := ComparisonResult{
+		ValidationResults: map[string]ports.ValidationResult{
+			"src": {
+				Target:        "src",
+				Valid:         true,
+				ResourceCount: 5,
+			},
+			"dst": {
+				Target:        "dst",
+				Valid:         false,
+				ResourceCount: 5,
+				ErrorCount:    1,
+				Errors: []ports.ValidationError{
+					{Kind: "Deployment", Name: "broken", Message: "schema mismatch"},
+				},
+			},
+		},
+	}
+
+	err := strategy.Present(context.Background(), result)
+	require.NoError(t, err)
+}
+
+func TestStdoutStrategyPresentValidationInvocationError(t *testing.T) {
+	logger := logging.MustGetLogger("test-stdout-validation-invoke-err")
+	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+	t.Cleanup(func() {
+		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
+	})
+
+	strategy := StdoutStrategy{Log: logger}
+	result := ComparisonResult{
+		ValidationResults: map[string]ports.ValidationResult{
+			"src": {
+				Target:          "src",
+				InvocationError: "kubeconform binary not found in $PATH",
+			},
+		},
+	}
+
+	// Should not error and should exercise the InvocationError branch in printValidationResults.
+	err := strategy.Present(context.Background(), result)
+	require.NoError(t, err)
+}
+
+func TestStdoutStrategyPresentNoValidationResults(t *testing.T) {
+	logger := logging.MustGetLogger("test-stdout-no-validation")
+	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+	t.Cleanup(func() {
+		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
+	})
+
+	strategy := StdoutStrategy{Log: logger}
+	result := ComparisonResult{
+		Changed: []DiffOutput{{File: File{Name: "test.yaml"}, Diff: "changes"}},
+	}
+
+	err := strategy.Present(context.Background(), result)
+	require.NoError(t, err)
 }
 
 func TestValidateToolName(t *testing.T) {
