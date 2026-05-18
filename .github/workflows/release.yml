@@ -37,3 +37,12 @@ jobs:
         run: nix develop --command goreleaser release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update nixpkgs
+        if: success()
+        uses: shini4i/nixpkgs-updater@v1
+        with:
+          package-name: argo-compare
+          version: ${{ github.ref_name }}
+          target-repo: shini4i/nixpkgs
+          github-token: ${{ secrets.NIXPKGS_UPDATER_TOKEN }}
