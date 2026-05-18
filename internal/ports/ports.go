@@ -37,7 +37,7 @@ type SensitiveDataMasker interface {
 // RegistryCredentials holds authentication details for a Helm registry.
 type RegistryCredentials struct {
 	Username string
-	Password string // #nosec G117 -- credential field for registry auth, populated from provider
+	Password string // #nosec G101 -- credential field for registry auth, populated from provider
 }
 
 // CredentialProvider resolves authentication credentials for a registry URL.
@@ -96,4 +96,41 @@ type HelmChartsProcessor interface {
 	DownloadHelmChart(ctx context.Context, deps HelmDeps, req ChartDownloadRequest) error
 	ExtractHelmChart(ctx context.Context, deps HelmDeps, req ChartExtractRequest) error
 	RenderAppSource(ctx context.Context, cmdRunner CmdRunner, req ChartRenderRequest) error
+}
+
+// ValidationError represents a single validation error for a Kubernetes manifest.
+type ValidationError struct {
+	// Filename is the path to the manifest file that failed validation.
+	Filename string
+	// Kind is the Kubernetes resource kind (e.g. "Deployment", "Service").
+	Kind string
+	// Name is the metadata.name of the resource.
+	Name string
+	// Message describes the validation failure.
+	Message string
+}
+
+// ValidationResult captures the outcome of validating a directory of manifests.
+type ValidationResult struct {
+	// Target identifies which side of the comparison was validated (e.g. "src" or "dst").
+	Target string
+	// Valid reports whether all manifests passed validation.
+	Valid bool
+	// ResourceCount is the total number of resources validated.
+	ResourceCount int
+	// ErrorCount is the number of resources that failed validation.
+	ErrorCount int
+	// Errors contains structured details for each validation failure.
+	Errors []ValidationError
+}
+
+// ManifestValidator validates rendered Kubernetes manifests against schemas.
+// Implementations typically wrap an external validator such as kubeconform.
+type ManifestValidator interface {
+	// Validate runs schema validation against all manifest files in manifestDir.
+	// The target argument is a tag (e.g. "src", "dst") used to label the result.
+	// The context can be used for cancellation and timeout control.
+	// A non-nil error indicates the validator itself failed to run; schema
+	// errors in the manifests are returned via ValidationResult.
+	Validate(ctx context.Context, target, manifestDir string) (ValidationResult, error)
 }

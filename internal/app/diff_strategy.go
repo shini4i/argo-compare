@@ -119,28 +119,31 @@ func isValidToolChar(r rune) bool {
 		r == '-' || r == '_' || r == '.' || r == '/'
 }
 
-// validateToolName checks if the tool name contains only allowed characters.
-// validateToolName checks that a tool name is non-empty, contains only allowed
-// characters (letters, digits, '-', '_', '.', '/') and does not include path
-// traversal sequences like "..". It returns an error describing the invalid name
-// when a check fails.
-func validateToolName(tool string) error {
-	if tool == "" {
-		return fmt.Errorf("invalid diff tool name: empty")
+// validateExecutable checks that a named executable path is non-empty, contains
+// only allowed characters (letters, digits, '-', '_', '.', '/'), and does not
+// include path-traversal sequences. kind labels the executable in error messages
+// (e.g. "diff tool name", "kubeconform binary path").
+func validateExecutable(kind, name string) error {
+	if name == "" {
+		return fmt.Errorf("invalid %s: empty", kind)
 	}
 
-	for _, r := range tool {
+	for _, r := range name {
 		if !isValidToolChar(r) {
-			return fmt.Errorf("invalid diff tool name: %q", tool)
+			return fmt.Errorf("invalid %s: %q", kind, name)
 		}
 	}
 
-	// Reject path traversal
-	if strings.Contains(tool, "..") {
-		return fmt.Errorf("invalid diff tool name: %q", tool)
+	if strings.Contains(name, "..") {
+		return fmt.Errorf("invalid %s: %q", kind, name)
 	}
 
 	return nil
+}
+
+// validateToolName delegates to validateExecutable with the "diff tool name" label.
+func validateToolName(tool string) error {
+	return validateExecutable("diff tool name", tool)
 }
 
 // runTool executes the external diff command with the given diff content.
