@@ -97,7 +97,7 @@ When running inside GitLab CI, most settings are detected automatically:
 
 `argo-compare` can validate rendered manifests against Kubernetes OpenAPI schemas using [kubeconform](https://github.com/yannh/kubeconform). Validation runs after rendering, helping catch schema violations before deployment. Results are included in stdout output and (when configured) GitLab MR comments.
 
-Validation is **opt-in** and **non-blocking** — it surfaces issues without interrupting the comparison workflow.
+Validation is **opt-in**. The comparison always runs to completion (diff is printed and any configured MR comment is posted) — but if any resource fails schema validation, or the validator itself cannot run, `argo-compare` exits with a non-zero status so CI can gate the merge.
 
 ```bash
 argo-compare branch <target-branch> --validate-manifests

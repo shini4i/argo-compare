@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/spf13/afero"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -255,4 +257,205 @@ data:
   version: %s
 `, req.ReleaseName, req.Namespace, req.ChartVersion)
 	return os.WriteFile(filepath.Join(dir, "manifest.yaml"), []byte(manifest), 0o644)
+}
+
+// stubValidator returns the configured result on every call, regardless of inputs.
+// Used to drive Run() through the success / failure paths in integration tests.
+type stubValidator struct {
+	result ports.ValidationResult
+	err    error
+	calls  int
+	mu     sync.Mutex
+}
+
+func (s *stubValidator) Validate(_ context.Context, target, _ string) (ports.ValidationResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls++
+	r := s.result
+	r.Target = target
+	return r, s.err
+}
+
+func TestAppRunReturnsValidationErrorWhenValidatorFails(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skip integration test in short mode")
+	}
+
+	tempDir := t.TempDir()
+	cacheDir := filepath.Join(tempDir, "cache")
+	tmpBase := filepath.Join(tempDir, "tmp")
+	require.NoError(t, os.MkdirAll(tmpBase, 0o755))
+
+	remoteDir := filepath.Join(tempDir, "origin.git")
+	_, err := git.PlainInit(remoteDir, true)
+	require.NoError(t, err)
+
+	workDir := filepath.Join(tempDir, "work")
+	repo, err := git.PlainInit(workDir, false)
+	require.NoError(t, err)
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))))
+
+	writeApplication(t, workDir, `1.0.0`, 1)
+
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+	_, err = worktree.Add("apps/demo.yaml")
+	require.NoError(t, err)
+	initialHash, err := worktree.Commit("initial commit", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	_, err = repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{remoteDir}})
+	require.NoError(t, err)
+	require.NoError(t, repo.Push(&git.PushOptions{
+		RemoteName: "origin",
+		RefSpecs:   []config.RefSpec{"refs/heads/main:refs/heads/main"},
+	}))
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), initialHash)))
+
+	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{
+		Branch: plumbing.NewBranchReferenceName("feature/smoke"),
+		Create: true,
+	}))
+	writeApplication(t, workDir, `1.1.0`, 2)
+	_, err = worktree.Add("apps/demo.yaml")
+	require.NoError(t, err)
+	_, err = worktree.Commit("update chart version", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(workDir))
+	t.Cleanup(func() { require.NoError(t, os.Chdir(oldWD)) })
+
+	var logBuffer bytes.Buffer
+	testBackend := logging.NewLogBackend(&logBuffer, "", 0)
+	logging.SetBackend(logging.NewBackendFormatter(testBackend, logging.MustStringFormatter(`%{message}`)))
+	t.Cleanup(func() {
+		logging.SetBackend(logging.NewBackendFormatter(logging.NewLogBackend(os.Stdout, "", 0), logging.MustStringFormatter(`%{message}`)))
+	})
+
+	logger := logging.MustGetLogger("app-test-validation-fail")
+
+	validator := &stubValidator{
+		result: ports.ValidationResult{
+			Valid:         false,
+			ResourceCount: 1,
+			ErrorCount:    1,
+			Errors: []ports.ValidationError{
+				{Kind: "ConfigMap", Name: "demo", Message: "schema mismatch (test)"},
+			},
+		},
+	}
+
+	cfg := Config{
+		TargetBranch:      "main",
+		CacheDir:          cacheDir,
+		TempDirBase:       tmpBase,
+		Version:           "test",
+		ValidateManifests: true,
+	}
+
+	appInstance, err := New(cfg, Dependencies{
+		FS:                afero.NewOsFs(),
+		CmdRunner:         &stubCmdRunner{},
+		FileReader:        utils.OsFileReader{},
+		HelmProcessor:     newStubHelmProcessor(t),
+		Globber:           utils.CustomGlobber{},
+		Logger:            logger,
+		ManifestValidator: validator,
+	})
+	require.NoError(t, err)
+
+	err = appInstance.Run(context.Background())
+	require.Error(t, err, "Run must return an error when validation fails")
+	require.True(t, errors.Is(err, ErrManifestValidationFailed), "error must wrap ErrManifestValidationFailed, got: %v", err)
+
+	// Validator was actually invoked (sanity check the test exercises the path).
+	assert.Greater(t, validator.calls, 0, "validator must have been called")
+	// Diff still ran end-to-end before the failure was returned.
+	assert.Contains(t, logBuffer.String(), "Manifest Validation Results")
+}
+
+func TestAppRunSucceedsWhenValidatorReportsValid(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skip integration test in short mode")
+	}
+
+	tempDir := t.TempDir()
+	cacheDir := filepath.Join(tempDir, "cache")
+	tmpBase := filepath.Join(tempDir, "tmp")
+	require.NoError(t, os.MkdirAll(tmpBase, 0o755))
+
+	remoteDir := filepath.Join(tempDir, "origin.git")
+	_, err := git.PlainInit(remoteDir, true)
+	require.NoError(t, err)
+
+	workDir := filepath.Join(tempDir, "work")
+	repo, err := git.PlainInit(workDir, false)
+	require.NoError(t, err)
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))))
+
+	writeApplication(t, workDir, `1.0.0`, 1)
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+	_, err = worktree.Add("apps/demo.yaml")
+	require.NoError(t, err)
+	initialHash, err := worktree.Commit("initial commit", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+	_, err = repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{remoteDir}})
+	require.NoError(t, err)
+	require.NoError(t, repo.Push(&git.PushOptions{
+		RemoteName: "origin",
+		RefSpecs:   []config.RefSpec{"refs/heads/main:refs/heads/main"},
+	}))
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), initialHash)))
+
+	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{
+		Branch: plumbing.NewBranchReferenceName("feature/smoke"),
+		Create: true,
+	}))
+	writeApplication(t, workDir, `1.1.0`, 2)
+	_, err = worktree.Add("apps/demo.yaml")
+	require.NoError(t, err)
+	_, err = worktree.Commit("update chart version", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(workDir))
+	t.Cleanup(func() { require.NoError(t, os.Chdir(oldWD)) })
+
+	logger := logging.MustGetLogger("app-test-validation-ok")
+	logging.SetBackend(logging.NewLogBackend(&bytes.Buffer{}, "", 0))
+	t.Cleanup(func() {
+		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
+	})
+
+	validator := &stubValidator{
+		result: ports.ValidationResult{Valid: true, ResourceCount: 1},
+	}
+
+	cfg := Config{
+		TargetBranch:      "main",
+		CacheDir:          cacheDir,
+		TempDirBase:       tmpBase,
+		Version:           "test",
+		ValidateManifests: true,
+	}
+
+	appInstance, err := New(cfg, Dependencies{
+		FS:                afero.NewOsFs(),
+		CmdRunner:         &stubCmdRunner{},
+		FileReader:        utils.OsFileReader{},
+		HelmProcessor:     newStubHelmProcessor(t),
+		Globber:           utils.CustomGlobber{},
+		Logger:            logger,
+		ManifestValidator: validator,
+	})
+	require.NoError(t, err)
+
+	err = appInstance.Run(context.Background())
+	require.NoError(t, err, "Run must not return an error when validation passes")
+	assert.Greater(t, validator.calls, 0, "validator must have been called")
 }
