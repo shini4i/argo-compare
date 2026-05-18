@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"testing"
@@ -382,6 +383,143 @@ func TestNewWithInjectedValidator(t *testing.T) {
 
 	require.NotNil(t, appInstance.validator, "injected validator should be used")
 	assert.Same(t, injectedValidator, appInstance.validator)
+}
+
+func TestProcessFileRecordsValidatorInvocationError(t *testing.T) {
+	// When the validator itself fails (e.g. binary missing), processFile must
+	// record a synthetic ValidationResult with InvocationError populated so the
+	// failure surfaces in presenters, and must NOT propagate the error from
+	// processFile (validation is a best-effort, non-fatal step).
+	ctrl := gomock.NewController(t)
+	mockValidator := mocks.NewMockManifestValidator(ctrl)
+	mockHelmProcessor := mocks.NewMockHelmChartsProcessor(ctrl)
+
+	cfg, err := NewConfig("main", WithCacheDir("/tmp/cache"), WithValidateManifests(true))
+	require.NoError(t, err)
+
+	logger := setupTestLogger(t, "app-processfile-validator-invocation-err")
+
+	appInstance, err := New(cfg, Dependencies{
+		FS:                afero.NewMemMapFs(),
+		Logger:            logger,
+		ManifestValidator: mockValidator,
+		HelmProcessor:     mockHelmProcessor,
+	})
+	require.NoError(t, err)
+
+	tmpDir := t.TempDir()
+
+	mockHelmProcessor.EXPECT().GenerateValuesFile(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().DownloadHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().ExtractHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().RenderAppSource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
+	mockValidator.EXPECT().
+		Validate(gomock.Any(), TargetTypeDestination, gomock.Any()).
+		Return(ports.ValidationResult{}, errors.New("kubeconform binary not found"))
+
+	testApp := models.Application{}
+	testApp.Spec.Source = &models.Source{Chart: "my-chart", RepoURL: "https://charts.example.com"}
+	testApp.Spec.Destination = &models.Destination{Server: "https://kubernetes.default.svc", Namespace: "default"}
+
+	validationResults := make(map[string]ports.ValidationResult)
+	err = appInstance.processFile(context.Background(), "apps/test.yaml", TargetTypeDestination, testApp, tmpDir, validationResults)
+	require.NoError(t, err, "validator invocation failure should not propagate from processFile")
+
+	require.Contains(t, validationResults, TargetTypeDestination)
+	stored := validationResults[TargetTypeDestination]
+	assert.Equal(t, TargetTypeDestination, stored.Target)
+	assert.Contains(t, stored.InvocationError, "kubeconform binary not found")
+	assert.False(t, stored.Valid, "synthetic result for invocation error should be Valid=false")
+}
+
+func TestProcessFileRecordsInvalidValidationResult(t *testing.T) {
+	// When the validator reports schema errors (Valid=false, no InvocationError),
+	// processFile must store the result verbatim and not propagate any error.
+	ctrl := gomock.NewController(t)
+	mockValidator := mocks.NewMockManifestValidator(ctrl)
+	mockHelmProcessor := mocks.NewMockHelmChartsProcessor(ctrl)
+
+	cfg, err := NewConfig("main", WithCacheDir("/tmp/cache"), WithValidateManifests(true))
+	require.NoError(t, err)
+
+	logger := setupTestLogger(t, "app-processfile-validator-invalid")
+
+	appInstance, err := New(cfg, Dependencies{
+		FS:                afero.NewMemMapFs(),
+		Logger:            logger,
+		ManifestValidator: mockValidator,
+		HelmProcessor:     mockHelmProcessor,
+	})
+	require.NoError(t, err)
+
+	tmpDir := t.TempDir()
+
+	mockHelmProcessor.EXPECT().GenerateValuesFile(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().DownloadHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().ExtractHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().RenderAppSource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
+	invalidResult := ports.ValidationResult{
+		Target:        TargetTypeDestination,
+		Valid:         false,
+		ResourceCount: 2,
+		ErrorCount:    1,
+		Errors: []ports.ValidationError{
+			{Kind: "Deployment", Name: "broken", Message: "missing field"},
+		},
+	}
+	mockValidator.EXPECT().
+		Validate(gomock.Any(), TargetTypeDestination, gomock.Any()).
+		Return(invalidResult, nil)
+
+	testApp := models.Application{}
+	testApp.Spec.Source = &models.Source{Chart: "my-chart", RepoURL: "https://charts.example.com"}
+	testApp.Spec.Destination = &models.Destination{Server: "https://kubernetes.default.svc", Namespace: "default"}
+
+	validationResults := make(map[string]ports.ValidationResult)
+	err = appInstance.processFile(context.Background(), "apps/test.yaml", TargetTypeDestination, testApp, tmpDir, validationResults)
+	require.NoError(t, err, "schema-invalid manifests must not cause processFile to fail")
+
+	require.Contains(t, validationResults, TargetTypeDestination)
+	assert.Equal(t, invalidResult, validationResults[TargetTypeDestination])
+}
+
+func TestProcessFileSkipsValidationWhenValidatorNil(t *testing.T) {
+	// When validation is disabled (validator is nil), processFile must not
+	// touch validationResults at all.
+	ctrl := gomock.NewController(t)
+	mockHelmProcessor := mocks.NewMockHelmChartsProcessor(ctrl)
+
+	cfg, err := NewConfig("main", WithCacheDir("/tmp/cache"))
+	require.NoError(t, err)
+
+	logger := setupTestLogger(t, "app-processfile-no-validator")
+
+	appInstance, err := New(cfg, Dependencies{
+		FS:            afero.NewMemMapFs(),
+		Logger:        logger,
+		HelmProcessor: mockHelmProcessor,
+	})
+	require.NoError(t, err)
+	require.Nil(t, appInstance.validator)
+
+	tmpDir := t.TempDir()
+
+	mockHelmProcessor.EXPECT().GenerateValuesFile(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().DownloadHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().ExtractHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().RenderAppSource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
+	testApp := models.Application{}
+	testApp.Spec.Source = &models.Source{Chart: "my-chart", RepoURL: "https://charts.example.com"}
+	testApp.Spec.Destination = &models.Destination{Server: "https://kubernetes.default.svc", Namespace: "default"}
+
+	validationResults := make(map[string]ports.ValidationResult)
+	err = appInstance.processFile(context.Background(), "apps/test.yaml", TargetTypeDestination, testApp, tmpDir, validationResults)
+	require.NoError(t, err)
+
+	assert.Empty(t, validationResults, "validationResults must remain empty when no validator is configured")
 }
 
 func TestProcessFileCallsValidatorWithCorrectPath(t *testing.T) {

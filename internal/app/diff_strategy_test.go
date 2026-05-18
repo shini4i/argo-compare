@@ -319,6 +319,28 @@ func TestStdoutStrategyPresentWithValidationResults(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestStdoutStrategyPresentValidationInvocationError(t *testing.T) {
+	logger := logging.MustGetLogger("test-stdout-validation-invoke-err")
+	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+	t.Cleanup(func() {
+		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
+	})
+
+	strategy := StdoutStrategy{Log: logger}
+	result := ComparisonResult{
+		ValidationResults: map[string]ports.ValidationResult{
+			"src": {
+				Target:          "src",
+				InvocationError: "kubeconform binary not found in $PATH",
+			},
+		},
+	}
+
+	// Should not error and should exercise the InvocationError branch in printValidationResults.
+	err := strategy.Present(context.Background(), result)
+	require.NoError(t, err)
+}
+
 func TestStdoutStrategyPresentNoValidationResults(t *testing.T) {
 	logger := logging.MustGetLogger("test-stdout-no-validation")
 	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))

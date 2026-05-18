@@ -262,6 +262,75 @@ func TestKubeconformValidator_PropagatesNonExitErrors(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to run")
 }
 
+func TestIsValidKindName(t *testing.T) {
+	tests := []struct {
+		name string
+		kind string
+		want bool
+	}{
+		{"empty string", "", false},
+		{"leading digit", "1Pod", false},
+		{"all digits", "123", false},
+		{"digit after letter ok", "Deploy2", true},
+		{"mixed alnum ok", "App2Service3", true},
+		{"single uppercase letter", "A", true},
+		{"single lowercase letter", "a", true},
+		{"valid pascal case", "ServiceMonitor", true},
+		{"hyphen rejected", "Service-Monitor", false},
+		{"underscore rejected", "Service_Monitor", false},
+		{"space rejected", "Service Monitor", false},
+		{"dot rejected", "Service.Monitor", false},
+		{"unicode rejected", "Sërvice", false},
+		{"trailing exclamation rejected", "Service!", false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			got := isValidKindName(tt.kind)
+			assert.Equal(t, tt.want, got, "isValidKindName(%q)", tt.kind)
+		})
+	}
+}
+
+func TestKubeconformValidator_RejectsEmptyStringInSkipKinds(t *testing.T) {
+	// Programmatic callers may pass an empty string; the validator must reject it
+	// before invoking kubeconform.
+	ctrl := gomock.NewController(t)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	// No EXPECT() — any call to Run must not happen.
+
+	v := &KubeconformValidator{
+		CmdRunner: mockCmdRunner,
+		Path:      "kubeconform",
+		SkipKinds: []string{"ValidKind", ""},
+	}
+
+	_, err := v.Validate(context.Background(), "src", "/tmp/templates/src")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid kind name")
+}
+
+func TestKubeconformValidator_RejectsDigitFirstSkipKind(t *testing.T) {
+	// Kind names must start with a letter; a digit-first kind must be rejected.
+	ctrl := gomock.NewController(t)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	// No EXPECT() — any call to Run must not happen.
+
+	v := &KubeconformValidator{
+		CmdRunner: mockCmdRunner,
+		Path:      "kubeconform",
+		SkipKinds: []string{"1BadKind"},
+	}
+
+	_, err := v.Validate(context.Background(), "src", "/tmp/templates/src")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid kind name")
+	assert.Contains(t, err.Error(), "1BadKind")
+}
+
 func TestKubeconformValidator_ExitErrorWithEmptyStdout(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
