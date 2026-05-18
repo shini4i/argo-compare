@@ -318,3 +318,39 @@ func TestExecuteValidationEnvVarFalsyValues(t *testing.T) {
 		})
 	}
 }
+
+func TestExecuteValidationCLIFlagsBeatEnvVars(t *testing.T) {
+	// Documented in README: when both are set, CLI flags take precedence.
+	var receivedConfig app.Config
+
+	opts := Options{
+		Version:          "test-version",
+		CacheDir:         t.TempDir(),
+		TempDirBase:      os.TempDir(),
+		ExternalDiffTool: "",
+		InitLogging:      func(bool) {},
+		RunApp: func(_ context.Context, cfg app.Config) error {
+			receivedConfig = cfg
+			return nil
+		},
+	}
+
+	// Env vars seed one set of values...
+	t.Setenv("ARGO_COMPARE_VALIDATE_MANIFESTS", "false")
+	t.Setenv("ARGO_COMPARE_KUBECONFORM_PATH", "/from/env/kubeconform")
+	t.Setenv("ARGO_COMPARE_SKIP_VALIDATION_KINDS", "FromEnvKind")
+
+	// ...CLI flags pass distinct, conflicting values.
+	args := []string{
+		"branch", "main",
+		"--validate-manifests",
+		"--kubeconform-path", "/from/cli/kubeconform",
+		"--skip-validation-kinds", "FromCliKind,SecondCliKind",
+	}
+
+	require.NoError(t, Execute(opts, args))
+
+	assert.True(t, receivedConfig.ValidateManifests, "CLI --validate-manifests should override env=false")
+	assert.Equal(t, "/from/cli/kubeconform", receivedConfig.KubeconformPath, "CLI path should win")
+	assert.Equal(t, []string{"FromCliKind", "SecondCliKind"}, receivedConfig.ValidateSkipKinds, "CLI kinds should win")
+}

@@ -101,20 +101,21 @@ func (v *KubeconformValidator) Validate(ctx context.Context, target, manifestDir
 }
 
 // isValidKindName reports whether s is a valid Kubernetes resource kind identifier.
-// Kind names are PascalCase ASCII identifiers: start with a letter, followed by
-// letters or digits only.
+// Kubernetes API conventions require Kinds to be PascalCase: ^[A-Z][A-Za-z0-9]*$.
+// Lowercase-first names are rejected because kubeconform's -skip is case-sensitive
+// and accepting them would silently no-op (e.g. "deployment" would not skip Deployments).
 func isValidKindName(s string) bool {
 	if s == "" {
 		return false
 	}
 	for i, r := range s {
 		switch {
-		case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z':
-			// ok at any position
-		case r >= '0' && r <= '9':
-			if i == 0 {
-				return false // must start with a letter
+		case i == 0:
+			if !(r >= 'A' && r <= 'Z') {
+				return false // must start with an uppercase letter
 			}
+		case (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			// ok at any non-first position
 		default:
 			return false
 		}

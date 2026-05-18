@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/op/go-logging"
@@ -551,7 +552,8 @@ func TestProcessFileCallsValidatorWithCorrectPath(t *testing.T) {
 	mockHelmProcessor.EXPECT().ExtractHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	mockHelmProcessor.EXPECT().RenderAppSource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
-	expectedManifestDir := tmpDir + "/templates/" + TargetTypeDestination
+	// Match the path layout that processFile uses (filepath.Join, not string concat).
+	expectedManifestDir := filepath.Join(tmpDir, "templates", TargetTypeDestination)
 	expectedResult := ports.ValidationResult{
 		Target:        TargetTypeDestination,
 		Valid:         true,
