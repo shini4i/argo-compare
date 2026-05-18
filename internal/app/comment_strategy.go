@@ -135,6 +135,15 @@ func buildCommentBodies(result ComparisonResult, showAdded, showRemoved bool, ap
 	return assembleCommentBodies(header, chunks)
 }
 
+// escapeInlineMarkdown sanitizes a string for safe interpolation into Markdown.
+// Backticks would break inline-code spans; newlines/carriage returns would break the bullet structure.
+func escapeInlineMarkdown(s string) string {
+	s = strings.ReplaceAll(s, "`", "\\`")
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	return s
+}
+
 // buildValidationSummary formats validation results for a GitLab comment in a stable order.
 func buildValidationSummary(results map[string]ports.ValidationResult) string {
 	if len(results) == 0 {
@@ -153,7 +162,7 @@ func buildValidationSummary(results map[string]ports.ValidationResult) string {
 	for _, target := range keys {
 		result := results[target]
 		if result.InvocationError != "" {
-			lines = append(lines, fmt.Sprintf("- ✗ %s: validator could not run: %s", target, result.InvocationError))
+			lines = append(lines, fmt.Sprintf("- ✗ %s: validator could not run: %s", target, escapeInlineMarkdown(result.InvocationError)))
 			continue
 		}
 		status := "✓"
@@ -162,7 +171,10 @@ func buildValidationSummary(results map[string]ports.ValidationResult) string {
 		}
 		lines = append(lines, fmt.Sprintf("- %s %s: %d/%d valid", status, target, result.ResourceCount-result.ErrorCount, result.ResourceCount))
 		for _, err := range result.Errors {
-			lines = append(lines, fmt.Sprintf("  - `%s.%s`: %s", err.Kind, err.Name, err.Message))
+			lines = append(lines, fmt.Sprintf("  - `%s.%s`: %s",
+				escapeInlineMarkdown(err.Kind),
+				escapeInlineMarkdown(err.Name),
+				escapeInlineMarkdown(err.Message)))
 		}
 	}
 

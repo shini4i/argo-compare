@@ -296,6 +296,36 @@ func TestBuildValidationSummaryInvocationError(t *testing.T) {
 	assert.Contains(t, summary, "executable file not found")
 }
 
+func TestBuildValidationSummaryEscapesMarkdownInjection(t *testing.T) {
+	// Crafted manifest fields could otherwise break out of the inline-code span or
+	// inject newlines that disrupt the bullet structure of the comment.
+	results := map[string]ports.ValidationResult{
+		"src": {
+			Target:        "src",
+			Valid:         false,
+			ResourceCount: 1,
+			ErrorCount:    1,
+			Errors: []ports.ValidationError{
+				{
+					Kind:    "Deployment`hax",
+					Name:    "evil`name",
+					Message: "line1\nline2\rwith CR",
+				},
+			},
+		},
+	}
+
+	summary := buildValidationSummary(results)
+
+	assert.NotContains(t, summary, "Deployment`hax", "raw backtick must be escaped")
+	assert.NotContains(t, summary, "evil`name", "raw backtick must be escaped")
+	assert.Contains(t, summary, "Deployment\\`hax")
+	assert.Contains(t, summary, "evil\\`name")
+	// Newlines/CR must be normalized so they don't break the bullet layout.
+	assert.NotContains(t, summary, "line1\nline2", "newlines in Message must be normalized")
+	assert.NotContains(t, summary, "line2\rwith", "carriage returns in Message must be normalized")
+}
+
 func TestCommentStrategyIncludesValidationResults(t *testing.T) {
 	poster := &stubPoster{}
 	logger := setupSilentLogger("comment-validation", t)

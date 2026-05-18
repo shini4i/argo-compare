@@ -73,7 +73,8 @@ func (v *KubeconformValidator) Validate(ctx context.Context, target, manifestDir
 		}
 		args = append(args, "-skip", strings.Join(v.SkipKinds, ","))
 	}
-	args = append(args, manifestDir)
+	// "--" terminates options so manifestDir cannot be interpreted as a flag.
+	args = append(args, "--", manifestDir)
 
 	stdout, stderr, err := v.CmdRunner.Run(ctx, v.Path, args...)
 

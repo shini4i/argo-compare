@@ -157,7 +157,9 @@ func TestKubeconformValidator_PassesSkipKindsFlag(t *testing.T) {
 			require.GreaterOrEqual(t, skipIdx, 0, "-skip flag not found in args")
 			require.Less(t, skipIdx+1, len(args), "-skip has no value")
 			assert.Equal(t, "ServiceMonitor,ArgoApplication", args[skipIdx+1])
-			// manifestDir must be the last positional argument.
+			// manifestDir must be the last positional argument, preceded by "--".
+			require.GreaterOrEqual(t, len(args), 2)
+			assert.Equal(t, "--", args[len(args)-2], "-- separator missing before manifestDir")
 			assert.Equal(t, manifestDir, args[len(args)-1])
 			return validResourcesJSON, "", nil
 		})

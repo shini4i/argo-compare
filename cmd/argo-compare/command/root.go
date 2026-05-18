@@ -207,6 +207,10 @@ func loadBranchDefaults() branchFlags {
 	if validateStr != "" {
 		if parsed, err := strconv.ParseBool(validateStr); err == nil {
 			defaults.validateManifests = parsed
+		} else {
+			fmt.Fprintf(os.Stderr,
+				"warning: ARGO_COMPARE_VALIDATE_MANIFESTS=%q is not a valid boolean; validation disabled (use 1/true/0/false)\n",
+				validateStr)
 		}
 	}
 
