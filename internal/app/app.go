@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/op/go-logging"
@@ -25,15 +26,16 @@ const repoCredsPrefix = "REPO_CREDS_" // #nosec G101
 
 // Dependencies aggregates runtime collaborators required by App.
 type Dependencies struct {
-	FS                   afero.Fs
-	CmdRunner            ports.CmdRunner
-	FileReader           ports.FileReader
-	HelmProcessor        ports.HelmChartsProcessor
-	Globber              ports.Globber
-	Logger               *logging.Logger
-	CommentPosterFactory CommentPosterFactory
-	SensitiveDataMasker  ports.SensitiveDataMasker   // Responsible for redacting sensitive manifest fields.
-	CredentialProviders  []ports.CredentialProvider   // Dynamic credential providers (e.g. ECR). Optional; defaults include ECR.
+	FS                    afero.Fs
+	CmdRunner             ports.CmdRunner
+	FileReader            ports.FileReader
+	HelmProcessor         ports.HelmChartsProcessor
+	Globber               ports.Globber
+	Logger                *logging.Logger
+	CommentPosterFactory  CommentPosterFactory
+	SensitiveDataMasker   ports.SensitiveDataMasker   // Responsible for redacting sensitive manifest fields.
+	CredentialProviders   []ports.CredentialProvider   // Dynamic credential providers (e.g. ECR). Optional; defaults include ECR.
+	ManifestValidator     ports.ManifestValidator      // Validator for rendered manifests. Optional; defaults to KubeconformValidator if validation is enabled.
 }
 
 // App orchestrates the end-to-end comparison workflow.
@@ -50,6 +52,8 @@ type App struct {
 	activeProviders     []ports.CredentialProvider // Run-scoped chain: base providers + static fallback.
 	commentFactory      CommentPosterFactory
 	sensitiveDataMasker ports.SensitiveDataMasker // Applied to manifest content prior to diff generation.
+	validator           ports.ManifestValidator   // Optional validator for rendered manifests.
+	validationResults   map[string]ports.ValidationResult // Validation results per Application file.
 }
 
 // CommentPosterFactory builds a comment poster based on the active configuration.
@@ -97,6 +101,21 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 		}
 	}
 
+	var validator ports.ManifestValidator
+	if deps.ManifestValidator != nil {
+		validator = deps.ManifestValidator
+	} else if cfg.ValidateManifests {
+		kubeconformPath := cfg.KubeconformPath
+		if kubeconformPath == "" {
+			kubeconformPath = "kubeconform"
+		}
+		validator = &KubeconformValidator{
+			CmdRunner: deps.CmdRunner,
+			Path:      kubeconformPath,
+			SkipKinds: cfg.ValidateSkipKinds,
+		}
+	}
+
 	return &App{
 		cfg:                 cfg,
 		fs:                  deps.FS,
@@ -108,6 +127,8 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 		credentialProviders: deps.CredentialProviders,
 		commentFactory:      deps.CommentPosterFactory,
 		sensitiveDataMasker: deps.SensitiveDataMasker,
+		validator:           validator,
+		validationResults:   make(map[string]ports.ValidationResult),
 	}, nil
 }
 
@@ -271,7 +292,25 @@ func (a *App) processFile(ctx context.Context, fileName string, fileType string,
 		return err
 	}
 
-	return target.renderAppSources(ctx)
+	if err := target.renderAppSources(ctx); err != nil {
+		return err
+	}
+
+	if a.validator != nil {
+		manifests := filepath.Join(tmpDir, fileType)
+		result, err := a.validator.Validate(ctx, fileType, manifests)
+		if err != nil {
+			a.logger.Warningf("Manifest validation failed for %s: %v", fileType, err)
+		} else {
+			resultKey := fileName + "/" + fileType
+			a.validationResults[resultKey] = result
+			if !result.Valid {
+				a.logger.Warningf("Validation errors in %s: %d issues found", fileType, result.ErrorCount)
+			}
+		}
+	}
+
+	return nil
 }
 
 // runComparison executes the diff strategy for the prepared temporary workspace.
