@@ -56,6 +56,9 @@ type kubeconformSummary struct {
 // the validator itself (missing binary, malformed JSON, etc.) are returned
 // as errors.
 func (v *KubeconformValidator) Validate(ctx context.Context, target, manifestDir string) (ports.ValidationResult, error) {
+	if v.CmdRunner == nil {
+		return ports.ValidationResult{}, errors.New("kubeconform command runner is required")
+	}
 	if err := validateExecutable("kubeconform binary path", v.Path); err != nil {
 		return ports.ValidationResult{}, err
 	}

@@ -224,6 +224,19 @@ func TestKubeconformValidator_RejectsEmptyPath(t *testing.T) {
 	assert.Contains(t, err.Error(), "empty")
 }
 
+func TestKubeconformValidator_RejectsNilCmdRunner(t *testing.T) {
+	// Guards against hand-constructed KubeconformValidator{} that bypasses the
+	// default-injection in app.New(). A clear error beats a nil-pointer panic.
+	v := &KubeconformValidator{
+		Path: "kubeconform",
+	}
+
+	_, err := v.Validate(context.Background(), "src", "/tmp/templates/src")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "command runner is required")
+}
+
 func TestKubeconformValidator_HandlesMalformedJSON(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
