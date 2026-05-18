@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"sort"
 	"strings"
 
 	"github.com/op/go-logging"
@@ -57,23 +58,32 @@ func (s StdoutStrategy) Present(_ context.Context, result ComparisonResult) erro
 	return nil
 }
 
-// printValidationResults outputs validation status for each target.
+// printValidationResults outputs validation status for each target in a stable order.
 func (s StdoutStrategy) printValidationResults(results map[string]ports.ValidationResult) {
 	if len(results) == 0 {
 		return
 	}
 
+	keys := make([]string, 0, len(results))
+	for k := range results {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	s.Log.Info("===> Manifest Validation Results")
-	for target, result := range results {
+	for _, target := range keys {
+		result := results[target]
+		if result.InvocationError != "" {
+			s.Log.Warningf("  %s: validator could not run: %s", target, result.InvocationError)
+			continue
+		}
 		status := "✓"
 		if !result.Valid {
 			status = "✗"
 		}
 		s.Log.Infof("%s %s: %d resources validated", status, target, result.ResourceCount)
-		if !result.Valid && len(result.Errors) > 0 {
-			for _, err := range result.Errors {
-				s.Log.Warningf("  - %s.%s: %s", err.Kind, err.Name, err.Message)
-			}
+		for _, err := range result.Errors {
+			s.Log.Warningf("  - %s.%s: %s", err.Kind, err.Name, err.Message)
 		}
 	}
 }

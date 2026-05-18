@@ -7,10 +7,14 @@ import (
 	"testing"
 
 	"github.com/op/go-logging"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/shini4i/argo-compare/internal/comment"
+	"github.com/shini4i/argo-compare/internal/models"
+	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 func TestFilterIgnored(t *testing.T) {
@@ -380,18 +384,56 @@ func TestNewWithInjectedValidator(t *testing.T) {
 	assert.Same(t, injectedValidator, appInstance.validator)
 }
 
-func TestNewInitializesValidationResultsMap(t *testing.T) {
-	cfg, err := NewConfig("main", WithCacheDir("/tmp/cache"))
+func TestProcessFileCallsValidatorWithCorrectPath(t *testing.T) {
+	// Verifies the validator is invoked with <tmpDir>/templates/<fileType> and that
+	// the result is stored in the caller-supplied validationResults map.
+	// Uses TargetTypeDestination to skip the parse() step (which reads from the filesystem).
+	ctrl := gomock.NewController(t)
+	mockValidator := mocks.NewMockManifestValidator(ctrl)
+	mockHelmProcessor := mocks.NewMockHelmChartsProcessor(ctrl)
+
+	cfg, err := NewConfig("main", WithCacheDir("/tmp/cache"), WithValidateManifests(true))
 	require.NoError(t, err)
 
-	logger := setupTestLogger(t, "app-validation-map")
+	logger := setupTestLogger(t, "app-processfile-validator")
 
 	appInstance, err := New(cfg, Dependencies{
-		FS:     afero.NewMemMapFs(),
-		Logger: logger,
+		FS:                afero.NewMemMapFs(),
+		Logger:            logger,
+		ManifestValidator: mockValidator,
+		HelmProcessor:     mockHelmProcessor,
 	})
 	require.NoError(t, err)
 
-	require.NotNil(t, appInstance.validationResults)
-	assert.Empty(t, appInstance.validationResults)
+	tmpDir := t.TempDir()
+
+	// Stub all Helm processor calls so processFile reaches the validation step.
+	mockHelmProcessor.EXPECT().GenerateValuesFile(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().DownloadHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().ExtractHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().RenderAppSource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
+	expectedManifestDir := tmpDir + "/templates/" + TargetTypeDestination
+	expectedResult := ports.ValidationResult{
+		Target:        TargetTypeDestination,
+		Valid:         true,
+		ResourceCount: 3,
+	}
+
+	mockValidator.EXPECT().
+		Validate(gomock.Any(), TargetTypeDestination, expectedManifestDir).
+		Return(expectedResult, nil)
+
+	// Provide a minimal Application with non-nil Source and Destination to avoid
+	// nil dereferences in generateValuesFiles and renderAppSources.
+	testApp := models.Application{}
+	testApp.Spec.Source = &models.Source{Chart: "my-chart", RepoURL: "https://charts.example.com"}
+	testApp.Spec.Destination = &models.Destination{Server: "https://kubernetes.default.svc", Namespace: "default"}
+
+	validationResults := make(map[string]ports.ValidationResult)
+	err = appInstance.processFile(context.Background(), "apps/test.yaml", TargetTypeDestination, testApp, tmpDir, validationResults)
+	require.NoError(t, err)
+
+	require.Contains(t, validationResults, TargetTypeDestination)
+	assert.Equal(t, expectedResult, validationResults[TargetTypeDestination])
 }

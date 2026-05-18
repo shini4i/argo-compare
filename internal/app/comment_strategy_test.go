@@ -254,7 +254,7 @@ func TestBuildValidationSummaryAllValid(t *testing.T) {
 	summary := buildValidationSummary(results)
 
 	assert.Contains(t, summary, "**Validation**")
-	assert.Contains(t, summary, "✅")
+	assert.Contains(t, summary, "✓")
 	assert.Contains(t, summary, "src: 5/5 valid")
 }
 
@@ -275,12 +275,25 @@ func TestBuildValidationSummaryWithErrors(t *testing.T) {
 	summary := buildValidationSummary(results)
 
 	assert.Contains(t, summary, "**Validation**")
-	assert.Contains(t, summary, "❌")
+	assert.Contains(t, summary, "✗")
 	assert.Contains(t, summary, "dst: 1/3 valid")
 	assert.Contains(t, summary, "`Deployment.broken`")
 	assert.Contains(t, summary, "missing field spec.selector")
 	assert.Contains(t, summary, "`Service.svc`")
 	assert.Contains(t, summary, "invalid port")
+}
+
+func TestBuildValidationSummaryInvocationError(t *testing.T) {
+	results := map[string]ports.ValidationResult{
+		"src": {Target: "src", InvocationError: "executable file not found in $PATH"},
+	}
+
+	summary := buildValidationSummary(results)
+
+	assert.Contains(t, summary, "**Validation**")
+	assert.Contains(t, summary, "✗")
+	assert.Contains(t, summary, "validator could not run")
+	assert.Contains(t, summary, "executable file not found")
 }
 
 func TestCommentStrategyIncludesValidationResults(t *testing.T) {

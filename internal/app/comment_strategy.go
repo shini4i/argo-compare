@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/op/go-logging"
@@ -134,29 +135,35 @@ func buildCommentBodies(result ComparisonResult, showAdded, showRemoved bool, ap
 	return assembleCommentBodies(header, chunks)
 }
 
+// buildValidationSummary formats validation results for a GitLab comment in a stable order.
 func buildValidationSummary(results map[string]ports.ValidationResult) string {
 	if len(results) == 0 {
 		return ""
 	}
 
+	keys := make([]string, 0, len(results))
+	for k := range results {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	var lines []string
 	lines = append(lines, "**Validation**")
 
-	for target, result := range results {
-		status := "✅"
+	for _, target := range keys {
+		result := results[target]
+		if result.InvocationError != "" {
+			lines = append(lines, fmt.Sprintf("- ✗ %s: validator could not run: %s", target, result.InvocationError))
+			continue
+		}
+		status := "✓"
 		if !result.Valid {
-			status = "❌"
+			status = "✗"
 		}
 		lines = append(lines, fmt.Sprintf("- %s %s: %d/%d valid", status, target, result.ResourceCount-result.ErrorCount, result.ResourceCount))
-		if !result.Valid && len(result.Errors) > 0 {
-			for _, err := range result.Errors {
-				lines = append(lines, fmt.Sprintf("  - `%s.%s`: %s", err.Kind, err.Name, err.Message))
-			}
+		for _, err := range result.Errors {
+			lines = append(lines, fmt.Sprintf("  - `%s.%s`: %s", err.Kind, err.Name, err.Message))
 		}
-	}
-
-	if len(lines) <= 1 {
-		return ""
 	}
 
 	return strings.Join(lines, "\n") + "\n\n"

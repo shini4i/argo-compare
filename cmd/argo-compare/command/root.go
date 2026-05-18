@@ -204,15 +204,19 @@ func loadBranchDefaults() branchFlags {
 	}
 
 	validateStr := helpers.GetEnv("ARGO_COMPARE_VALIDATE_MANIFESTS", "")
-	if validateStr != "" && validateStr != "false" && validateStr != "0" {
-		defaults.validateManifests = true
+	if validateStr != "" {
+		if parsed, err := strconv.ParseBool(validateStr); err == nil {
+			defaults.validateManifests = parsed
+		}
 	}
 
 	defaults.kubeconformPath = helpers.GetEnv("ARGO_COMPARE_KUBECONFORM_PATH", "")
 
 	skipKindsStr := helpers.GetEnv("ARGO_COMPARE_SKIP_VALIDATION_KINDS", "")
-	if skipKindsStr != "" {
-		defaults.validateSkipKinds = strings.Split(skipKindsStr, ",")
+	for _, kind := range strings.Split(skipKindsStr, ",") {
+		if kind = strings.TrimSpace(kind); kind != "" {
+			defaults.validateSkipKinds = append(defaults.validateSkipKinds, kind)
+		}
 	}
 
 	return defaults

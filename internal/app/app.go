@@ -53,7 +53,6 @@ type App struct {
 	commentFactory      CommentPosterFactory
 	sensitiveDataMasker ports.SensitiveDataMasker // Applied to manifest content prior to diff generation.
 	validator           ports.ManifestValidator   // Optional validator for rendered manifests.
-	validationResults   map[string]ports.ValidationResult // Validation results per Application file.
 }
 
 // CommentPosterFactory builds a comment poster based on the active configuration.
@@ -128,7 +127,6 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 		commentFactory:      deps.CommentPosterFactory,
 		sensitiveDataMasker: deps.SensitiveDataMasker,
 		validator:           validator,
-		validationResults:   make(map[string]ports.ValidationResult),
 	}, nil
 }
 
@@ -219,7 +217,10 @@ func (a *App) processChangedFile(ctx context.Context, repo *GitRepo, file string
 		}
 	}()
 
-	if err = a.processFile(ctx, file, TargetTypeSource, models.Application{}, tmpDir); err != nil {
+	// Scoped per-comparison: keeps state local and avoids cross-app leakage.
+	validationResults := make(map[string]ports.ValidationResult)
+
+	if err = a.processFile(ctx, file, TargetTypeSource, models.Application{}, tmpDir, validationResults); err != nil {
 		return err
 	}
 
@@ -233,12 +234,12 @@ func (a *App) processChangedFile(ctx context.Context, repo *GitRepo, file string
 	}
 
 	if action == destinationProcess {
-		if destErr := a.processFile(ctx, file, TargetTypeDestination, targetApp, tmpDir); destErr != nil && !a.cfg.PrintAddedManifests {
+		if destErr := a.processFile(ctx, file, TargetTypeDestination, targetApp, tmpDir, validationResults); destErr != nil && !a.cfg.PrintAddedManifests {
 			return destErr
 		}
 	}
 
-	return a.runComparison(ctx, tmpDir, file)
+	return a.runComparison(ctx, tmpDir, file, validationResults)
 }
 
 // resolveTargetApplication retrieves the target branch manifest and determines follow-up actions.
@@ -259,7 +260,8 @@ func (a *App) resolveTargetApplication(repo *GitRepo, file string) (models.Appli
 }
 
 // processFile prepares Helm inputs for a single manifest and renders its templates.
-func (a *App) processFile(ctx context.Context, fileName string, fileType string, application models.Application, tmpDir string) error {
+// validationResults is populated when a validator is configured; entries are keyed by fileType.
+func (a *App) processFile(ctx context.Context, fileName, fileType string, application models.Application, tmpDir string, validationResults map[string]ports.ValidationResult) error {
 	target := Target{
 		CmdRunner:           a.cmdRunner,
 		FileReader:          a.fileReader,
@@ -297,13 +299,18 @@ func (a *App) processFile(ctx context.Context, fileName string, fileType string,
 	}
 
 	if a.validator != nil {
-		manifests := filepath.Join(tmpDir, fileType)
+		// Rendered manifests land at <tmpDir>/templates/<src|dst> (set by RenderAppSource).
+		manifests := filepath.Join(tmpDir, "templates", fileType)
 		result, err := a.validator.Validate(ctx, fileType, manifests)
 		if err != nil {
 			a.logger.Warningf("Manifest validation failed for %s: %v", fileType, err)
+			// Record a synthetic result so the failure surfaces in presenters.
+			validationResults[fileType] = ports.ValidationResult{
+				Target:          fileType,
+				InvocationError: err.Error(),
+			}
 		} else {
-			resultKey := fileName + "/" + fileType
-			a.validationResults[resultKey] = result
+			validationResults[fileType] = result
 			if !result.Valid {
 				a.logger.Warningf("Validation errors in %s: %d issues found", fileType, result.ErrorCount)
 			}
@@ -314,7 +321,7 @@ func (a *App) processFile(ctx context.Context, fileName string, fileType string,
 }
 
 // runComparison executes the diff strategy for the prepared temporary workspace.
-func (a *App) runComparison(ctx context.Context, tmpDir, applicationFile string) error {
+func (a *App) runComparison(ctx context.Context, tmpDir, applicationFile string, validationResults map[string]ports.ValidationResult) error {
 	comparer := Compare{
 		Fs:                 a.fs,
 		Globber:            a.globber,
@@ -328,16 +335,8 @@ func (a *App) runComparison(ctx context.Context, tmpDir, applicationFile string)
 		return err
 	}
 
-	// Attach validation results for the current application file
-	if len(a.validationResults) > 0 {
-		result.ValidationResults = make(map[string]ports.ValidationResult)
-		for key, validationResult := range a.validationResults {
-			// Only include validation results for this application file
-			if strings.HasPrefix(key, applicationFile+"/") {
-				target := strings.TrimPrefix(key, applicationFile+"/")
-				result.ValidationResults[target] = validationResult
-			}
-		}
+	if len(validationResults) > 0 {
+		result.ValidationResults = validationResults
 	}
 
 	strategies, err := a.selectDiffStrategies(applicationFile)

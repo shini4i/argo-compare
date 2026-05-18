@@ -122,6 +122,9 @@ type ValidationResult struct {
 	ErrorCount int
 	// Errors contains structured details for each validation failure.
 	Errors []ValidationError
+	// InvocationError is non-empty when the validator itself failed to run (e.g. binary not found).
+	// When set, Valid is false and ResourceCount/ErrorCount are zero.
+	InvocationError string
 }
 
 // ManifestValidator validates rendered Kubernetes manifests against schemas.
