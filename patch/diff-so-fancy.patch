@@ -1,9 +1,9 @@
---- /usr/local/bin/diff-so-fancy	2021-07-27 23:23:49
-+++ diff-so-fancy-patched.pl	2023-01-19 01:21:19
-@@ -663,13 +663,18 @@
+--- /usr/local/bin/diff-so-fancy	2024-01-01 00:00:00
++++ diff-so-fancy-patched.pl	2026-05-18 00:00:00
+@@ -680,13 +680,18 @@
  	} elsif ($file_2 eq "/dev/null") {
  		my $del_color = $DiffHighlight::OLD_HIGHLIGHT[1];
- 		return "deleted: $del_color$file_1$reset_color";
+ 		$ret = "deleted: $del_color$file_1$reset_color";
 -	# If the files aren't the same it's a rename
 +	# If the files aren't the same it's a rename, but in case of argo-compare it is not
 +	# hence we are making changes here
@@ -12,12 +12,12 @@
  		# highlight_pair already includes reset_color, but adds newline characters that need to be trimmed off
  		$old = trim($old);
  		$new = trim($new);
--		return "renamed: $old$meta_color to $new"
+-		$ret = "renamed: $old$meta_color to $new"
 +
 +		my @fullFilePath = split("/", $new);
 +		my $filePath = join("/", @fullFilePath[9..$#fullFilePath]);
 +
-+		return "Found changes in: $filePath"
++		$ret = "Found changes in: $filePath"
  	# Something we haven't thought of yet
  	} else {
- 		return "$file_1 -> $file_2";
+ 		$ret = "$file_1 -> $file_2";
