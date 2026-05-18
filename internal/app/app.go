@@ -328,6 +328,18 @@ func (a *App) runComparison(ctx context.Context, tmpDir, applicationFile string)
 		return err
 	}
 
+	// Attach validation results for the current application file
+	if len(a.validationResults) > 0 {
+		result.ValidationResults = make(map[string]ports.ValidationResult)
+		for key, validationResult := range a.validationResults {
+			// Only include validation results for this application file
+			if strings.HasPrefix(key, applicationFile+"/") {
+				target := strings.TrimPrefix(key, applicationFile+"/")
+				result.ValidationResults[target] = validationResult
+			}
+		}
+	}
+
 	strategies, err := a.selectDiffStrategies(applicationFile)
 	if err != nil {
 		return err

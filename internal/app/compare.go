@@ -30,9 +30,10 @@ type DiffOutput struct {
 
 // ComparisonResult aggregates the additions, removals, and changes discovered.
 type ComparisonResult struct {
-	Added   []DiffOutput
-	Removed []DiffOutput
-	Changed []DiffOutput
+	Added              []DiffOutput
+	Removed            []DiffOutput
+	Changed            []DiffOutput
+	ValidationResults  map[string]ports.ValidationResult // Validation results keyed by target (e.g., "src", "dst")
 }
 
 // IsEmpty reports whether there are no changes to present.

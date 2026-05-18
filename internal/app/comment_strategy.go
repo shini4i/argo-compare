@@ -8,6 +8,7 @@ import (
 
 	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/internal/comment"
+	"github.com/shini4i/argo-compare/internal/ports"
 )
 
 // CommentStrategy delivers comparison results to an upstream comment system.
@@ -96,6 +97,10 @@ func buildCommentBodies(result ComparisonResult, showAdded, showRemoved bool, ap
 	headerBuilder.WriteString("## Argo Compare Results\n\n")
 	headerBuilder.WriteString(fmt.Sprintf("**Application:** `%s`\n\n", appDisplay))
 
+	if validationSummary := buildValidationSummary(result.ValidationResults); validationSummary != "" {
+		headerBuilder.WriteString(validationSummary)
+	}
+
 	if summary := buildSummaryLines(result, showAdded, showRemoved); summary != "" {
 		headerBuilder.WriteString(summary)
 	}
@@ -127,6 +132,34 @@ func buildCommentBodies(result ComparisonResult, showAdded, showRemoved bool, ap
 	}
 
 	return assembleCommentBodies(header, chunks)
+}
+
+func buildValidationSummary(results map[string]ports.ValidationResult) string {
+	if len(results) == 0 {
+		return ""
+	}
+
+	var lines []string
+	lines = append(lines, "**Validation**")
+
+	for target, result := range results {
+		status := "✅"
+		if !result.Valid {
+			status = "❌"
+		}
+		lines = append(lines, fmt.Sprintf("- %s %s: %d/%d valid", status, target, result.ResourceCount-result.ErrorCount, result.ResourceCount))
+		if !result.Valid && len(result.Errors) > 0 {
+			for _, err := range result.Errors {
+				lines = append(lines, fmt.Sprintf("  - `%s.%s`: %s", err.Kind, err.Name, err.Message))
+			}
+		}
+	}
+
+	if len(lines) <= 1 {
+		return ""
+	}
+
+	return strings.Join(lines, "\n") + "\n\n"
 }
 
 func buildSummaryLines(result ComparisonResult, showAdded, showRemoved bool) string {

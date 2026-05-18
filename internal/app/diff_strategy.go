@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/op/go-logging"
+	"github.com/shini4i/argo-compare/internal/ports"
 )
 
 // DiffPresenter presents comparison results to the user.
@@ -36,6 +37,8 @@ type ExternalDiffStrategy struct {
 // Present prints comparison results using the configured stdout logger.
 // The context parameter is accepted for interface compliance but not used.
 func (s StdoutStrategy) Present(_ context.Context, result ComparisonResult) error {
+	s.printValidationResults(result.ValidationResults)
+
 	if result.IsEmpty() {
 		s.Log.Info("No diff was found in rendered manifests!")
 		return nil
@@ -52,6 +55,27 @@ func (s StdoutStrategy) Present(_ context.Context, result ComparisonResult) erro
 	s.printSection("changed", result.Changed)
 
 	return nil
+}
+
+// printValidationResults outputs validation status for each target.
+func (s StdoutStrategy) printValidationResults(results map[string]ports.ValidationResult) {
+	if len(results) == 0 {
+		return
+	}
+
+	s.Log.Info("===> Manifest Validation Results")
+	for target, result := range results {
+		status := "✓"
+		if !result.Valid {
+			status = "✗"
+		}
+		s.Log.Infof("%s %s: %d resources validated", status, target, result.ResourceCount)
+		if !result.Valid && len(result.Errors) > 0 {
+			for _, err := range result.Errors {
+				s.Log.Warningf("  - %s.%s: %s", err.Kind, err.Name, err.Message)
+			}
+		}
+	}
 }
 
 // printSection logs a summary of diff entries and prints their unified diffs.
