@@ -141,22 +141,28 @@ func newBranchCommand(opts Options, dropCache func() bool, debug func() bool) *c
 	cmd.Flags().StringVar(&flags.gitlabToken, "gitlab-token", flags.gitlabToken, "GitLab personal access token")
 	cmd.Flags().StringVar(&flags.gitlabProjectID, "gitlab-project-id", flags.gitlabProjectID, "GitLab project ID")
 	cmd.Flags().IntVar(&flags.gitlabMergeIID, "gitlab-merge-request-iid", flags.gitlabMergeIID, "GitLab merge request IID")
+	cmd.Flags().BoolVar(&flags.validateManifests, "validate-manifests", flags.validateManifests, "Validate rendered manifests against Kubernetes schemas")
+	cmd.Flags().StringVar(&flags.kubeconformPath, "kubeconform-path", flags.kubeconformPath, "Path to kubeconform binary")
+	cmd.Flags().StringSliceVar(&flags.validateSkipKinds, "skip-validation-kinds", flags.validateSkipKinds, "Resource kinds to skip during validation (comma-separated)")
 
 	return cmd
 }
 
 type branchFlags struct {
-	file               string
-	ignore             []string
-	preserveHelmLabels bool
-	printAdded         bool
-	printRemoved       bool
-	fullOutput         bool
-	commentProvider    string
-	gitlabURL          string
-	gitlabToken        string
-	gitlabProjectID    string
-	gitlabMergeIID     int
+	file                string
+	ignore              []string
+	preserveHelmLabels  bool
+	printAdded          bool
+	printRemoved        bool
+	fullOutput          bool
+	commentProvider     string
+	gitlabURL           string
+	gitlabToken         string
+	gitlabProjectID     string
+	gitlabMergeIID      int
+	validateManifests   bool
+	kubeconformPath     string
+	validateSkipKinds   []string
 }
 
 // loadBranchDefaults gathers branch flag defaults from the environment.
@@ -197,6 +203,18 @@ func loadBranchDefaults() branchFlags {
 		}
 	}
 
+	validateStr := helpers.GetEnv("ARGO_COMPARE_VALIDATE_MANIFESTS", "")
+	if validateStr != "" && validateStr != "false" && validateStr != "0" {
+		defaults.validateManifests = true
+	}
+
+	defaults.kubeconformPath = helpers.GetEnv("ARGO_COMPARE_KUBECONFORM_PATH", "")
+
+	skipKindsStr := helpers.GetEnv("ARGO_COMPARE_SKIP_VALIDATION_KINDS", "")
+	if skipKindsStr != "" {
+		defaults.validateSkipKinds = strings.Split(skipKindsStr, ",")
+	}
+
 	return defaults
 }
 
@@ -221,6 +239,9 @@ func (b branchFlags) configOptions(opts Options, debugEnabled bool) ([]app.Confi
 		app.WithExternalDiffTool(opts.ExternalDiffTool),
 		app.WithDebug(debugEnabled),
 		app.WithVersion(opts.Version),
+		app.WithValidateManifests(b.validateManifests),
+		app.WithKubeconformPath(b.kubeconformPath),
+		app.WithValidateSkipKinds(b.validateSkipKinds),
 	}
 
 	commentOption, err := b.commentOption()

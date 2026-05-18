@@ -20,6 +20,9 @@ type Config struct {
 	Debug                 bool
 	Version               string
 	Comment               *CommentConfig
+	ValidateManifests     bool
+	KubeconformPath       string
+	ValidateSkipKinds     []string
 }
 
 // ConfigOption mutates a Config during construction.
@@ -166,5 +169,26 @@ func WithDebug(enabled bool) ConfigOption {
 func WithVersion(version string) ConfigOption {
 	return func(cfg *Config) {
 		cfg.Version = version
+	}
+}
+
+// WithValidateManifests toggles manifest validation against Kubernetes schemas.
+func WithValidateManifests(enabled bool) ConfigOption {
+	return func(cfg *Config) {
+		cfg.ValidateManifests = enabled
+	}
+}
+
+// WithKubeconformPath specifies a custom path to the kubeconform binary.
+func WithKubeconformPath(path string) ConfigOption {
+	return func(cfg *Config) {
+		cfg.KubeconformPath = path
+	}
+}
+
+// WithValidateSkipKinds configures resource kinds to skip during validation.
+func WithValidateSkipKinds(kinds []string) ConfigOption {
+	return func(cfg *Config) {
+		cfg.ValidateSkipKinds = append([]string{}, kinds...)
 	}
 }
