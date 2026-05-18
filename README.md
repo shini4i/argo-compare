@@ -108,7 +108,7 @@ Optional flags:
 - `--kubeconform-path <path>` — Override the kubeconform binary location (defaults to `kubeconform` resolved via `PATH`).
 - `--skip-validation-kinds <Kind1,Kind2>` — Comma-separated list of resource kinds to skip (useful for custom resources without published schemas, e.g. `ServiceMonitor,ArgoApplication`).
 
-Equivalent environment variables:
+Equivalent environment variables (CLI flags take precedence when both are set):
 
 ```bash
 ARGO_COMPARE_VALIDATE_MANIFESTS=true \
@@ -117,7 +117,7 @@ ARGO_COMPARE_SKIP_VALIDATION_KINDS=ServiceMonitor,ArgoApplication \
 argo-compare branch <target-branch>
 ```
 
-`kubeconform` must be available in the runtime environment when validation is enabled.
+`kubeconform` must be available in the runtime environment when validation is enabled. When running via the published Docker image, the binary is not bundled — extend the image to include `kubeconform`, or mount it from the host and point `--kubeconform-path` at the mount target.
 
 ### Sensitive data handling
 
