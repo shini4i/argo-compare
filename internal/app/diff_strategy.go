@@ -81,7 +81,7 @@ func (s StdoutStrategy) printValidationResults(results map[string]ports.Validati
 		if !result.Valid {
 			status = "✗"
 		}
-		s.Log.Infof("%s %s: %d resources validated", status, target, result.ResourceCount)
+		s.Log.Infof("%s %s: %d/%d valid", status, target, result.ResourceCount-result.ErrorCount, result.ResourceCount)
 		for _, err := range result.Errors {
 			s.Log.Warningf("  - %s.%s: %s", err.Kind, err.Name, err.Message)
 		}

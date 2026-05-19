@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"os"
@@ -355,6 +356,45 @@ func TestStdoutStrategyPresentNoValidationResults(t *testing.T) {
 
 	err := strategy.Present(context.Background(), result)
 	require.NoError(t, err)
+}
+
+func TestStdoutStrategyValidationResultsFormat(t *testing.T) {
+	// Locks in the "<status> <target>: <valid>/<total> valid" output format and
+	// guards against regressions where ResourceCount-ErrorCount is miscomputed.
+	var buf bytes.Buffer
+	backend := logging.NewLogBackend(&buf, "", 0)
+	logging.SetBackend(logging.NewBackendFormatter(backend, logging.MustStringFormatter(`%{message}`)))
+	t.Cleanup(func() {
+		logging.SetBackend(logging.NewBackendFormatter(logging.NewLogBackend(os.Stdout, "", 0), logging.MustStringFormatter(`%{message}`)))
+	})
+
+	strategy := StdoutStrategy{Log: logging.MustGetLogger("test-stdout-format")}
+	result := ComparisonResult{
+		ValidationResults: map[string]ports.ValidationResult{
+			"src": {
+				Target:        "src",
+				Valid:         true,
+				ResourceCount: 4,
+			},
+			"dst": {
+				Target:        "dst",
+				Valid:         false,
+				ResourceCount: 4,
+				ErrorCount:    1,
+				Errors: []ports.ValidationError{
+					{Kind: "Deployment", Name: "broken", Message: "schema mismatch"},
+				},
+			},
+		},
+	}
+
+	require.NoError(t, strategy.Present(context.Background(), result))
+
+	output := buf.String()
+	assert.Contains(t, output, "✓ src: 4/4 valid")
+	assert.Contains(t, output, "✗ dst: 3/4 valid")
+	// Old wording must be gone so a regression to "%d resources validated" is caught.
+	assert.NotContains(t, output, "resources validated")
 }
 
 func TestValidateToolName(t *testing.T) {
