@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/internal/ports"
 )
 
@@ -28,9 +27,6 @@ type KubeconformValidator struct {
 	// SkipKinds is an optional list of resource kinds to skip during validation
 	// (passed through as `-skip Kind1,Kind2`).
 	SkipKinds []string
-	// Log surfaces kubeconform's stderr and command line so failures (e.g. schema
-	// download issues, "no files found" warnings) are visible in CI logs. Optional.
-	Log *logging.Logger
 }
 
 // kubeconformOutput mirrors the JSON structure produced by `kubeconform -output json`.
@@ -70,6 +66,7 @@ func (v *KubeconformValidator) Validate(ctx context.Context, target, manifestDir
 	args := []string{
 		"-output", "json",
 		"-strict",
+		"-summary",
 		"-schema-location", "default",
 	}
 	if len(v.SkipKinds) > 0 {
@@ -83,19 +80,7 @@ func (v *KubeconformValidator) Validate(ctx context.Context, target, manifestDir
 	// "--" terminates options so manifestDir cannot be interpreted as a flag.
 	args = append(args, "--", manifestDir)
 
-	if v.Log != nil {
-		v.Log.Debugf("Running kubeconform: %s %s", v.Path, strings.Join(args, " "))
-	}
-
 	stdout, stderr, err := v.CmdRunner.Run(ctx, v.Path, args...)
-
-	// Surface kubeconform's stderr in CI logs so warnings (e.g. schema download
-	// issues, files skipped, "no resources found") are visible. Stderr is empty
-	// on a clean successful run; non-empty stderr always means something worth
-	// seeing happened.
-	if v.Log != nil && strings.TrimSpace(stderr) != "" {
-		v.Log.Warningf("kubeconform stderr: %s", strings.TrimSpace(stderr))
-	}
 
 	// kubeconform exits non-zero when manifests are invalid; that is an expected
 	// outcome, not a validator failure. Treat *exec.ExitError as benign and proceed
@@ -114,10 +99,6 @@ func (v *KubeconformValidator) Validate(ctx context.Context, target, manifestDir
 	var parsed kubeconformOutput
 	if jsonErr := json.Unmarshal([]byte(stdout), &parsed); jsonErr != nil {
 		return ports.ValidationResult{}, fmt.Errorf("could not parse kubeconform output: %w (stderr: %s)", jsonErr, strings.TrimSpace(stderr))
-	}
-
-	if v.Log != nil {
-		v.Log.Debugf("kubeconform stdout: %s", strings.TrimSpace(stdout))
 	}
 
 	return buildValidationResult(target, parsed), nil
@@ -147,8 +128,9 @@ func isValidKindName(s string) bool {
 }
 
 // buildValidationResult converts kubeconform JSON output into a ValidationResult.
-// kubeconform's non-verbose JSON output only lists failed resources in the resources array;
-// the total count of processed resources is only available via the Summary fields.
+// kubeconform's JSON output only lists failed resources in the resources array;
+// the total count of processed resources comes from the Summary fields, which
+// are only emitted when -summary is passed (we add it in Validate above).
 func buildValidationResult(target string, parsed kubeconformOutput) ports.ValidationResult {
 	result := ports.ValidationResult{
 		Target:        target,

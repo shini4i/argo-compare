@@ -118,7 +118,6 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 			CmdRunner: deps.CmdRunner,
 			Path:      kubeconformPath,
 			SkipKinds: cfg.ValidateSkipKinds,
-			Log:       deps.Logger,
 		}
 	}
 
