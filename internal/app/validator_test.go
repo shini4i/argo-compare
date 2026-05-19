@@ -381,6 +381,160 @@ func TestKubeconformValidator_RejectsDigitFirstSkipKind(t *testing.T) {
 	assert.Contains(t, err.Error(), "1BadKind")
 }
 
+func TestKubeconformValidator_FilenameIsRelativeToManifestDir(t *testing.T) {
+	// kubeconform reports absolute paths under the per-invocation tmpdir.
+	// Surfacing them raw would make MR comments non-deterministic across runs
+	// (defeating GitLab's note dedup) and bury the useful path inside noise.
+	// The adapter must strip the manifestDir prefix at the boundary.
+	const manifestDir = "/tmp/argo-compare-12345/templates/src"
+	const rawJSON = `{
+	  "resources": [
+	    {"filename": "/tmp/argo-compare-12345/templates/src/templates/deployment.yaml", "kind": "Deployment", "name": "broken", "status": "statusInvalid", "msg": "field required"}
+	  ],
+	  "summary": {"valid": 0, "invalid": 1, "errors": 0, "skipped": 0}
+	}`
+
+	ctrl := gomock.NewController(t)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	mockCmdRunner.EXPECT().
+		Run(gomock.Any(), "kubeconform", gomock.Any()).
+		Return(rawJSON, "", &exec.ExitError{})
+
+	v := &KubeconformValidator{
+		CmdRunner: mockCmdRunner,
+		Path:      "kubeconform",
+	}
+
+	result, err := v.Validate(context.Background(), "src", manifestDir)
+
+	require.NoError(t, err)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, "templates/deployment.yaml", result.Errors[0].Filename)
+}
+
+func TestKubeconformValidator_FilenameFallsBackToBase(t *testing.T) {
+	// When kubeconform reports a filename outside the manifestDir (filepath.Rel
+	// returns a ".."-prefixed path) the adapter must fall back to filepath.Base
+	// so the bullet still has a meaningful identifier rather than ../../foo.yaml.
+	const manifestDir = "/tmp/argo-compare-12345/templates/src"
+	const rawJSON = `{
+	  "resources": [
+	    {"filename": "/some/other/path/file.yaml", "kind": "Service", "name": "broken", "status": "statusInvalid", "msg": "port required"}
+	  ],
+	  "summary": {"valid": 0, "invalid": 1, "errors": 0, "skipped": 0}
+	}`
+
+	ctrl := gomock.NewController(t)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	mockCmdRunner.EXPECT().
+		Run(gomock.Any(), "kubeconform", gomock.Any()).
+		Return(rawJSON, "", &exec.ExitError{})
+
+	v := &KubeconformValidator{
+		CmdRunner: mockCmdRunner,
+		Path:      "kubeconform",
+	}
+
+	result, err := v.Validate(context.Background(), "src", manifestDir)
+
+	require.NoError(t, err)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, "file.yaml", result.Errors[0].Filename)
+}
+
+func TestKubeconformValidator_FilenameRelativePathStartingWithDotDotName(t *testing.T) {
+	// Regression: `strings.HasPrefix(rel, "..")` matched valid directory names like
+	// "..hidden/file.yaml". Only the path-traversal sequences ".." and "../" should
+	// trigger the fallback; a name that merely starts with ".." as a substring must
+	// not be treated as an escape.
+	const manifestDir = "/srv/templates"
+	const rawJSON = `{
+	  "resources": [
+	    {"filename": "/srv/templates/..hidden/file.yaml", "kind": "Deployment", "name": "ok", "status": "statusInvalid", "msg": "error"}
+	  ],
+	  "summary": {"valid": 0, "invalid": 1, "errors": 0, "skipped": 0}
+	}`
+
+	ctrl := gomock.NewController(t)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	mockCmdRunner.EXPECT().
+		Run(gomock.Any(), "kubeconform", gomock.Any()).
+		Return(rawJSON, "", &exec.ExitError{})
+
+	v := &KubeconformValidator{CmdRunner: mockCmdRunner, Path: "kubeconform"}
+
+	result, err := v.Validate(context.Background(), "src", manifestDir)
+
+	require.NoError(t, err)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, "..hidden/file.yaml", result.Errors[0].Filename)
+}
+
+func TestKubeconformValidator_FilenameIsManifestDirItselfFallsBackToBase(t *testing.T) {
+	// filepath.Rel returns "." when raw == manifestDir. Emitting "." as a filename
+	// bullet would be confusing; fall back to the base name (which is the last
+	// segment of the directory path).
+	const manifestDir = "/srv/templates"
+	const rawJSON = `{
+	  "resources": [
+	    {"filename": "/srv/templates", "kind": "Service", "name": "broken", "status": "statusInvalid", "msg": "error"}
+	  ],
+	  "summary": {"valid": 0, "invalid": 1, "errors": 0, "skipped": 0}
+	}`
+
+	ctrl := gomock.NewController(t)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	mockCmdRunner.EXPECT().
+		Run(gomock.Any(), "kubeconform", gomock.Any()).
+		Return(rawJSON, "", &exec.ExitError{})
+
+	v := &KubeconformValidator{CmdRunner: mockCmdRunner, Path: "kubeconform"}
+
+	result, err := v.Validate(context.Background(), "src", manifestDir)
+
+	require.NoError(t, err)
+	require.Len(t, result.Errors, 1)
+	assert.Equal(t, "templates", result.Errors[0].Filename)
+}
+
+func TestKubeconformValidator_FilenameEmptyStaysEmpty(t *testing.T) {
+	// Defensive: if kubeconform reports an empty filename, the adapter must
+	// preserve it rather than emit "." (the filepath.Rel result for empty input).
+	const manifestDir = "/tmp/argo-compare-12345/templates/src"
+	const rawJSON = `{
+	  "resources": [
+	    {"filename": "", "kind": "Service", "name": "broken", "status": "statusInvalid", "msg": "port required"}
+	  ],
+	  "summary": {"valid": 0, "invalid": 1, "errors": 0, "skipped": 0}
+	}`
+
+	ctrl := gomock.NewController(t)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	mockCmdRunner.EXPECT().
+		Run(gomock.Any(), "kubeconform", gomock.Any()).
+		Return(rawJSON, "", &exec.ExitError{})
+
+	v := &KubeconformValidator{
+		CmdRunner: mockCmdRunner,
+		Path:      "kubeconform",
+	}
+
+	result, err := v.Validate(context.Background(), "src", manifestDir)
+
+	require.NoError(t, err)
+	require.Len(t, result.Errors, 1)
+	assert.Empty(t, result.Errors[0].Filename)
+}
+
+func TestCleanFilenameEmptyManifestDir(t *testing.T) {
+	// Defensive: when manifestDir is empty the Rel branch is skipped and
+	// cleanFilename must fall straight through to filepath.Base so the
+	// caller still gets a meaningful identifier.
+	assert.Equal(t, "file.yaml", cleanFilename("", "/tmp/deep/path/file.yaml"))
+	// Empty raw with empty manifestDir must remain empty (no spurious ".").
+	assert.Equal(t, "", cleanFilename("", ""))
+}
+
 func TestKubeconformValidator_ExitErrorWithEmptyStdout(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
