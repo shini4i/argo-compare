@@ -66,6 +66,7 @@ func (v *KubeconformValidator) Validate(ctx context.Context, target, manifestDir
 	args := []string{
 		"-output", "json",
 		"-strict",
+		"-summary",
 		"-schema-location", "default",
 	}
 	if len(v.SkipKinds) > 0 {
@@ -127,8 +128,9 @@ func isValidKindName(s string) bool {
 }
 
 // buildValidationResult converts kubeconform JSON output into a ValidationResult.
-// kubeconform's non-verbose JSON output only lists failed resources in the resources array;
-// the total count of processed resources is only available via the Summary fields.
+// kubeconform's JSON output only lists failed resources in the resources array;
+// the total count of processed resources comes from the Summary fields, which
+// are only emitted when -summary is passed (we add it in Validate above).
 func buildValidationResult(target string, parsed kubeconformOutput) ports.ValidationResult {
 	result := ports.ValidationResult{
 		Target:        target,
