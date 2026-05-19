@@ -74,14 +74,14 @@ func (s StdoutStrategy) printValidationResults(results map[string]ports.Validati
 	for _, target := range keys {
 		result := results[target]
 		if result.InvocationError != "" {
-			s.Log.Warningf("  %s: validator could not run: %s", target, result.InvocationError)
+			s.Log.Warningf("  validator could not run: %s", result.InvocationError)
 			continue
 		}
 		status := "✓"
 		if !result.Valid {
 			status = "✗"
 		}
-		s.Log.Infof("%s %s: %d resources validated", status, target, result.ResourceCount)
+		s.Log.Infof("%s %d/%d valid", status, result.ResourceCount-result.ErrorCount, result.ResourceCount)
 		for _, err := range result.Errors {
 			s.Log.Warningf("  - %s.%s: %s", err.Kind, err.Name, err.Message)
 		}

@@ -42,6 +42,14 @@ const errorResourceJSON = `{
   "summary": {"valid": 0, "invalid": 0, "errors": 1, "skipped": 0}
 }`
 
+// allValidEmptyResourcesJSON reproduces kubeconform's non-verbose JSON output when every
+// resource is valid: the resources array is empty and only the summary carries counts.
+// Reading the count from len(resources) would incorrectly report 0 resources validated.
+const allValidEmptyResourcesJSON = `{
+  "resources": [],
+  "summary": {"valid": 3, "invalid": 0, "errors": 0, "skipped": 0}
+}`
+
 func TestKubeconformValidator_ValidManifests(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
@@ -61,6 +69,32 @@ func TestKubeconformValidator_ValidManifests(t *testing.T) {
 	assert.Equal(t, "src", result.Target)
 	assert.True(t, result.Valid)
 	assert.Equal(t, 2, result.ResourceCount)
+	assert.Equal(t, 0, result.ErrorCount)
+	assert.Empty(t, result.Errors)
+}
+
+func TestKubeconformValidator_AllValidWithEmptyResourcesArray(t *testing.T) {
+	// Regression test: kubeconform's non-verbose JSON output omits valid resources
+	// from the resources array. Before the fix, ResourceCount was derived from
+	// len(parsed.Resources) and incorrectly reported 0 even when every resource passed.
+	// ResourceCount must now come from the summary fields (valid+invalid+errors+skipped).
+	ctrl := gomock.NewController(t)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+
+	mockCmdRunner.EXPECT().
+		Run(gomock.Any(), "kubeconform", gomock.Any()).
+		Return(allValidEmptyResourcesJSON, "", nil)
+
+	v := &KubeconformValidator{
+		CmdRunner: mockCmdRunner,
+		Path:      "kubeconform",
+	}
+
+	result, err := v.Validate(context.Background(), "src", "/tmp/templates/src")
+
+	require.NoError(t, err)
+	assert.True(t, result.Valid)
+	assert.Equal(t, 3, result.ResourceCount, "ResourceCount must come from summary, not len(resources)")
 	assert.Equal(t, 0, result.ErrorCount)
 	assert.Empty(t, result.Errors)
 }

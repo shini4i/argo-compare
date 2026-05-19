@@ -255,7 +255,7 @@ func TestBuildValidationSummaryAllValid(t *testing.T) {
 
 	assert.Contains(t, summary, "**Validation**")
 	assert.Contains(t, summary, "✓")
-	assert.Contains(t, summary, "src: 5/5 valid")
+	assert.Contains(t, summary, "5/5 valid")
 }
 
 func TestBuildValidationSummaryWithErrors(t *testing.T) {
@@ -276,7 +276,7 @@ func TestBuildValidationSummaryWithErrors(t *testing.T) {
 
 	assert.Contains(t, summary, "**Validation**")
 	assert.Contains(t, summary, "✗")
-	assert.Contains(t, summary, "dst: 1/3 valid")
+	assert.Contains(t, summary, "1/3 valid")
 	assert.Contains(t, summary, "`Deployment.broken`")
 	assert.Contains(t, summary, "missing field spec.selector")
 	assert.Contains(t, summary, "`Service.svc`")
@@ -347,5 +347,5 @@ func TestCommentStrategyIncludesValidationResults(t *testing.T) {
 	require.Len(t, poster.bodies, 1)
 	body := poster.bodies[0]
 	assert.Contains(t, body, "**Validation**")
-	assert.Contains(t, body, "src: 3/3 valid")
+	assert.Contains(t, body, "3/3 valid")
 }

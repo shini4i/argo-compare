@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"os"
@@ -355,6 +356,52 @@ func TestStdoutStrategyPresentNoValidationResults(t *testing.T) {
 
 	err := strategy.Present(context.Background(), result)
 	require.NoError(t, err)
+}
+
+func TestStdoutStrategyValidationResultsFormat(t *testing.T) {
+	// Locks in the "<status> <valid>/<total> valid" output format and guards
+	// against regressions where ResourceCount-ErrorCount is miscomputed.
+	var buf bytes.Buffer
+	backend := logging.NewLogBackend(&buf, "", 0)
+	logging.SetBackend(logging.NewBackendFormatter(backend, logging.MustStringFormatter(`%{message}`)))
+	t.Cleanup(func() {
+		logging.SetBackend(logging.NewBackendFormatter(logging.NewLogBackend(os.Stdout, "", 0), logging.MustStringFormatter(`%{message}`)))
+	})
+
+	t.Run("all valid", func(t *testing.T) {
+		buf.Reset()
+		strategy := StdoutStrategy{Log: logging.MustGetLogger("test-stdout-format-ok")}
+		result := ComparisonResult{
+			ValidationResults: map[string]ports.ValidationResult{
+				"src": {Target: "src", Valid: true, ResourceCount: 4},
+			},
+		}
+		require.NoError(t, strategy.Present(context.Background(), result))
+		assert.Contains(t, buf.String(), "✓ 4/4 valid")
+		// Old wording must be gone so a regression to "%d resources validated" is caught.
+		assert.NotContains(t, buf.String(), "resources validated")
+	})
+
+	t.Run("with errors", func(t *testing.T) {
+		buf.Reset()
+		strategy := StdoutStrategy{Log: logging.MustGetLogger("test-stdout-format-fail")}
+		result := ComparisonResult{
+			ValidationResults: map[string]ports.ValidationResult{
+				"src": {
+					Target:        "src",
+					Valid:         false,
+					ResourceCount: 4,
+					ErrorCount:    1,
+					Errors: []ports.ValidationError{
+						{Kind: "Deployment", Name: "broken", Message: "schema mismatch"},
+					},
+				},
+			},
+		}
+		require.NoError(t, strategy.Present(context.Background(), result))
+		assert.Contains(t, buf.String(), "✗ 3/4 valid")
+		assert.Contains(t, buf.String(), "Deployment.broken")
+	})
 }
 
 func TestValidateToolName(t *testing.T) {

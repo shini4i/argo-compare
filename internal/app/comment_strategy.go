@@ -162,14 +162,14 @@ func buildValidationSummary(results map[string]ports.ValidationResult) string {
 	for _, target := range keys {
 		result := results[target]
 		if result.InvocationError != "" {
-			lines = append(lines, fmt.Sprintf("- ✗ %s: validator could not run: %s", target, escapeInlineMarkdown(result.InvocationError)))
+			lines = append(lines, fmt.Sprintf("- ✗ validator could not run: %s", escapeInlineMarkdown(result.InvocationError)))
 			continue
 		}
 		status := "✓"
 		if !result.Valid {
 			status = "✗"
 		}
-		lines = append(lines, fmt.Sprintf("- %s %s: %d/%d valid", status, target, result.ResourceCount-result.ErrorCount, result.ResourceCount))
+		lines = append(lines, fmt.Sprintf("- %s %d/%d valid", status, result.ResourceCount-result.ErrorCount, result.ResourceCount))
 		for _, err := range result.Errors {
 			lines = append(lines, fmt.Sprintf("  - `%s.%s`: %s",
 				escapeInlineMarkdown(err.Kind),

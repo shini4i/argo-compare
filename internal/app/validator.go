@@ -127,10 +127,12 @@ func isValidKindName(s string) bool {
 }
 
 // buildValidationResult converts kubeconform JSON output into a ValidationResult.
+// kubeconform's non-verbose JSON output only lists failed resources in the resources array;
+// the total count of processed resources is only available via the Summary fields.
 func buildValidationResult(target string, parsed kubeconformOutput) ports.ValidationResult {
 	result := ports.ValidationResult{
 		Target:        target,
-		ResourceCount: len(parsed.Resources),
+		ResourceCount: parsed.Summary.Valid + parsed.Summary.Invalid + parsed.Summary.Errors + parsed.Summary.Skipped,
 		ErrorCount:    parsed.Summary.Invalid + parsed.Summary.Errors,
 	}
 	result.Valid = result.ErrorCount == 0
