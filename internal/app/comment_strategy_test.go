@@ -259,6 +259,9 @@ func TestBuildValidationSummaryAllValid(t *testing.T) {
 }
 
 func TestBuildValidationSummaryWithErrors(t *testing.T) {
+	// Locks in the exact rendered block so accidental format drift is caught.
+	// Each resource is a parent bullet with filename; each issue from the
+	// kubeconform message becomes a nested sub-bullet.
 	results := map[string]ports.ValidationResult{
 		"dst": {
 			Target:        "dst",
@@ -266,21 +269,190 @@ func TestBuildValidationSummaryWithErrors(t *testing.T) {
 			ResourceCount: 3,
 			ErrorCount:    2,
 			Errors: []ports.ValidationError{
-				{Kind: "Deployment", Name: "broken", Message: "missing field spec.selector"},
-				{Kind: "Service", Name: "svc", Message: "invalid port"},
+				{Kind: "Deployment", Name: "broken", Filename: "templates/deployment.yaml", Message: "missing field spec.selector"},
+				{Kind: "Service", Name: "svc", Filename: "templates/service.yaml", Message: "invalid port"},
 			},
 		},
 	}
 
 	summary := buildValidationSummary(results)
 
-	assert.Contains(t, summary, "**Validation**")
-	assert.Contains(t, summary, "✗")
-	assert.Contains(t, summary, "1/3 valid")
-	assert.Contains(t, summary, "`Deployment.broken`")
-	assert.Contains(t, summary, "missing field spec.selector")
-	assert.Contains(t, summary, "`Service.svc`")
-	assert.Contains(t, summary, "invalid port")
+	expected := "**Validation**\n" +
+		"- ✗ 1/3 valid\n" +
+		"  - `Deployment.broken` — `templates/deployment.yaml`:\n" +
+		"    - missing field spec.selector\n" +
+		"  - `Service.svc` — `templates/service.yaml`:\n" +
+		"    - invalid port\n\n"
+	assert.Equal(t, expected, summary)
+}
+
+func TestBuildValidationSummaryMultiIssueMessage(t *testing.T) {
+	// Kubeconform packs multiple schema failures for a single resource into one
+	// msg field separated by newlines. Each non-empty line must render as its
+	// own sub-bullet so issues stay individually scannable.
+	results := map[string]ports.ValidationResult{
+		"src": {
+			Target:        "src",
+			Valid:         false,
+			ResourceCount: 1,
+			ErrorCount:    1,
+			Errors: []ports.ValidationError{
+				{
+					Kind:     "Deployment",
+					Name:     "api",
+					Filename: "templates/deployment.yaml",
+					Message:  "/spec/replicas: expected integer, got string\n/spec/containers/0/image: required field missing\n\n/spec/strategy/type: invalid value",
+				},
+			},
+		},
+	}
+
+	summary := buildValidationSummary(results)
+
+	expected := "**Validation**\n" +
+		"- ✗ 0/1 valid\n" +
+		"  - `Deployment.api` — `templates/deployment.yaml`:\n" +
+		"    - /spec/replicas: expected integer, got string\n" +
+		"    - /spec/containers/0/image: required field missing\n" +
+		"    - /spec/strategy/type: invalid value\n\n"
+	assert.Equal(t, expected, summary)
+}
+
+func TestBuildValidationSummaryOmitsFilenameWhenEmpty(t *testing.T) {
+	// Defensive: if the adapter could not produce a meaningful filename, render
+	// the parent bullet without the em-dash filename slot so we don't show
+	// "Kind.Name — `` :" with an empty backtick pair.
+	results := map[string]ports.ValidationResult{
+		"src": {
+			Target:        "src",
+			Valid:         false,
+			ResourceCount: 1,
+			ErrorCount:    1,
+			Errors: []ports.ValidationError{
+				{Kind: "Service", Name: "broken", Message: "port required"},
+			},
+		},
+	}
+
+	summary := buildValidationSummary(results)
+
+	expected := "**Validation**\n" +
+		"- ✗ 0/1 valid\n" +
+		"  - `Service.broken`:\n" +
+		"    - port required\n\n"
+	assert.Equal(t, expected, summary)
+}
+
+func TestBuildValidationSummaryEmptyMessageRendersParentOnly(t *testing.T) {
+	// If the message is empty after splitting/trimming, emit only the parent
+	// bullet with a "(no message)" sentinel rather than a dangling colon.
+	results := map[string]ports.ValidationResult{
+		"src": {
+			Target:        "src",
+			Valid:         false,
+			ResourceCount: 1,
+			ErrorCount:    1,
+			Errors: []ports.ValidationError{
+				{Kind: "Pod", Name: "ghost", Filename: "templates/pod.yaml", Message: ""},
+			},
+		},
+	}
+
+	summary := buildValidationSummary(results)
+
+	expected := "**Validation**\n" +
+		"- ✗ 0/1 valid\n" +
+		"  - `Pod.ghost` — `templates/pod.yaml` (no message)\n\n"
+	assert.Equal(t, expected, summary)
+}
+
+func TestBuildValidationSummaryEmptyFilenameAndEmptyMessage(t *testing.T) {
+	// Covers the buildResourceHeader branch where err.Filename == "" AND the
+	// message produces no issues: emit only "Kind.Name (no message)" without
+	// the em-dash filename slot or a dangling colon.
+	results := map[string]ports.ValidationResult{
+		"src": {
+			Target:        "src",
+			Valid:         false,
+			ResourceCount: 1,
+			ErrorCount:    1,
+			Errors: []ports.ValidationError{
+				{Kind: "Service", Name: "broken", Message: ""},
+			},
+		},
+	}
+
+	summary := buildValidationSummary(results)
+
+	expected := "**Validation**\n" +
+		"- ✗ 0/1 valid\n" +
+		"  - `Service.broken` (no message)\n\n"
+	assert.Equal(t, expected, summary)
+}
+
+func TestBuildValidationSummaryWhitespaceOnlyMessage(t *testing.T) {
+	// A message containing only whitespace lines must be treated the same as
+	// an empty message: no sub-bullets, parent rendered with "(no message)".
+	results := map[string]ports.ValidationResult{
+		"src": {
+			Target:        "src",
+			Valid:         false,
+			ResourceCount: 1,
+			ErrorCount:    1,
+			Errors: []ports.ValidationError{
+				{Kind: "Pod", Name: "ghost", Filename: "pod.yaml", Message: "   \n\t\n  "},
+			},
+		},
+	}
+
+	summary := buildValidationSummary(results)
+
+	expected := "**Validation**\n" +
+		"- ✗ 0/1 valid\n" +
+		"  - `Pod.ghost` — `pod.yaml` (no message)\n\n"
+	assert.Equal(t, expected, summary)
+}
+
+func TestBuildValidationSummaryWindowsLineEndings(t *testing.T) {
+	// kubeconform messages may arrive with CRLF line endings depending on the
+	// environment. Each non-empty line must still render as its own sub-bullet
+	// and the trailing CR must not leak into the rendered output.
+	results := map[string]ports.ValidationResult{
+		"src": {
+			Target:        "src",
+			Valid:         false,
+			ResourceCount: 1,
+			ErrorCount:    1,
+			Errors: []ports.ValidationError{
+				{
+					Kind:     "Deployment",
+					Name:     "api",
+					Filename: "deployment.yaml",
+					Message:  "first failure\r\nsecond failure\r\n",
+				},
+			},
+		},
+	}
+
+	summary := buildValidationSummary(results)
+
+	expected := "**Validation**\n" +
+		"- ✗ 0/1 valid\n" +
+		"  - `Deployment.api` — `deployment.yaml`:\n" +
+		"    - first failure\n" +
+		"    - second failure\n\n"
+	assert.Equal(t, expected, summary)
+}
+
+func TestEscapeInlineMarkdownBackslashOnly(t *testing.T) {
+	// A bare backslash must become a doubled backslash so a downstream backtick
+	// escape cannot accidentally form a CommonMark backslash-escape sequence.
+	assert.Equal(t, `\\`, escapeInlineMarkdown(`\`))
+	// Pre-existing double backslash must remain balanced after escaping.
+	assert.Equal(t, `\\\\`, escapeInlineMarkdown(`\\`))
+	// Backslash followed by backtick: backslash must be escaped first so the
+	// backtick is still escaped independently.
+	assert.Equal(t, "\\\\\\`", escapeInlineMarkdown("\\`"))
 }
 
 func TestBuildValidationSummaryInvocationError(t *testing.T) {
@@ -297,8 +469,12 @@ func TestBuildValidationSummaryInvocationError(t *testing.T) {
 }
 
 func TestBuildValidationSummaryEscapesMarkdownInjection(t *testing.T) {
-	// Crafted manifest fields could otherwise break out of the inline-code span or
-	// inject newlines that disrupt the bullet structure of the comment.
+	// Crafted manifest fields could otherwise break out of the inline-code span
+	// or inject control characters that disrupt the bullet layout. Backticks
+	// must be escaped in every slot (Kind, Name, Filename, issue text), and CR
+	// must be normalized so a single message line stays on a single sub-bullet.
+	// Backslashes must be escaped before backticks so a trailing `\` does not
+	// create a CommonMark escape sequence that leaves the backtick unescaped.
 	results := map[string]ports.ValidationResult{
 		"src": {
 			Target:        "src",
@@ -307,9 +483,10 @@ func TestBuildValidationSummaryEscapesMarkdownInjection(t *testing.T) {
 			ErrorCount:    1,
 			Errors: []ports.ValidationError{
 				{
-					Kind:    "Deployment`hax",
-					Name:    "evil`name",
-					Message: "line1\nline2\rwith CR",
+					Kind:     "Deployment`hax",
+					Name:     "evil`name",
+					Filename: "evil`file.yaml",
+					Message:  "line1\nline2\rwith CR\nline3`hax",
 				},
 			},
 		},
@@ -317,13 +494,43 @@ func TestBuildValidationSummaryEscapesMarkdownInjection(t *testing.T) {
 
 	summary := buildValidationSummary(results)
 
-	assert.NotContains(t, summary, "Deployment`hax", "raw backtick must be escaped")
-	assert.NotContains(t, summary, "evil`name", "raw backtick must be escaped")
-	assert.Contains(t, summary, "Deployment\\`hax")
-	assert.Contains(t, summary, "evil\\`name")
-	// Newlines/CR must be normalized so they don't break the bullet layout.
-	assert.NotContains(t, summary, "line1\nline2", "newlines in Message must be normalized")
-	assert.NotContains(t, summary, "line2\rwith", "carriage returns in Message must be normalized")
+	expected := "**Validation**\n" +
+		"- ✗ 0/1 valid\n" +
+		"  - `Deployment\\`hax.evil\\`name` — `evil\\`file.yaml`:\n" +
+		"    - line1\n" +
+		"    - line2 with CR\n" +
+		"    - line3\\`hax\n\n"
+	assert.Equal(t, expected, summary)
+}
+
+func TestBuildValidationSummaryEscapesBackslash(t *testing.T) {
+	// A trailing backslash before a backtick must not leave the backtick
+	// unescaped: `\\`` in CommonMark renders as literal `\` + open code-span.
+	// escapeInlineMarkdown must escape backslashes first.
+	results := map[string]ports.ValidationResult{
+		"src": {
+			Target:        "src",
+			Valid:         false,
+			ResourceCount: 1,
+			ErrorCount:    1,
+			Errors: []ports.ValidationError{
+				{
+					Kind:     "Service",
+					Name:     "broken",
+					Filename: "path\\with\\backslash.yaml",
+					Message:  "field\\value: unexpected",
+				},
+			},
+		},
+	}
+
+	summary := buildValidationSummary(results)
+
+	expected := "**Validation**\n" +
+		"- ✗ 0/1 valid\n" +
+		"  - `Service.broken` — `path\\\\with\\\\backslash.yaml`:\n" +
+		"    - field\\\\value: unexpected\n\n"
+	assert.Equal(t, expected, summary)
 }
 
 func TestCommentStrategyIncludesValidationResults(t *testing.T) {

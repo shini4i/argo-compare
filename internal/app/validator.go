@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/shini4i/argo-compare/internal/ports"
@@ -101,7 +102,7 @@ func (v *KubeconformValidator) Validate(ctx context.Context, target, manifestDir
 		return ports.ValidationResult{}, fmt.Errorf("could not parse kubeconform output: %w (stderr: %s)", jsonErr, strings.TrimSpace(stderr))
 	}
 
-	return buildValidationResult(target, parsed), nil
+	return buildValidationResult(target, manifestDir, parsed), nil
 }
 
 // isValidKindName reports whether s is a valid Kubernetes resource kind identifier.
@@ -131,7 +132,9 @@ func isValidKindName(s string) bool {
 // kubeconform's JSON output only lists failed resources in the resources array;
 // the total count of processed resources comes from the Summary fields, which
 // are only emitted when -summary is passed (we add it in Validate above).
-func buildValidationResult(target string, parsed kubeconformOutput) ports.ValidationResult {
+// manifestDir is the path passed to kubeconform; it is used to convert the
+// absolute filenames kubeconform emits into paths relative to that directory.
+func buildValidationResult(target, manifestDir string, parsed kubeconformOutput) ports.ValidationResult {
 	result := ports.ValidationResult{
 		Target:        target,
 		ResourceCount: parsed.Summary.Valid + parsed.Summary.Invalid + parsed.Summary.Errors + parsed.Summary.Skipped,
@@ -144,7 +147,7 @@ func buildValidationResult(target string, parsed kubeconformOutput) ports.Valida
 			continue
 		}
 		result.Errors = append(result.Errors, ports.ValidationError{
-			Filename: r.Filename,
+			Filename: cleanFilename(manifestDir, r.Filename),
 			Kind:     r.Kind,
 			Name:     r.Name,
 			Message:  r.Msg,
@@ -152,4 +155,27 @@ func buildValidationResult(target string, parsed kubeconformOutput) ports.Valida
 	}
 
 	return result
+}
+
+// cleanFilename normalizes a filename emitted by kubeconform into a path
+// relative to manifestDir. kubeconform reports absolute paths under a
+// per-invocation tmpdir; surfacing them raw would make the MR comment churn
+// across runs (defeating GitLab's note dedup) and bury the useful name inside
+// noise. When the file lies outside manifestDir, or the relative result is
+// ambiguous ("." when raw equals manifestDir), fall back to the base name so
+// the bullet has a meaningful identifier. When manifestDir is empty, the base
+// name is returned directly.
+func cleanFilename(manifestDir, raw string) string {
+	if raw == "" {
+		return ""
+	}
+	if manifestDir != "" {
+		if rel, err := filepath.Rel(manifestDir, raw); err == nil &&
+			rel != "." &&
+			rel != ".." &&
+			!strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return rel
+		}
+	}
+	return filepath.Base(raw)
 }

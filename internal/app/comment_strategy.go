@@ -136,8 +136,14 @@ func buildCommentBodies(result ComparisonResult, showAdded, showRemoved bool, ap
 }
 
 // escapeInlineMarkdown sanitizes a string for safe interpolation into Markdown.
-// Backticks would break inline-code spans; newlines/carriage returns would break the bullet structure.
+// Backslashes are escaped first so that subsequent backtick escaping cannot
+// accidentally create a CommonMark backslash-escape sequence that leaves the
+// backtick unescaped (e.g. a trailing `\` before a `` ` `` would otherwise
+// produce `\\`` which the renderer interprets as literal `\` + open code-span).
+// Newlines and carriage returns are collapsed to spaces to keep each bullet on
+// a single line.
 func escapeInlineMarkdown(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
 	s = strings.ReplaceAll(s, "`", "\\`")
 	s = strings.ReplaceAll(s, "\r", " ")
 	s = strings.ReplaceAll(s, "\n", " ")
@@ -145,6 +151,9 @@ func escapeInlineMarkdown(s string) string {
 }
 
 // buildValidationSummary formats validation results for a GitLab comment in a stable order.
+// Each failing resource renders as a parent bullet (with cleaned filename when available)
+// followed by one nested sub-bullet per non-empty line of the kubeconform message — keeping
+// individual schema failures visually distinct instead of squashing them onto one line.
 func buildValidationSummary(results map[string]ports.ValidationResult) string {
 	if len(results) == 0 {
 		return ""
@@ -171,14 +180,55 @@ func buildValidationSummary(results map[string]ports.ValidationResult) string {
 		}
 		lines = append(lines, fmt.Sprintf("- %s %d/%d valid", status, result.ResourceCount-result.ErrorCount, result.ResourceCount))
 		for _, err := range result.Errors {
-			lines = append(lines, fmt.Sprintf("  - `%s.%s`: %s",
-				escapeInlineMarkdown(err.Kind),
-				escapeInlineMarkdown(err.Name),
-				escapeInlineMarkdown(err.Message)))
+			issues := formatValidationIssues(err.Message)
+			lines = append(lines, buildResourceHeader(err, len(issues) > 0))
+			for _, issue := range issues {
+				lines = append(lines, "    - "+escapeInlineMarkdown(issue))
+			}
 		}
 	}
 
 	return strings.Join(lines, "\n") + "\n\n"
+}
+
+// buildResourceHeader formats the parent bullet for a single failing resource.
+// hasIssues controls the trailing punctuation: a colon when sub-bullets will
+// follow, or a "(no message)" sentinel so an empty message doesn't render as a
+// dangling colon.
+func buildResourceHeader(err ports.ValidationError, hasIssues bool) string {
+	kindName := fmt.Sprintf("`%s.%s`",
+		escapeInlineMarkdown(err.Kind),
+		escapeInlineMarkdown(err.Name))
+
+	if err.Filename == "" {
+		if hasIssues {
+			return "  - " + kindName + ":"
+		}
+		return "  - " + kindName + " (no message)"
+	}
+
+	fname := fmt.Sprintf("`%s`", escapeInlineMarkdown(err.Filename))
+	if hasIssues {
+		return "  - " + kindName + " — " + fname + ":"
+	}
+	return "  - " + kindName + " — " + fname + " (no message)"
+}
+
+// formatValidationIssues splits a kubeconform message into one entry per
+// non-empty line. Kubeconform packs multiple schema failures for a single
+// resource into one msg field separated by newlines; rendering them as
+// sub-bullets keeps each issue individually scannable in the MR comment.
+// Returns nil when message is empty or contains only whitespace lines.
+func formatValidationIssues(message string) []string {
+	var out []string
+	for _, line := range strings.Split(message, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return out
 }
 
 func buildSummaryLines(result ComparisonResult, showAdded, showRemoved bool) string {
