@@ -372,7 +372,7 @@ func TestAppRunReturnsValidationErrorWhenValidatorFails(t *testing.T) {
 	require.True(t, errors.Is(err, ErrManifestValidationFailed), "error must wrap ErrManifestValidationFailed, got: %v", err)
 
 	// Validator was actually invoked (sanity check the test exercises the path).
-	assert.Greater(t, validator.calls, 0, "validator must have been called")
+	assert.Equal(t, 1, validator.calls, "validator must be called exactly once per application (src only)")
 	// Diff still ran end-to-end before the failure was returned.
 	assert.Contains(t, logBuffer.String(), "Manifest Validation Results")
 }
@@ -457,5 +457,5 @@ func TestAppRunSucceedsWhenValidatorReportsValid(t *testing.T) {
 
 	err = appInstance.Run(context.Background())
 	require.NoError(t, err, "Run must not return an error when validation passes")
-	assert.Greater(t, validator.calls, 0, "validator must have been called")
+	assert.Equal(t, 1, validator.calls, "validator must be called exactly once per application (src only)")
 }

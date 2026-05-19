@@ -97,6 +97,8 @@ When running inside GitLab CI, most settings are detected automatically:
 
 `argo-compare` can validate rendered manifests against Kubernetes OpenAPI schemas using [kubeconform](https://github.com/yannh/kubeconform). Validation runs after rendering, helping catch schema violations before deployment. Results are included in stdout output and (when configured) GitLab MR comments.
 
+**Scope:** validation runs only against the source branch (the post-merge state — what will land on the target branch if the change is merged). All rendered manifests are validated, not just the ones that differ between branches — a value change can break a manifest the diff doesn't touch, and the validator's job is to confirm the whole result is deployable. The target branch is not validated; pre-existing breakage there is not the responsibility of the current change.
+
 Validation is **opt-in**. The comparison always runs to completion (diff is printed and any configured MR comment is posted) — but if any resource fails schema validation, or the validator itself cannot run, `argo-compare` exits with a non-zero status so CI can gate the merge.
 
 ```bash
@@ -175,7 +177,7 @@ If AWS credentials are not available (e.g., running locally without AWS access),
 2) It will get the content of the changed Application files from the target branch.
 3) It will render manifests using the helm template using source and target branch values.
 4) It will get rid of helm related labels as they are not important for the comparison. (It can be skipped by providing `--preserve-helm-labels` flag)
-5) Optionally, when `--validate-manifests` is enabled, rendered manifests are validated against Kubernetes schemas via `kubeconform`.
+5) Optionally, when `--validate-manifests` is enabled, all source-branch rendered manifests (not just changed ones) are validated against Kubernetes schemas via `kubeconform`.
 6) As the last step, it will compare rendered manifest from the source and destination branches and print the
    difference.
 

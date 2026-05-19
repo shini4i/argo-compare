@@ -332,12 +332,15 @@ func (a *App) processFile(ctx context.Context, fileName, fileType string, applic
 		return err
 	}
 
-	if a.validator != nil {
+	// Only validate source manifests: src represents the post-merge state (what will land
+	// on the target branch). Validating dst (current target branch state) would surface
+	// pre-existing breakage unrelated to the PR, which is noise for a merge gate.
+	if a.validator != nil && fileType == TargetTypeSource {
 		// Rendered manifests land at <tmpDir>/templates/<src|dst> (set by RenderAppSource).
 		manifests := filepath.Join(tmpDir, "templates", fileType)
 		result, err := a.validator.Validate(ctx, fileType, manifests)
 		if err != nil {
-			a.logger.Warningf("Manifest validation failed for %s: %v", fileType, err)
+			a.logger.Warningf("Manifest validation failed: %v", err)
 			// Record a synthetic result so the failure surfaces in presenters.
 			validationResults[fileType] = ports.ValidationResult{
 				Target:          fileType,
@@ -346,7 +349,7 @@ func (a *App) processFile(ctx context.Context, fileName, fileType string, applic
 		} else {
 			validationResults[fileType] = result
 			if !result.Valid {
-				a.logger.Warningf("Validation errors in %s: %d issues found", fileType, result.ErrorCount)
+				a.logger.Warningf("Validation errors found: %d issues", result.ErrorCount)
 			}
 		}
 	}

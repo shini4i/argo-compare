@@ -19,6 +19,25 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+// appYAML is a minimal valid Application manifest shared by tests that need to
+// exercise the source-path parse() step without touching the real filesystem.
+var appYAML = []byte(`apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: test-app
+  namespace: argocd
+spec:
+  source:
+    repoURL: https://charts.example.com
+    chart: my-chart
+    targetRevision: 1.0.0
+    helm:
+      releaseName: test-app
+  destination:
+    namespace: default
+    server: https://kubernetes.default.svc
+`)
+
 func TestFilterIgnored(t *testing.T) {
 	files := []string{"a.yaml", "b.yaml", "c.yaml"}
 	ignored := []string{"b.yaml"}
@@ -402,6 +421,7 @@ func TestProcessFileRecordsValidatorInvocationError(t *testing.T) {
 
 	appInstance, err := New(cfg, Dependencies{
 		FS:                afero.NewMemMapFs(),
+		FileReader:        stubFileReader{content: appYAML},
 		Logger:            logger,
 		ManifestValidator: mockValidator,
 		HelmProcessor:     mockHelmProcessor,
@@ -416,20 +436,18 @@ func TestProcessFileRecordsValidatorInvocationError(t *testing.T) {
 	mockHelmProcessor.EXPECT().RenderAppSource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	mockValidator.EXPECT().
-		Validate(gomock.Any(), TargetTypeDestination, gomock.Any()).
+		Validate(gomock.Any(), TargetTypeSource, gomock.Any()).
 		Return(ports.ValidationResult{}, errors.New("kubeconform binary not found"))
 
-	testApp := models.Application{}
-	testApp.Spec.Source = &models.Source{Chart: "my-chart", RepoURL: "https://charts.example.com"}
-	testApp.Spec.Destination = &models.Destination{Server: "https://kubernetes.default.svc", Namespace: "default"}
+	appFile := filepath.Join(t.TempDir(), "test-app.yaml")
 
 	validationResults := make(map[string]ports.ValidationResult)
-	err = appInstance.processFile(context.Background(), "apps/test.yaml", TargetTypeDestination, testApp, tmpDir, validationResults)
+	err = appInstance.processFile(context.Background(), appFile, TargetTypeSource, models.Application{}, tmpDir, validationResults)
 	require.NoError(t, err, "validator invocation failure should not propagate from processFile")
 
-	require.Contains(t, validationResults, TargetTypeDestination)
-	stored := validationResults[TargetTypeDestination]
-	assert.Equal(t, TargetTypeDestination, stored.Target)
+	require.Contains(t, validationResults, TargetTypeSource)
+	stored := validationResults[TargetTypeSource]
+	assert.Equal(t, TargetTypeSource, stored.Target)
 	assert.Contains(t, stored.InvocationError, "kubeconform binary not found")
 	assert.False(t, stored.Valid, "synthetic result for invocation error should be Valid=false")
 }
@@ -448,6 +466,7 @@ func TestProcessFileRecordsInvalidValidationResult(t *testing.T) {
 
 	appInstance, err := New(cfg, Dependencies{
 		FS:                afero.NewMemMapFs(),
+		FileReader:        stubFileReader{content: appYAML},
 		Logger:            logger,
 		ManifestValidator: mockValidator,
 		HelmProcessor:     mockHelmProcessor,
@@ -462,7 +481,7 @@ func TestProcessFileRecordsInvalidValidationResult(t *testing.T) {
 	mockHelmProcessor.EXPECT().RenderAppSource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	invalidResult := ports.ValidationResult{
-		Target:        TargetTypeDestination,
+		Target:        TargetTypeSource,
 		Valid:         false,
 		ResourceCount: 2,
 		ErrorCount:    1,
@@ -471,19 +490,17 @@ func TestProcessFileRecordsInvalidValidationResult(t *testing.T) {
 		},
 	}
 	mockValidator.EXPECT().
-		Validate(gomock.Any(), TargetTypeDestination, gomock.Any()).
+		Validate(gomock.Any(), TargetTypeSource, gomock.Any()).
 		Return(invalidResult, nil)
 
-	testApp := models.Application{}
-	testApp.Spec.Source = &models.Source{Chart: "my-chart", RepoURL: "https://charts.example.com"}
-	testApp.Spec.Destination = &models.Destination{Server: "https://kubernetes.default.svc", Namespace: "default"}
+	appFile := filepath.Join(t.TempDir(), "test-app.yaml")
 
 	validationResults := make(map[string]ports.ValidationResult)
-	err = appInstance.processFile(context.Background(), "apps/test.yaml", TargetTypeDestination, testApp, tmpDir, validationResults)
+	err = appInstance.processFile(context.Background(), appFile, TargetTypeSource, models.Application{}, tmpDir, validationResults)
 	require.NoError(t, err, "schema-invalid manifests must not cause processFile to fail")
 
-	require.Contains(t, validationResults, TargetTypeDestination)
-	assert.Equal(t, invalidResult, validationResults[TargetTypeDestination])
+	require.Contains(t, validationResults, TargetTypeSource)
+	assert.Equal(t, invalidResult, validationResults[TargetTypeSource])
 }
 
 func TestProcessFileSkipsValidationWhenValidatorNil(t *testing.T) {
@@ -499,6 +516,7 @@ func TestProcessFileSkipsValidationWhenValidatorNil(t *testing.T) {
 
 	appInstance, err := New(cfg, Dependencies{
 		FS:            afero.NewMemMapFs(),
+		FileReader:    stubFileReader{content: appYAML},
 		Logger:        logger,
 		HelmProcessor: mockHelmProcessor,
 	})
@@ -512,21 +530,27 @@ func TestProcessFileSkipsValidationWhenValidatorNil(t *testing.T) {
 	mockHelmProcessor.EXPECT().ExtractHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	mockHelmProcessor.EXPECT().RenderAppSource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
-	testApp := models.Application{}
-	testApp.Spec.Source = &models.Source{Chart: "my-chart", RepoURL: "https://charts.example.com"}
-	testApp.Spec.Destination = &models.Destination{Server: "https://kubernetes.default.svc", Namespace: "default"}
+	appFile := filepath.Join(t.TempDir(), "test-app.yaml")
 
 	validationResults := make(map[string]ports.ValidationResult)
-	err = appInstance.processFile(context.Background(), "apps/test.yaml", TargetTypeDestination, testApp, tmpDir, validationResults)
+	// Use TargetTypeSource so parse() is exercised and the nil-validator guard is
+	// reached on the same code path that production code takes.
+	err = appInstance.processFile(context.Background(), appFile, TargetTypeSource, models.Application{}, tmpDir, validationResults)
 	require.NoError(t, err)
 
 	assert.Empty(t, validationResults, "validationResults must remain empty when no validator is configured")
 }
 
-func TestProcessFileCallsValidatorWithCorrectPath(t *testing.T) {
-	// Verifies the validator is invoked with <tmpDir>/templates/<fileType> and that
-	// the result is stored in the caller-supplied validationResults map.
-	// Uses TargetTypeDestination to skip the parse() step (which reads from the filesystem).
+// stubFileReader returns a fixed byte payload for any ReadFile call.
+type stubFileReader struct {
+	content []byte
+}
+
+func (s stubFileReader) ReadFile(string) []byte { return s.content }
+
+func TestProcessFileCallsValidatorForSource(t *testing.T) {
+	// Verifies validator is invoked with <tmpDir>/templates/src for source manifests
+	// (the post-merge state) and the result is stored in validationResults.
 	ctrl := gomock.NewController(t)
 	mockValidator := mocks.NewMockManifestValidator(ctrl)
 	mockHelmProcessor := mocks.NewMockHelmChartsProcessor(ctrl)
@@ -534,10 +558,11 @@ func TestProcessFileCallsValidatorWithCorrectPath(t *testing.T) {
 	cfg, err := NewConfig("main", WithCacheDir("/tmp/cache"), WithValidateManifests(true))
 	require.NoError(t, err)
 
-	logger := setupTestLogger(t, "app-processfile-validator")
+	logger := setupTestLogger(t, "app-processfile-validator-src")
 
 	appInstance, err := New(cfg, Dependencies{
 		FS:                afero.NewMemMapFs(),
+		FileReader:        stubFileReader{content: appYAML},
 		Logger:            logger,
 		ManifestValidator: mockValidator,
 		HelmProcessor:     mockHelmProcessor,
@@ -553,16 +578,59 @@ func TestProcessFileCallsValidatorWithCorrectPath(t *testing.T) {
 	mockHelmProcessor.EXPECT().RenderAppSource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	// Match the path layout that processFile uses (filepath.Join, not string concat).
-	expectedManifestDir := filepath.Join(tmpDir, "templates", TargetTypeDestination)
+	expectedManifestDir := filepath.Join(tmpDir, "templates", TargetTypeSource)
 	expectedResult := ports.ValidationResult{
-		Target:        TargetTypeDestination,
+		Target:        TargetTypeSource,
 		Valid:         true,
 		ResourceCount: 3,
 	}
 
 	mockValidator.EXPECT().
-		Validate(gomock.Any(), TargetTypeDestination, expectedManifestDir).
+		Validate(gomock.Any(), TargetTypeSource, expectedManifestDir).
 		Return(expectedResult, nil)
+
+	// Absolute path skips GetGitRepoRoot() inside Target.parse() so the test does
+	// not depend on running inside a git repository.
+	appFile := filepath.Join(t.TempDir(), "test-app.yaml")
+
+	validationResults := make(map[string]ports.ValidationResult)
+	err = appInstance.processFile(context.Background(), appFile, TargetTypeSource, models.Application{}, tmpDir, validationResults)
+	require.NoError(t, err)
+
+	require.Contains(t, validationResults, TargetTypeSource)
+	assert.Equal(t, expectedResult, validationResults[TargetTypeSource])
+}
+
+func TestProcessFileSkipsValidationForDestination(t *testing.T) {
+	// Destination represents the current state of the target branch (already deployed).
+	// We only validate src (the post-merge state), so dst processing must NOT call
+	// the validator and must NOT add an entry to validationResults.
+	ctrl := gomock.NewController(t)
+	mockValidator := mocks.NewMockManifestValidator(ctrl)
+	mockHelmProcessor := mocks.NewMockHelmChartsProcessor(ctrl)
+
+	cfg, err := NewConfig("main", WithCacheDir("/tmp/cache"), WithValidateManifests(true))
+	require.NoError(t, err)
+
+	logger := setupTestLogger(t, "app-processfile-validator-dst")
+
+	appInstance, err := New(cfg, Dependencies{
+		FS:                afero.NewMemMapFs(),
+		Logger:            logger,
+		ManifestValidator: mockValidator,
+		HelmProcessor:     mockHelmProcessor,
+	})
+	require.NoError(t, err)
+
+	tmpDir := t.TempDir()
+
+	mockHelmProcessor.EXPECT().GenerateValuesFile(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().DownloadHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().ExtractHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().RenderAppSource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+
+	// No EXPECT on mockValidator: gomock.NewController(t) will fail the test if
+	// Validate is called.
 
 	// Provide a minimal Application with non-nil Source and Destination to avoid
 	// nil dereferences in generateValuesFiles and renderAppSources.
@@ -574,6 +642,5 @@ func TestProcessFileCallsValidatorWithCorrectPath(t *testing.T) {
 	err = appInstance.processFile(context.Background(), "apps/test.yaml", TargetTypeDestination, testApp, tmpDir, validationResults)
 	require.NoError(t, err)
 
-	require.Contains(t, validationResults, TargetTypeDestination)
-	assert.Equal(t, expectedResult, validationResults[TargetTypeDestination])
+	assert.Empty(t, validationResults, "validation must be skipped for destination manifests")
 }
