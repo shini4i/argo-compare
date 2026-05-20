@@ -32,7 +32,18 @@ type ChangedFilesResult struct {
 	Invalid      []string
 }
 
-var errGitFileDoesNotExist = errors.New("file does not exist in target branch")
+var (
+	errGitFileDoesNotExist = errors.New("file does not exist in target branch")
+	// ErrNoCommonAncestor is returned when HEAD and the target branch share no
+	// history, meaning the "what did src change since branching off" question
+	// has no meaningful answer.
+	ErrNoCommonAncestor = errors.New("no common ancestor")
+	// ErrAmbiguousMergeBase is returned when the history between HEAD and the
+	// target branch has multiple equally-valid merge bases (criss-cross merges).
+	// Picking one arbitrarily would produce non-deterministic results, so we
+	// surface the ambiguity to the user instead.
+	ErrAmbiguousMergeBase = errors.New("ambiguous merge-base")
+)
 
 // NewGitRepo opens the Git repository rooted at the current working directory and returns a GitRepo configured with the provided filesystem, command runner, file reader, and logger.
 // It locates the repository root and opens the repository; an error is returned if root discovery or repository opening fails.
@@ -56,7 +67,10 @@ func NewGitRepo(fs afero.Fs, cmdRunner ports.CmdRunner, fileReader ports.FileRea
 	}, nil
 }
 
-// GetChangedFiles compares HEAD against targetBranch and returns changed application files.
+// GetChangedFiles returns application files that the current branch (HEAD)
+// has modified since it diverged from targetBranch. Files modified only on
+// targetBranch after the divergence point are intentionally excluded — those
+// are not changes the source branch is proposing.
 func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string) (ChangedFilesResult, error) {
 	targetRef, err := g.repo.Reference(plumbing.ReferenceName(fmt.Sprintf("refs/remotes/origin/%s", targetBranch)), true)
 	if err != nil {
@@ -78,9 +92,9 @@ func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string) (
 		return ChangedFilesResult{}, fmt.Errorf("failed to get commit object for current branch: %w", err)
 	}
 
-	targetTree, err := targetCommit.Tree()
+	baseTree, err := g.mergeBaseTree(headCommit, targetCommit)
 	if err != nil {
-		return ChangedFilesResult{}, fmt.Errorf("failed to get tree for target commit: %w", err)
+		return ChangedFilesResult{}, fmt.Errorf("failed to resolve merge-base with %s: %w", targetBranch, err)
 	}
 
 	headTree, err := headCommit.Tree()
@@ -88,7 +102,7 @@ func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string) (
 		return ChangedFilesResult{}, fmt.Errorf("failed to get tree for head commit: %w", err)
 	}
 
-	changes, err := object.DiffTree(targetTree, headTree)
+	changes, err := object.DiffTree(baseTree, headTree)
 	if err != nil {
 		return ChangedFilesResult{}, fmt.Errorf("failed to get diff between trees: %w", err)
 	}
@@ -109,6 +123,36 @@ func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string) (
 	filtered := filterIgnored(applications, filesToIgnore)
 
 	return ChangedFilesResult{Applications: filtered, Invalid: invalid}, nil
+}
+
+// mergeBaseTree returns the tree of the merge-base commit between headCommit
+// and targetCommit — the snapshot from which the source branch diverged.
+// Diffing against this snapshot yields only the changes the source branch
+// actually introduced, ignoring commits made on the target branch since
+// divergence.
+//
+// Returns ErrNoCommonAncestor if the histories are unrelated, or
+// ErrAmbiguousMergeBase if multiple equally-valid merge bases exist
+// (criss-cross merges) — go-git does not perform recursive merge-base
+// resolution, so picking one silently would be non-deterministic.
+func (g *GitRepo) mergeBaseTree(headCommit, targetCommit *object.Commit) (*object.Tree, error) {
+	bases, err := headCommit.MergeBase(targetCommit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find merge-base: %w", err)
+	}
+	switch len(bases) {
+	case 0:
+		return nil, ErrNoCommonAncestor
+	case 1:
+	default:
+		return nil, fmt.Errorf("%w: %d candidates (history contains criss-cross merges)", ErrAmbiguousMergeBase, len(bases))
+	}
+
+	tree, err := bases[0].Tree()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tree for merge-base commit: %w", err)
+	}
+	return tree, nil
 }
 
 // GetChangedFileContent fetches and parses targetFile from targetBranch.
