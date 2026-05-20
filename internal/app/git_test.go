@@ -9,6 +9,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/spf13/afero"
@@ -83,6 +84,144 @@ func TestGitRepoGetChangedFilesRespectsIgnore(t *testing.T) {
 
 	require.ElementsMatch(t, []string{"apps/demo.yaml"}, result.Applications)
 	require.Empty(t, result.Invalid)
+}
+
+// TestGitRepoGetChangedFilesExcludesDstOnlyChanges verifies that files modified
+// only on the destination branch (after src branched off) are NOT reported as
+// changed. We want "what src changed since branching off", not the symmetric
+// difference between src and dst tips.
+func TestGitRepoGetChangedFilesExcludesDstOnlyChanges(t *testing.T) {
+	tempDir := t.TempDir()
+	workDir := filepath.Join(tempDir, "repo")
+	require.NoError(t, os.MkdirAll(workDir, 0o755))
+
+	repo, err := git.PlainInit(workDir, false)
+	require.NoError(t, err)
+
+	err = repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main")))
+	require.NoError(t, err)
+
+	// Base commit on main: both apps at v1.0.0 — this is the merge base.
+	writeApplication(t, workDir, `1.0.0`, 1)
+	writeExtraApplication(t, workDir, "secondary", `1.0.0`, 1)
+
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+
+	_, err = worktree.Add("apps/demo.yaml")
+	require.NoError(t, err)
+	_, err = worktree.Add("apps/secondary.yaml")
+	require.NoError(t, err)
+
+	_, err = worktree.Commit("initial", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	// Branch off "feature" from the base commit and modify ONLY demo.yaml.
+	err = worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("feature"), Create: true})
+	require.NoError(t, err)
+
+	writeApplication(t, workDir, `1.1.0`, 2)
+	_, err = worktree.Add("apps/demo.yaml")
+	require.NoError(t, err)
+	_, err = worktree.Commit("src changes demo", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	// Switch back to main and modify ONLY secondary.yaml (dst-only change).
+	err = worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("main")})
+	require.NoError(t, err)
+
+	writeExtraApplication(t, workDir, "secondary", `2.0.0`, 3)
+	_, err = worktree.Add("apps/secondary.yaml")
+	require.NoError(t, err)
+	mainHash, err := worktree.Commit("dst changes secondary", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	// origin/main points at the new main tip — which has the dst-only change.
+	err = repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), mainHash))
+	require.NoError(t, err)
+
+	// Switch back to feature so HEAD reflects src.
+	err = worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("feature")})
+	require.NoError(t, err)
+
+	originalWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(workDir))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(originalWD))
+	})
+
+	logger := logging.MustGetLogger("git-test-dst-only")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
+	require.NoError(t, err)
+
+	result, err := repoInstance.GetChangedFiles("main", nil)
+	require.NoError(t, err)
+
+	// Only the file src actually touched should be reported.
+	require.ElementsMatch(t, []string{"apps/demo.yaml"}, result.Applications)
+	require.Empty(t, result.Invalid)
+}
+
+// TestGitRepoGetChangedFilesUnrelatedHistories verifies that an unrelated
+// target branch (no shared history with HEAD) produces ErrNoCommonAncestor
+// rather than silently treating every file as changed.
+func TestGitRepoGetChangedFilesUnrelatedHistories(t *testing.T) {
+	tempDir := t.TempDir()
+	workDir := filepath.Join(tempDir, "repo")
+	require.NoError(t, os.MkdirAll(workDir, 0o755))
+
+	repo, err := git.PlainInit(workDir, false)
+	require.NoError(t, err)
+
+	err = repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main")))
+	require.NoError(t, err)
+
+	writeApplication(t, workDir, `1.0.0`, 1)
+
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+
+	_, err = worktree.Add("apps/demo.yaml")
+	require.NoError(t, err)
+	_, err = worktree.Commit("initial", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	// Construct an orphan commit (no parents, empty tree) and point
+	// origin/main at it — HEAD and origin/main now share no history.
+	emptyTree := &object.Tree{}
+	treeObj := repo.Storer.NewEncodedObject()
+	require.NoError(t, emptyTree.Encode(treeObj))
+	treeHash, err := repo.Storer.SetEncodedObject(treeObj)
+	require.NoError(t, err)
+
+	orphan := &object.Commit{
+		Author:    *defaultSignature(),
+		Committer: *defaultSignature(),
+		Message:   "orphan",
+		TreeHash:  treeHash,
+	}
+	commitObj := repo.Storer.NewEncodedObject()
+	require.NoError(t, orphan.Encode(commitObj))
+	orphanHash, err := repo.Storer.SetEncodedObject(commitObj)
+	require.NoError(t, err)
+
+	err = repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), orphanHash))
+	require.NoError(t, err)
+
+	originalWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(workDir))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(originalWD))
+	})
+
+	logger := logging.MustGetLogger("git-test-unrelated")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
+	require.NoError(t, err)
+
+	_, err = repoInstance.GetChangedFiles("main", nil)
+	require.ErrorIs(t, err, ErrNoCommonAncestor)
 }
 
 func TestGitRepoTreeForBranchReturnsTree(t *testing.T) {

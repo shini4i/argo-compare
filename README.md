@@ -173,7 +173,7 @@ If AWS credentials are not available (e.g., running locally without AWS access),
 
 ## How it works
 
-1) First, this tool will check which files are changed compared to the files in the target branch.
+1) First, this tool checks which Application files the source branch has modified since it diverged from the target branch (the merge-base is the baseline, so commits made only on the target branch after divergence are ignored).
 2) It will get the content of the changed Application files from the target branch.
 3) It will render manifests using the helm template using source and target branch values.
 4) It will get rid of helm related labels as they are not important for the comparison. (It can be skipped by providing `--preserve-helm-labels` flag)
