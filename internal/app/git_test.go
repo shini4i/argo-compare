@@ -189,22 +189,8 @@ func TestGitRepoGetChangedFilesUnrelatedHistories(t *testing.T) {
 
 	// Construct an orphan commit (no parents, empty tree) and point
 	// origin/main at it — HEAD and origin/main now share no history.
-	emptyTree := &object.Tree{}
-	treeObj := repo.Storer.NewEncodedObject()
-	require.NoError(t, emptyTree.Encode(treeObj))
-	treeHash, err := repo.Storer.SetEncodedObject(treeObj)
-	require.NoError(t, err)
-
-	orphan := &object.Commit{
-		Author:    *defaultSignature(),
-		Committer: *defaultSignature(),
-		Message:   "orphan",
-		TreeHash:  treeHash,
-	}
-	commitObj := repo.Storer.NewEncodedObject()
-	require.NoError(t, orphan.Encode(commitObj))
-	orphanHash, err := repo.Storer.SetEncodedObject(commitObj)
-	require.NoError(t, err)
+	treeHash := storeEmptyTree(t, repo)
+	orphanHash := storeRawCommit(t, repo, treeHash, nil, "orphan")
 
 	err = repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), orphanHash))
 	require.NoError(t, err)
@@ -222,6 +208,92 @@ func TestGitRepoGetChangedFilesUnrelatedHistories(t *testing.T) {
 
 	_, err = repoInstance.GetChangedFiles("main", nil)
 	require.ErrorIs(t, err, ErrNoCommonAncestor)
+}
+
+// TestGitRepoGetChangedFilesAmbiguousMergeBase verifies that a criss-cross
+// merge topology — where HEAD and the target branch have two equally-valid
+// best common ancestors — returns ErrAmbiguousMergeBase rather than silently
+// picking one.
+//
+// The topology built here:
+//
+//	    A---C   (HEAD, "feature": merges B into A's line)
+//	   / \ /
+//	  O   X
+//	   \ / \
+//	    B---D  (origin/main: merges A into B's line)
+//
+// Merge bases of C and D are {A, B} — neither is reachable from the other.
+func TestGitRepoGetChangedFilesAmbiguousMergeBase(t *testing.T) {
+	tempDir := t.TempDir()
+	workDir := filepath.Join(tempDir, "repo")
+	require.NoError(t, os.MkdirAll(workDir, 0o755))
+
+	repo, err := git.PlainInit(workDir, false)
+	require.NoError(t, err)
+
+	treeHash := storeEmptyTree(t, repo)
+	oHash := storeRawCommit(t, repo, treeHash, nil, "O")
+	aHash := storeRawCommit(t, repo, treeHash, []plumbing.Hash{oHash}, "A")
+	bHash := storeRawCommit(t, repo, treeHash, []plumbing.Hash{oHash}, "B")
+	cHash := storeRawCommit(t, repo, treeHash, []plumbing.Hash{aHash, bHash}, "C: merge B into A")
+	dHash := storeRawCommit(t, repo, treeHash, []plumbing.Hash{bHash, aHash}, "D: merge A into B")
+
+	// HEAD → feature → C
+	err = repo.Storer.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName("feature"), cHash))
+	require.NoError(t, err)
+	err = repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("feature")))
+	require.NoError(t, err)
+	// origin/main → D
+	err = repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), dHash))
+	require.NoError(t, err)
+
+	originalWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(workDir))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(originalWD))
+	})
+
+	logger := logging.MustGetLogger("git-test-ambiguous")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
+	require.NoError(t, err)
+
+	_, err = repoInstance.GetChangedFiles("main", nil)
+	require.ErrorIs(t, err, ErrAmbiguousMergeBase)
+}
+
+// storeEmptyTree writes an empty Git tree to the repository's object store
+// and returns its hash. Used by tests that construct commits directly via the
+// storer rather than through a worktree.
+func storeEmptyTree(t *testing.T, repo *git.Repository) plumbing.Hash {
+	t.Helper()
+	tree := &object.Tree{}
+	obj := repo.Storer.NewEncodedObject()
+	require.NoError(t, tree.Encode(obj))
+	hash, err := repo.Storer.SetEncodedObject(obj)
+	require.NoError(t, err)
+	return hash
+}
+
+// storeRawCommit writes a commit object with the given tree, parents, and
+// message directly to the repository's object store and returns its hash.
+// Lets tests assemble arbitrary commit topologies (orphans, criss-cross
+// merges) that the worktree-based API cannot express.
+func storeRawCommit(t *testing.T, repo *git.Repository, tree plumbing.Hash, parents []plumbing.Hash, msg string) plumbing.Hash {
+	t.Helper()
+	commit := &object.Commit{
+		Author:       *defaultSignature(),
+		Committer:    *defaultSignature(),
+		Message:      msg,
+		TreeHash:     tree,
+		ParentHashes: parents,
+	}
+	obj := repo.Storer.NewEncodedObject()
+	require.NoError(t, commit.Encode(obj))
+	hash, err := repo.Storer.SetEncodedObject(obj)
+	require.NoError(t, err)
+	return hash
 }
 
 func TestGitRepoTreeForBranchReturnsTree(t *testing.T) {
