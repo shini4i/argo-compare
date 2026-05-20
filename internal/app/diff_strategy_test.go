@@ -247,6 +247,81 @@ func TestExternalDiffStrategyPresentWithInvalidTool(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid diff tool name")
 }
 
+func TestExternalDiffStrategyPresentPrintsValidationResults(t *testing.T) {
+	// Locks in that validation summary lands on stdout for the external-diff
+	// flow too — the comment poster used to be the only surface exposing it.
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "noop.sh")
+	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\ncat > /dev/null\n"), 0o755))
+
+	var buf bytes.Buffer
+	backend := logging.NewLogBackend(&buf, "", 0)
+	logging.SetBackend(logging.NewBackendFormatter(backend, logging.MustStringFormatter(`%{message}`)))
+	t.Cleanup(func() {
+		logging.SetBackend(logging.NewBackendFormatter(logging.NewLogBackend(os.Stdout, "", 0), logging.MustStringFormatter(`%{message}`)))
+	})
+
+	t.Run("with diff", func(t *testing.T) {
+		buf.Reset()
+		strategy := ExternalDiffStrategy{
+			Log:  logging.MustGetLogger("test-external-validation"),
+			Tool: scriptPath,
+		}
+		result := ComparisonResult{
+			Changed: []DiffOutput{{File: File{Name: "changed.yaml"}, Diff: "diff content"}},
+			ValidationResults: map[string]ports.ValidationResult{
+				"src": {
+					Target:        "src",
+					Valid:         false,
+					ResourceCount: 4,
+					ErrorCount:    1,
+					Errors: []ports.ValidationError{
+						{Kind: "Deployment", Name: "broken", Message: "schema mismatch"},
+					},
+				},
+			},
+		}
+		require.NoError(t, strategy.Present(context.Background(), result))
+		assert.Contains(t, buf.String(), "===> Manifest Validation Results")
+		assert.Contains(t, buf.String(), "✗ 3/4 valid")
+		assert.Contains(t, buf.String(), "Deployment.broken")
+	})
+
+	t.Run("with empty diff still prints validation", func(t *testing.T) {
+		buf.Reset()
+		strategy := ExternalDiffStrategy{
+			Log:  logging.MustGetLogger("test-external-validation-empty"),
+			Tool: scriptPath,
+		}
+		result := ComparisonResult{
+			ValidationResults: map[string]ports.ValidationResult{
+				"src": {Target: "src", Valid: true, ResourceCount: 2},
+			},
+		}
+		require.NoError(t, strategy.Present(context.Background(), result))
+		assert.Contains(t, buf.String(), "✓ 2/2 valid")
+	})
+
+	t.Run("invocation error is surfaced", func(t *testing.T) {
+		buf.Reset()
+		strategy := ExternalDiffStrategy{
+			Log:  logging.MustGetLogger("test-external-validation-invoke-err"),
+			Tool: scriptPath,
+		}
+		result := ComparisonResult{
+			ValidationResults: map[string]ports.ValidationResult{
+				"src": {
+					Target:          "src",
+					InvocationError: "kubeconform binary not found in $PATH",
+				},
+			},
+		}
+		require.NoError(t, strategy.Present(context.Background(), result))
+		assert.Contains(t, buf.String(), "validator could not run:")
+		assert.Contains(t, buf.String(), "kubeconform binary not found in $PATH")
+	})
+}
+
 func TestExternalDiffStrategyPresentShowFlags(t *testing.T) {
 	logger := logging.MustGetLogger("test")
 	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
@@ -337,7 +412,7 @@ func TestStdoutStrategyPresentValidationInvocationError(t *testing.T) {
 		},
 	}
 
-	// Should not error and should exercise the InvocationError branch in printValidationResults.
+	// Should not error and should exercise the InvocationError branch in logValidationResults.
 	err := strategy.Present(context.Background(), result)
 	require.NoError(t, err)
 }
