@@ -38,7 +38,7 @@ type ExternalDiffStrategy struct {
 // Present prints comparison results using the configured stdout logger.
 // The context parameter is accepted for interface compliance but not used.
 func (s StdoutStrategy) Present(_ context.Context, result ComparisonResult) error {
-	s.printValidationResults(result.ValidationResults)
+	logValidationResults(s.Log, result.ValidationResults)
 
 	if result.IsEmpty() {
 		s.Log.Info("No diff was found in rendered manifests!")
@@ -58,8 +58,10 @@ func (s StdoutStrategy) Present(_ context.Context, result ComparisonResult) erro
 	return nil
 }
 
-// printValidationResults outputs validation status for each target in a stable order.
-func (s StdoutStrategy) printValidationResults(results map[string]ports.ValidationResult) {
+// logValidationResults emits validation status for each target in a stable order
+// through the supplied logger. Shared by the stdout and external-diff strategies
+// so terminal output stays consistent regardless of which one is active.
+func logValidationResults(log *logging.Logger, results map[string]ports.ValidationResult) {
 	if len(results) == 0 {
 		return
 	}
@@ -70,20 +72,20 @@ func (s StdoutStrategy) printValidationResults(results map[string]ports.Validati
 	}
 	sort.Strings(keys)
 
-	s.Log.Info("===> Manifest Validation Results")
+	log.Info("===> Manifest Validation Results")
 	for _, target := range keys {
 		result := results[target]
 		if result.InvocationError != "" {
-			s.Log.Warningf("  validator could not run: %s", result.InvocationError)
+			log.Warningf("  validator could not run: %s", result.InvocationError)
 			continue
 		}
 		status := "✓"
 		if !result.Valid {
 			status = "✗"
 		}
-		s.Log.Infof("%s %d/%d valid", status, result.ResourceCount-result.ErrorCount, result.ResourceCount)
+		log.Infof("%s %d/%d valid", status, result.ResourceCount-result.ErrorCount, result.ResourceCount)
 		for _, err := range result.Errors {
-			s.Log.Warningf("  - %s.%s: %s", err.Kind, err.Name, err.Message)
+			log.Warningf("  - %s.%s: %s", err.Kind, err.Name, err.Message)
 		}
 	}
 }
@@ -110,6 +112,8 @@ func (s StdoutStrategy) printSection(operation string, entries []DiffOutput) {
 // Present streams diff content to the configured external tool.
 // The context is used for cancellation of external tool execution.
 func (s ExternalDiffStrategy) Present(ctx context.Context, result ComparisonResult) error {
+	logValidationResults(s.Log, result.ValidationResults)
+
 	if result.IsEmpty() {
 		s.Log.Info("No diff was found in rendered manifests!")
 		return nil
