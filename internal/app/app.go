@@ -277,19 +277,36 @@ func (a *App) processChangedFile(ctx context.Context, repo *GitRepo, file string
 }
 
 // resolveTargetApplication retrieves the target branch manifest and determines follow-up actions.
+// Unknown errors are propagated so the user sees the real failure (e.g. a git plumbing issue)
+// instead of a cascading Helm error caused by processing with an empty Application.
 func (a *App) resolveTargetApplication(repo *GitRepo, file string) (models.Application, destinationAction, error) {
 	app, err := repo.GetChangedFileContent(a.cfg.TargetBranch, file, a.cfg.PrintAddedManifests)
 
+	action, decideErr := decideDestinationAction(err, a.cfg.PrintAddedManifests)
+	if decideErr != nil {
+		return models.Application{}, 0, fmt.Errorf("get target Application from branch %q: %w", a.cfg.TargetBranch, decideErr)
+	}
+
+	if action == destinationProcess {
+		return app, action, nil
+	}
+	return models.Application{}, action, nil
+}
+
+// decideDestinationAction maps the outcome of GetChangedFileContent to a destinationAction.
+// Errors other than the two named sentinels are returned to the caller; previously they
+// were logged and silently downgraded to destinationProcess, which produced confusing
+// downstream Helm failures instead of surfacing the real cause.
+func decideDestinationAction(err error, printAdded bool) (destinationAction, error) {
 	switch {
-	case errors.Is(err, errGitFileDoesNotExist) && !a.cfg.PrintAddedManifests:
-		return models.Application{}, destinationSkip, nil
+	case errors.Is(err, errGitFileDoesNotExist) && !printAdded:
+		return destinationSkip, nil
 	case errors.Is(err, models.ErrEmptyFile):
-		return models.Application{}, destinationNone, nil
+		return destinationNone, nil
 	case err != nil:
-		a.logger.Errorf("Could not get the target Application from branch [%s]: %s", a.cfg.TargetBranch, err)
-		return app, destinationProcess, nil
+		return 0, err
 	default:
-		return app, destinationProcess, nil
+		return destinationProcess, nil
 	}
 }
 

@@ -304,6 +304,42 @@ func TestFilterIgnoredEmpty(t *testing.T) {
 	assert.Equal(t, files, result)
 }
 
+func TestDecideDestinationActionFileMissingWithoutPrintAdded(t *testing.T) {
+	action, err := decideDestinationAction(errGitFileDoesNotExist, false)
+	require.NoError(t, err)
+	assert.Equal(t, destinationSkip, action)
+}
+
+func TestDecideDestinationActionFileMissingWithPrintAdded(t *testing.T) {
+	// errGitFileDoesNotExist is only returned by the !printAdded path in
+	// GetChangedFileContent; guard that decideDestinationAction does not
+	// silently absorb it when printAdded is true.
+	action, err := decideDestinationAction(errGitFileDoesNotExist, true)
+	require.Error(t, err, "unhandled error must bubble up")
+	assert.Equal(t, destinationAction(0), action)
+}
+
+func TestDecideDestinationActionEmptyFile(t *testing.T) {
+	action, err := decideDestinationAction(models.ErrEmptyFile, false)
+	require.NoError(t, err)
+	assert.Equal(t, destinationNone, action)
+}
+
+func TestDecideDestinationActionUnknownErrorBubblesUp(t *testing.T) {
+	sentinel := errors.New("git plumbing exploded")
+
+	action, err := decideDestinationAction(sentinel, false)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, sentinel, "unknown errors must be returned, not swallowed")
+	assert.Equal(t, destinationAction(0), action)
+}
+
+func TestDecideDestinationActionNoErrorProcesses(t *testing.T) {
+	action, err := decideDestinationAction(nil, false)
+	require.NoError(t, err)
+	assert.Equal(t, destinationProcess, action)
+}
+
 func TestDefaultCommentPosterFactoryGitLab(t *testing.T) {
 	cfg := Config{
 		Comment: &CommentConfig{
