@@ -23,6 +23,11 @@ type OsFs interface {
 // ReadFile returns (nil, nil) when the file does not exist and (nil, err) for
 // any other I/O or permission failure, allowing callers to distinguish
 // "absent" from "unreadable".
+//
+// Note: an absent file and a genuinely empty file are observably the same to
+// callers — both surface as (nil, nil) followed by an empty []byte from
+// successful reads. If a caller needs to distinguish them, it must os.Stat
+// the path itself; this contract does not.
 type FileReader interface {
 	ReadFile(file string) ([]byte, error)
 }
