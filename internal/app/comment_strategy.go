@@ -1,12 +1,13 @@
 package app
 
 import (
-	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"context"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 
 	"github.com/shini4i/argo-compare/internal/comment"
 	"github.com/shini4i/argo-compare/internal/ports"
@@ -138,8 +139,8 @@ func buildCommentBodies(result ComparisonResult, showAdded, showRemoved bool, ap
 // escapeInlineMarkdown sanitizes a string for safe interpolation into Markdown.
 // Backslashes are escaped first so that subsequent backtick escaping cannot
 // accidentally create a CommonMark backslash-escape sequence that leaves the
-// backtick unescaped (e.g. a trailing `\` before a `` ` `` would otherwise
-// produce `\\`` which the renderer interprets as literal `\` + open code-span).
+// backtick unescaped (e.g. a trailing `\` before a “ ` “ would otherwise
+// produce `\\“ which the renderer interprets as literal `\` + open code-span).
 // Newlines and carriage returns are collapsed to spaces to keep each bullet on
 // a single line.
 func escapeInlineMarkdown(s string) string {

@@ -1,7 +1,6 @@
 package app
 
 import (
-"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"bytes"
 	"context"
 	"fmt"
@@ -9,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/sanitizer"
@@ -147,9 +148,7 @@ func TestCompareProcessFiles(t *testing.T) {
 
 func TestStdoutStrategyPresent(t *testing.T) {
 	var buf bytes.Buffer
-	logger.SetOutput(&buf)
-	t.Cleanup(func() {
-	})
+	logger.RedirectForTest(t, &buf)
 
 	strategy := StdoutStrategy{
 		Log:         logger.New("compare-print"),

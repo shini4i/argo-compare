@@ -22,9 +22,6 @@ func TestExternalDiffStrategyPresent(t *testing.T) {
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
 
 	logger := logger.New("external-diff")
-	t.Cleanup(func() {
-	})
-
 	strategy := ExternalDiffStrategy{
 		Log:         logger,
 		Tool:        scriptPath,
@@ -57,9 +54,6 @@ func TestExternalDiffStrategyPresent(t *testing.T) {
 
 func TestExternalDiffStrategyRunToolValidation(t *testing.T) {
 	logger := logger.New("test")
-	t.Cleanup(func() {
-	})
-
 	tests := []struct {
 		name                    string
 		tool                    string
@@ -176,9 +170,6 @@ func TestExternalDiffStrategyRunToolValidation(t *testing.T) {
 
 func TestExternalDiffStrategyRunSectionCollectsErrors(t *testing.T) {
 	logger := logger.New("test")
-	t.Cleanup(func() {
-	})
-
 	strategy := ExternalDiffStrategy{
 		Log:  logger,
 		Tool: "nonexistent-tool-12345",
@@ -199,9 +190,6 @@ func TestExternalDiffStrategyRunSectionCollectsErrors(t *testing.T) {
 
 func TestExternalDiffStrategyPresentEmpty(t *testing.T) {
 	logger := logger.New("test")
-	t.Cleanup(func() {
-	})
-
 	strategy := ExternalDiffStrategy{
 		Log:         logger,
 		Tool:        "diff",
@@ -216,9 +204,6 @@ func TestExternalDiffStrategyPresentEmpty(t *testing.T) {
 
 func TestExternalDiffStrategyPresentWithInvalidTool(t *testing.T) {
 	logger := logger.New("test")
-	t.Cleanup(func() {
-	})
-
 	strategy := ExternalDiffStrategy{
 		Log:         logger,
 		Tool:        "diff;rm",
@@ -244,9 +229,7 @@ func TestExternalDiffStrategyPresentPrintsValidationResults(t *testing.T) {
 	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\ncat > /dev/null\n"), 0o755))
 
 	var buf bytes.Buffer
-	logger.SetOutput(&buf)
-	t.Cleanup(func() {
-	})
+	logger.RedirectForTest(t, &buf)
 
 	t.Run("with diff", func(t *testing.T) {
 		buf.Reset()
@@ -311,9 +294,6 @@ func TestExternalDiffStrategyPresentPrintsValidationResults(t *testing.T) {
 
 func TestExternalDiffStrategyPresentShowFlags(t *testing.T) {
 	logger := logger.New("test")
-	t.Cleanup(func() {
-	})
-
 	// Test with ShowAdded=false, ShowRemoved=false - only Changed runs
 	strategy := ExternalDiffStrategy{
 		Log:         logger,
@@ -339,9 +319,6 @@ func TestExternalDiffStrategyPresentShowFlags(t *testing.T) {
 
 func TestStdoutStrategyPresentEmptyResult(t *testing.T) {
 	logger := logger.New("test-stdout")
-	t.Cleanup(func() {
-	})
-
 	strategy := StdoutStrategy{Log: logger}
 	err := strategy.Present(context.Background(), ComparisonResult{})
 	require.NoError(t, err)
@@ -349,9 +326,6 @@ func TestStdoutStrategyPresentEmptyResult(t *testing.T) {
 
 func TestStdoutStrategyPresentWithValidationResults(t *testing.T) {
 	logger := logger.New("test-stdout-validation")
-	t.Cleanup(func() {
-	})
-
 	strategy := StdoutStrategy{Log: logger}
 	result := ComparisonResult{
 		ValidationResults: map[string]ports.ValidationResult{
@@ -378,9 +352,6 @@ func TestStdoutStrategyPresentWithValidationResults(t *testing.T) {
 
 func TestStdoutStrategyPresentValidationInvocationError(t *testing.T) {
 	logger := logger.New("test-stdout-validation-invoke-err")
-	t.Cleanup(func() {
-	})
-
 	strategy := StdoutStrategy{Log: logger}
 	result := ComparisonResult{
 		ValidationResults: map[string]ports.ValidationResult{
@@ -398,9 +369,6 @@ func TestStdoutStrategyPresentValidationInvocationError(t *testing.T) {
 
 func TestStdoutStrategyPresentNoValidationResults(t *testing.T) {
 	logger := logger.New("test-stdout-no-validation")
-	t.Cleanup(func() {
-	})
-
 	strategy := StdoutStrategy{Log: logger}
 	result := ComparisonResult{
 		Changed: []DiffOutput{{File: File{Name: "test.yaml"}, Diff: "changes"}},
@@ -414,9 +382,7 @@ func TestStdoutStrategyValidationResultsFormat(t *testing.T) {
 	// Locks in the "<status> <valid>/<total> valid" output format and guards
 	// against regressions where ResourceCount-ErrorCount is miscomputed.
 	var buf bytes.Buffer
-	logger.SetOutput(&buf)
-	t.Cleanup(func() {
-	})
+	logger.RedirectForTest(t, &buf)
 
 	t.Run("all valid", func(t *testing.T) {
 		buf.Reset()

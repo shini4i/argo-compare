@@ -1,17 +1,17 @@
 package utils
 
 import (
-	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
+
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/shini4i/argo-compare/internal/ui"
 	"gopkg.in/yaml.v3"
-
 
 	"github.com/shini4i/argo-compare/internal/ports"
 )

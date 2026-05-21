@@ -1,7 +1,6 @@
 package app
 
 import (
-	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"bytes"
 	"context"
 	"errors"
@@ -11,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -96,11 +97,7 @@ func TestAppRunIntegration(t *testing.T) {
 	})
 
 	var logBuffer bytes.Buffer
-	logger.SetOutput(&logBuffer)
-	logger.SetOutput(&logBuffer)
-	t.Cleanup(func() {
-		logger.SetOutput(os.Stdout)
-	})
+	logger.RedirectForTest(t, &logBuffer)
 
 	appLogger := logger.New("app-test")
 
@@ -333,11 +330,9 @@ func TestAppRunReturnsValidationErrorWhenValidatorFails(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, os.Chdir(oldWD)) })
 
 	var logBuffer bytes.Buffer
-	logger.SetOutput(&logBuffer)
-	t.Cleanup(func() {
-	})
+	logger.RedirectForTest(t, &logBuffer)
 
-	logger := logger.New("app-test-validation-fail")
+	appLogger := logger.New("app-test-validation-fail")
 
 	validator := &stubValidator{
 		result: ports.ValidationResult{
@@ -364,7 +359,7 @@ func TestAppRunReturnsValidationErrorWhenValidatorFails(t *testing.T) {
 		FileReader:        utils.OsFileReader{},
 		HelmProcessor:     newStubHelmProcessor(t),
 		Globber:           utils.CustomGlobber{},
-		Logger:            logger,
+		Logger:            appLogger,
 		ManifestValidator: validator,
 	})
 	require.NoError(t, err)
@@ -428,9 +423,7 @@ func TestAppRunSucceedsWhenValidatorReportsValid(t *testing.T) {
 	require.NoError(t, os.Chdir(workDir))
 	t.Cleanup(func() { require.NoError(t, os.Chdir(oldWD)) })
 
-	logger := logger.New("app-test-validation-ok")
-	t.Cleanup(func() {
-	})
+	appLogger := logger.New("app-test-validation-ok")
 
 	validator := &stubValidator{
 		result: ports.ValidationResult{Valid: true, ResourceCount: 1},
@@ -450,7 +443,7 @@ func TestAppRunSucceedsWhenValidatorReportsValid(t *testing.T) {
 		FileReader:        utils.OsFileReader{},
 		HelmProcessor:     newStubHelmProcessor(t),
 		Globber:           utils.CustomGlobber{},
-		Logger:            logger,
+		Logger:            appLogger,
 		ManifestValidator: validator,
 	})
 	require.NoError(t, err)

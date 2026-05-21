@@ -1,13 +1,14 @@
 package utils
 
 import (
-	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"context"
 	"encoding/base64"
 	"fmt"
 	"regexp"
 	"strings"
 	"sync"
+
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -158,4 +159,3 @@ func isCredentialError(err error) bool {
 		strings.Contains(msg, "failed to retrieve credentials") ||
 		strings.Contains(msg, "NoCredentialProviders")
 }
-

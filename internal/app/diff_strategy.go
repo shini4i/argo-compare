@@ -1,13 +1,14 @@
 package app
 
 import (
-	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"context"
 	"errors"
 	"fmt"
 	"os/exec"
 	"sort"
 	"strings"
+
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 
 	"github.com/shini4i/argo-compare/internal/ports"
 )

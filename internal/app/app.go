@@ -32,16 +32,16 @@ var ErrManifestValidationFailed = errors.New("manifest validation failed")
 
 // Dependencies aggregates runtime collaborators required by App.
 type Dependencies struct {
-	FS                    afero.Fs
-	CmdRunner             ports.CmdRunner
-	FileReader            ports.FileReader
-	HelmProcessor         ports.HelmChartsProcessor
-	Globber               ports.Globber
-	Logger                *logger.Logger
-	CommentPosterFactory  CommentPosterFactory
-	SensitiveDataMasker   ports.SensitiveDataMasker   // Responsible for redacting sensitive manifest fields.
-	CredentialProviders   []ports.CredentialProvider   // Dynamic credential providers (e.g. ECR). Optional; defaults include ECR.
-	ManifestValidator     ports.ManifestValidator      // Validator for rendered manifests. Optional; defaults to KubeconformValidator if validation is enabled.
+	FS                   afero.Fs
+	CmdRunner            ports.CmdRunner
+	FileReader           ports.FileReader
+	HelmProcessor        ports.HelmChartsProcessor
+	Globber              ports.Globber
+	Logger               *logger.Logger
+	CommentPosterFactory CommentPosterFactory
+	SensitiveDataMasker  ports.SensitiveDataMasker  // Responsible for redacting sensitive manifest fields.
+	CredentialProviders  []ports.CredentialProvider // Dynamic credential providers (e.g. ECR). Optional; defaults include ECR.
+	ManifestValidator    ports.ManifestValidator    // Validator for rendered manifests. Optional; defaults to KubeconformValidator if validation is enabled.
 }
 
 // App orchestrates the end-to-end comparison workflow.

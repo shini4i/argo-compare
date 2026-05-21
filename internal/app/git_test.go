@@ -1,11 +1,12 @@
 package app
 
 import (
-"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -217,11 +218,11 @@ func TestGitRepoGetChangedFilesUnrelatedHistories(t *testing.T) {
 //
 // The topology built here:
 //
-//	    A---C   (HEAD, "feature": merges B into A's line)
-//	   / \ /
-//	  O   X
-//	   \ / \
-//	    B---D  (origin/main: merges A into B's line)
+//	  A---C   (HEAD, "feature": merges B into A's line)
+//	 / \ /
+//	O   X
+//	 \ / \
+//	  B---D  (origin/main: merges A into B's line)
 //
 // Merge bases of C and D are {A, B} — neither is reachable from the other.
 func TestGitRepoGetChangedFilesAmbiguousMergeBase(t *testing.T) {

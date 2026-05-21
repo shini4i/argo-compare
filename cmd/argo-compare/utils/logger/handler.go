@@ -7,20 +7,23 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"sync/atomic"
 )
 
 type handler struct {
-	mu     sync.Mutex
-	w      io.Writer
-	level  slog.Level
+	mu    sync.Mutex
+	w     io.Writer
+	level atomic.Int64
 }
 
 func newHandler(w io.Writer, level slog.Level) *handler {
-	return &handler{w: w, level: level}
+	h := &handler{w: w}
+	h.level.Store(int64(level))
+	return h
 }
 
-func (h *handler) Handle(ctx context.Context, r slog.Record) error {
-	if r.Level < h.level {
+func (h *handler) Handle(_ context.Context, r slog.Record) error {
+	if r.Level < slog.Level(h.level.Load()) {
 		return nil
 	}
 
@@ -43,59 +46,39 @@ func (h *handler) Handle(ctx context.Context, r slog.Record) error {
 	return nil
 }
 
-func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
+func (h *handler) WithAttrs(_ []slog.Attr) slog.Handler {
 	return h
 }
 
-func (h *handler) WithGroup(name string) slog.Handler {
+func (h *handler) WithGroup(_ string) slog.Handler {
 	return h
 }
 
-func (h *handler) Enabled(ctx context.Context, level slog.Level) bool {
-	return level >= h.level
+func (h *handler) Enabled(_ context.Context, level slog.Level) bool {
+	return level >= slog.Level(h.level.Load())
 }
 
 var (
 	currentHandler *handler
-	currentLevel   = slog.LevelInfo
 	mu             sync.Mutex
 )
 
 func init() {
-	currentHandler = newHandler(os.Stdout, currentLevel)
-}
-
-func setHandler(h *handler) {
-	mu.Lock()
-	defer mu.Unlock()
-	currentHandler = h
-}
-
-func getHandler() *handler {
-	mu.Lock()
-	defer mu.Unlock()
-	return currentHandler
+	currentHandler = newHandler(os.Stdout, slog.LevelInfo)
 }
 
 func setLevel(level slog.Level) {
 	mu.Lock()
 	defer mu.Unlock()
-	currentLevel = level
-	if currentHandler != nil {
-		currentHandler.level = level
-	}
+	currentHandler.level.Store(int64(level))
 }
 
 func setOutput(w io.Writer) {
 	mu.Lock()
 	defer mu.Unlock()
-	if currentHandler != nil {
-		currentHandler.mu.Lock()
-		currentHandler.w = w
-		currentHandler.mu.Unlock()
-	} else {
-		currentHandler = newHandler(w, currentLevel)
-	}
+	currentHandler.mu.Lock()
+	currentHandler.w = w
+	currentHandler.mu.Unlock()
 }
 
 func getHandlerInternal() slog.Handler {

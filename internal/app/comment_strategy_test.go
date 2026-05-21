@@ -24,12 +24,8 @@ func (s *stubPoster) Post(_ context.Context, body string) error {
 }
 
 func setupSilentLogger(name string, t *testing.T) *logger.Logger {
-	log := logger.New(name)
-	logger.SetOutput(io.Discard)
-	t.Cleanup(func() {
-		// no-op cleanup
-	})
-	return log
+	logger.RedirectForTest(t, io.Discard)
+	return logger.New(name)
 }
 
 func TestCommentStrategyPresentWithDiff(t *testing.T) {
