@@ -582,7 +582,7 @@ type stubFileReader struct {
 	content []byte
 }
 
-func (s stubFileReader) ReadFile(string) []byte { return s.content }
+func (s stubFileReader) ReadFile(string) ([]byte, error) { return s.content, nil }
 
 func TestProcessFileCallsValidatorForSource(t *testing.T) {
 	// Verifies validator is invoked with <tmpDir>/templates/src for source manifests

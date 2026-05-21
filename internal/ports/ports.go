@@ -20,8 +20,11 @@ type OsFs interface {
 }
 
 // FileReader exposes read access to file contents.
+// ReadFile returns (nil, nil) when the file does not exist and (nil, err) for
+// any other I/O or permission failure, allowing callers to distinguish
+// "absent" from "unreadable".
 type FileReader interface {
-	ReadFile(file string) []byte
+	ReadFile(file string) ([]byte, error)
 }
 
 // Globber expands filesystem patterns into matching paths.

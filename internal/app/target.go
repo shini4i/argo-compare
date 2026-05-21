@@ -53,7 +53,10 @@ func (t *Target) parse() error {
 
 	t.Log.Debugf("Parsing %s...", file)
 
-	yamlContent := t.FileReader.ReadFile(file)
+	yamlContent, err := t.FileReader.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("read application file %q: %w", file, err)
+	}
 	if err := yaml.Unmarshal(yamlContent, &app); err != nil {
 		return err
 	}
