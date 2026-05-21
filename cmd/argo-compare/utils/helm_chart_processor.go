@@ -146,11 +146,11 @@ func (g RealHelmChartProcessor) pullOCIChart(ctx context.Context, cmdRunner port
 	if creds.Username != "" && creds.Password != "" {
 		g.Log.Debugf("Logging into OCI registry [%s]...", ui.Cyan(req.RepoURL))
 
-		stdout, stderr, err := cmdRunner.Run(ctx, "helm",
+		stdout, stderr, err := cmdRunner.RunWithStdin(ctx, creds.Password, "helm",
 			"registry", "login",
 			req.RepoURL,
 			"--username", creds.Username,
-			"--password", creds.Password)
+			"--password-stdin")
 
 		g.logOutput(stdout, stderr)
 
@@ -194,11 +194,13 @@ func (g RealHelmChartProcessor) pullHTTPChart(ctx context.Context, cmdRunner por
 		}
 
 		if creds.Username != "" && creds.Password != "" {
-			args = append(args, "--username", creds.Username, "--password", creds.Password)
+			args = append(args, "--username", creds.Username, "--password-stdin")
+			stdout, stderr, runErr := cmdRunner.RunWithStdin(ctx, creds.Password, "helm", args...)
+			g.logOutput(stdout, stderr)
+			return runErr
 		}
 
 		stdout, stderr, runErr := cmdRunner.Run(ctx, "helm", args...)
-
 		g.logOutput(stdout, stderr)
 		return runErr
 	})

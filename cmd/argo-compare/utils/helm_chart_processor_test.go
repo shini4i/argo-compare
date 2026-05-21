@@ -92,14 +92,14 @@ func TestDownloadHelmChart_HTTPWithCredentials(t *testing.T) {
 	}
 
 	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{}, nil)
-	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+	mockCmdRunner.EXPECT().RunWithStdin(gomock.Any(), "pass", "helm",
 		"pull",
 		"--repo", "https://chart.example.com",
 		"ingress-nginx",
 		"--version", "3.34.0",
 		"--destination", gomock.Any(),
 		"--username", "user",
-		"--password", "pass").Return("", "", nil)
+		"--password-stdin").Return("", "", nil)
 
 	req := ports.ChartDownloadRequest{
 		CacheDir:       filepath.Join(cacheDir, "cache"),
@@ -193,11 +193,11 @@ func TestDownloadHelmChart_OCIWithCredentials(t *testing.T) {
 	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{}, nil)
 
 	// Expect helm registry login first.
-	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+	mockCmdRunner.EXPECT().RunWithStdin(gomock.Any(), "ecr-token", "helm",
 		"registry", "login",
 		"123456789012.dkr.ecr.us-east-1.amazonaws.com",
 		"--username", "AWS",
-		"--password", "ecr-token").Return("", "", nil)
+		"--password-stdin").Return("", "", nil)
 
 	// Then expect helm pull without --repo, --username, --password.
 	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
@@ -506,11 +506,11 @@ func TestDownloadHelmChart_OCILoginFailure(t *testing.T) {
 	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{}, nil)
 
 	// helm registry login fails.
-	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+	mockCmdRunner.EXPECT().RunWithStdin(gomock.Any(), "ecr-token", "helm",
 		"registry", "login",
 		"123456789012.dkr.ecr.us-east-1.amazonaws.com",
 		"--username", "AWS",
-		"--password", "ecr-token").Return("", "login failed", errors.New("login error"))
+		"--password-stdin").Return("", "login failed", errors.New("login error"))
 
 	// helm pull should NOT be called.
 
