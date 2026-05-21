@@ -47,10 +47,6 @@ func (noopCmdRunner) Run(_ context.Context, _ string, _ ...string) (string, stri
 	return "", "", nil
 }
 
-func (noopCmdRunner) RunWithStdin(_ context.Context, _ string, _ string, _ ...string) (string, string, error) {
-	return "", "", nil
-}
-
 type noopFileReader struct{}
 
 func (noopFileReader) ReadFile(string) ([]byte, error) { return nil, nil }

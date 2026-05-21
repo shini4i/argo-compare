@@ -11,9 +11,6 @@ import (
 // The context can be used for cancellation and timeout control.
 type CmdRunner interface {
 	Run(ctx context.Context, cmd string, args ...string) (stdout string, stderr string, err error)
-	// RunWithStdin executes a command with stdin support. stdin is passed to the command's standard input stream.
-	// This method should be used when passing sensitive data (like credentials) to avoid exposing them in process listings.
-	RunWithStdin(ctx context.Context, stdin string, cmd string, args ...string) (stdout string, stderr string, err error)
 }
 
 // OsFs abstracts temporary file creation and removal.

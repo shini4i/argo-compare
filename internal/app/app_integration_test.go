@@ -181,10 +181,6 @@ func (s *stubCmdRunner) Run(_ context.Context, _ string, _ ...string) (string, s
 	return "", "", nil
 }
 
-func (s *stubCmdRunner) RunWithStdin(_ context.Context, _ string, _ string, _ ...string) (string, string, error) {
-	return "", "", nil
-}
-
 type stubHelmProcessor struct {
 	t       *testing.T
 	mu      sync.Mutex
