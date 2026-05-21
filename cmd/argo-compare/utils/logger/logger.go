@@ -26,8 +26,11 @@ var (
 // only.
 type Logger struct{}
 
-// New returns a Logger. The name is accepted for API compatibility and is not
-// currently surfaced in output.
+// New returns a Logger.
+//
+// Deprecated: the name parameter is unused and retained only to minimise churn
+// at call sites; prefer passing an empty string in new code. A follow-up may
+// drop the parameter entirely.
 func New(_ string) *Logger {
 	return &Logger{}
 }
@@ -102,10 +105,19 @@ func SetOutput(w io.Writer) {
 }
 
 // RedirectForTest redirects log output to w for the duration of the test and
-// restores os.Stdout on cleanup. Ensures tests do not leak captured output into
-// later tests.
+// restores the previous output on cleanup. Saving the previous writer (rather
+// than unconditionally os.Stdout) lets tests compose with a TestMain that
+// silences output by default — capture-tests still get their buffer during the
+// test, and io.Discard (or whatever was set) on cleanup.
 func RedirectForTest(t *testing.T, w io.Writer) {
 	t.Helper()
-	SetOutput(w)
-	t.Cleanup(func() { SetOutput(os.Stdout) })
+	mu.Lock()
+	prev := out
+	out = w
+	mu.Unlock()
+	t.Cleanup(func() {
+		mu.Lock()
+		out = prev
+		mu.Unlock()
+	})
 }

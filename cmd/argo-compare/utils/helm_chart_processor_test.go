@@ -15,6 +15,7 @@ import (
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -93,14 +94,24 @@ func TestDownloadHelmChart_HTTPWithCredentials(t *testing.T) {
 	}
 
 	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{}, nil)
+
+	// helm repo add — password via stdin, repo metadata written to a temp config.
 	mockCmdRunner.EXPECT().RunWithStdin(gomock.Any(), "pass", "helm",
-		"pull",
-		"--repo", "https://chart.example.com",
-		"ingress-nginx",
+		"repo", "add", "argo-compare-tmp", "https://chart.example.com",
+		"--username", "user",
+		"--password-stdin",
+		"--repository-config", gomock.Any(),
+		"--repository-cache", gomock.Any(),
+	).Return("", "", nil)
+
+	// helm pull reads creds from the same temp config — no --password on argv.
+	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+		"pull", "argo-compare-tmp/ingress-nginx",
 		"--version", "3.34.0",
 		"--destination", gomock.Any(),
-		"--username", "user",
-		"--password-stdin").Return("", "", nil)
+		"--repository-config", gomock.Any(),
+		"--repository-cache", gomock.Any(),
+	).Return("", "", nil)
 
 	req := ports.ChartDownloadRequest{
 		CacheDir:       filepath.Join(cacheDir, "cache"),
@@ -110,6 +121,49 @@ func TestDownloadHelmChart_HTTPWithCredentials(t *testing.T) {
 	}
 	err := helmChartProcessor.DownloadHelmChart(context.Background(), deps, req)
 	assert.NoError(t, err)
+}
+
+// TestDownloadHelmChart_HTTPRepoAddFails verifies that when `helm repo add`
+// fails (e.g. bad credentials, unreachable host), we surface that error and do
+// NOT proceed to `helm pull`. The mock has no Run() expectation, so any call
+// to Run would fail the gomock controller.
+func TestDownloadHelmChart_HTTPRepoAddFails(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+	cacheDir := t.TempDir()
+
+	mockGlobber := mocks.NewMockGlobber(ctrl)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+
+	staticProvider := NewStaticCredentialProvider([]models.RepoCredentials{
+		{Url: "https://chart.example.com", Username: "user", Password: "pass"},
+	})
+	deps := ports.HelmDeps{
+		CmdRunner:           mockCmdRunner,
+		Globber:             mockGlobber,
+		CredentialProviders: []ports.CredentialProvider{staticProvider},
+	}
+
+	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{}, nil)
+	mockCmdRunner.EXPECT().RunWithStdin(gomock.Any(), "pass", "helm",
+		"repo", "add", "argo-compare-tmp", "https://chart.example.com",
+		"--username", "user",
+		"--password-stdin",
+		"--repository-config", gomock.Any(),
+		"--repository-cache", gomock.Any(),
+	).Return("", "401 Unauthorized", errors.New("repo add failed"))
+
+	req := ports.ChartDownloadRequest{
+		CacheDir:       filepath.Join(cacheDir, "cache"),
+		RepoURL:        "https://chart.example.com",
+		ChartName:      "ingress-nginx",
+		TargetRevision: "3.34.0",
+	}
+	err := helmChartProcessor.DownloadHelmChart(context.Background(), deps, req)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrFailedToDownloadChart)
 }
 
 func TestDownloadHelmChart_HTTPWithoutCredentials(t *testing.T) {

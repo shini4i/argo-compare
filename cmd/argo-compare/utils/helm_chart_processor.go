@@ -5,15 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
-	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
-
-	"github.com/shini4i/argo-compare/internal/helpers"
-	"github.com/shini4i/argo-compare/internal/ui"
 	"gopkg.in/yaml.v3"
 
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
+	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/shini4i/argo-compare/internal/ports"
+	"github.com/shini4i/argo-compare/internal/ui"
 )
 
 // ErrFailedToDownloadChart indicates Helm failed to pull the requested chart.
@@ -181,34 +181,83 @@ func (g RealHelmChartProcessor) pullOCIChart(ctx context.Context, cmdRunner port
 }
 
 // pullHTTPChart downloads a chart from an HTTP/HTTPS Helm repository.
-// Username and password flags are only appended when credentials are non-empty.
+// When credentials are present, it routes through pullHTTPChartWithCreds, which
+// keeps the password off argv. Anonymous pulls use the simple --repo flow.
 func (g RealHelmChartProcessor) pullHTTPChart(ctx context.Context, cmdRunner ports.CmdRunner, req ports.ChartDownloadRequest, creds ports.RegistryCredentials, chartLocation string) error {
+	if creds.Username != "" && creds.Password != "" {
+		return g.pullHTTPChartWithCreds(ctx, cmdRunner, req, creds, chartLocation)
+	}
+
 	retryCfg := helpers.DefaultRetryConfig()
 	err := helpers.WithRetry(ctx, retryCfg, func() error {
-		args := []string{
+		stdout, stderr, runErr := cmdRunner.Run(ctx, "helm",
 			"pull",
 			"--repo", req.RepoURL,
 			req.ChartName,
 			"--version", req.TargetRevision,
 			"--destination", chartLocation,
-		}
-
-		if creds.Username != "" && creds.Password != "" {
-			args = append(args, "--username", creds.Username, "--password-stdin")
-			stdout, stderr, runErr := cmdRunner.RunWithStdin(ctx, creds.Password, "helm", args...)
-			g.logOutput(stdout, stderr)
-			return runErr
-		}
-
-		stdout, stderr, runErr := cmdRunner.Run(ctx, "helm", args...)
+		)
 		g.logOutput(stdout, stderr)
 		return runErr
 	})
-
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrFailedToDownloadChart, err)
 	}
+	return nil
+}
 
+// pullHTTPChartWithCreds downloads an authenticated HTTP chart without exposing
+// the password on argv. It uses an isolated --repository-config so credentials
+// never land in the user's shared repositories.yaml:
+//  1. `helm repo add` (password via stdin) writes the repo entry into a temp
+//     config file.
+//  2. `helm pull <name>/<chart>` reads that same config to authenticate.
+//  3. The temp directory is removed on return.
+//
+// `helm pull` itself does not accept --password-stdin; this two-step is the
+// only path that both works and keeps the secret off the process argument list.
+func (g RealHelmChartProcessor) pullHTTPChartWithCreds(ctx context.Context, cmdRunner ports.CmdRunner, req ports.ChartDownloadRequest, creds ports.RegistryCredentials, chartLocation string) error {
+	helmCfgDir, err := os.MkdirTemp("", "argo-compare-helm-*")
+	if err != nil {
+		return fmt.Errorf("create temp helm config dir: %w", err)
+	}
+	defer func() {
+		if rmErr := os.RemoveAll(helmCfgDir); rmErr != nil {
+			g.Log.Warningf("failed to remove temp helm config dir %s: %v", helmCfgDir, rmErr)
+		}
+	}()
+
+	repoConfig := filepath.Join(helmCfgDir, "repositories.yaml")
+	repoCache := filepath.Join(helmCfgDir, "cache")
+	const repoName = "argo-compare-tmp"
+
+	addStdout, addStderr, addErr := cmdRunner.RunWithStdin(ctx, creds.Password, "helm",
+		"repo", "add", repoName, req.RepoURL,
+		"--username", creds.Username,
+		"--password-stdin",
+		"--repository-config", repoConfig,
+		"--repository-cache", repoCache,
+	)
+	g.logOutput(addStdout, addStderr)
+	if addErr != nil {
+		return fmt.Errorf("%w: helm repo add: %w", ErrFailedToDownloadChart, addErr)
+	}
+
+	retryCfg := helpers.DefaultRetryConfig()
+	err = helpers.WithRetry(ctx, retryCfg, func() error {
+		stdout, stderr, runErr := cmdRunner.Run(ctx, "helm",
+			"pull", fmt.Sprintf("%s/%s", repoName, req.ChartName),
+			"--version", req.TargetRevision,
+			"--destination", chartLocation,
+			"--repository-config", repoConfig,
+			"--repository-cache", repoCache,
+		)
+		g.logOutput(stdout, stderr)
+		return runErr
+	})
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrFailedToDownloadChart, err)
+	}
 	return nil
 }
 
