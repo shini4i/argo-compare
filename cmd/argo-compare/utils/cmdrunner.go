@@ -30,7 +30,7 @@ func (r *RealCmdRunner) Run(ctx context.Context, cmd string, args ...string) (st
 // The context can be used to cancel the command or set a timeout.
 // This method should be used when passing sensitive data (like credentials) to avoid exposing them in process listings.
 func (r *RealCmdRunner) RunWithStdin(ctx context.Context, stdin string, cmd string, args ...string) (string, string, error) {
-	command := exec.CommandContext(ctx, cmd, args...) // #nosec G204 -- callers validate cmd via validateExecutable before invoking Run
+	command := exec.CommandContext(ctx, cmd, args...) // #nosec G204 -- callers validate cmd via validateExecutable before invoking RunWithStdin
 	command.Stdin = strings.NewReader(stdin)
 
 	var stdoutBuffer, stderrBuffer bytes.Buffer

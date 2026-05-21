@@ -18,3 +18,14 @@ func TestRealCmdRunner_Run(t *testing.T) {
 	assert.Equal(t, "hello\n", stdout)
 	assert.Equal(t, "", stderr)
 }
+
+func TestRealCmdRunner_RunWithStdin(t *testing.T) {
+	runner := &RealCmdRunner{}
+	stdin := "secret-payload"
+
+	stdout, stderr, err := runner.RunWithStdin(context.Background(), stdin, "cat")
+
+	assert.NoError(t, err)
+	assert.Equal(t, stdin, stdout)
+	assert.Equal(t, "", stderr)
+}
