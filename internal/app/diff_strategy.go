@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"context"
 	"errors"
 	"fmt"
@@ -8,7 +9,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/internal/ports"
 )
 
@@ -22,14 +22,14 @@ const currentFilePrintPattern = "▶ %s"
 
 // StdoutStrategy writes diff summaries to the configured logger.
 type StdoutStrategy struct {
-	Log         *logging.Logger
+	Log         *logger.Logger
 	ShowAdded   bool
 	ShowRemoved bool
 }
 
 // ExternalDiffStrategy pipes unified diffs into an external command.
 type ExternalDiffStrategy struct {
-	Log         *logging.Logger
+	Log         *logger.Logger
 	Tool        string
 	ShowAdded   bool
 	ShowRemoved bool
@@ -61,7 +61,7 @@ func (s StdoutStrategy) Present(_ context.Context, result ComparisonResult) erro
 // logValidationResults emits validation status for each target in a stable order
 // through the supplied logger. Shared by the stdout and external-diff strategies
 // so terminal output stays consistent regardless of which one is active.
-func logValidationResults(log *logging.Logger, results map[string]ports.ValidationResult) {
+func logValidationResults(log *logger.Logger, results map[string]ports.ValidationResult) {
 	if len(results) == 0 {
 		return
 	}

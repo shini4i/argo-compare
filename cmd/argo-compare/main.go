@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/op/go-logging"
 	command "github.com/shini4i/argo-compare/cmd/argo-compare/command"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"github.com/shini4i/argo-compare/internal/app"
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/shini4i/argo-compare/internal/sanitizer"
@@ -21,32 +21,23 @@ const loggerName = "argo-compare"
 var (
 	version = "local"
 
-	log    = logging.MustGetLogger(loggerName)
-	format = logging.MustStringFormatter(`%{message}`)
+	log = logger.New(loggerName)
 )
 
-// loggingInit configures global logging verbosity and output formatting.
+// loggingInit configures global logging verbosity.
 func loggingInit(debug bool) {
-	level := logging.INFO
-	if debug {
-		level = logging.DEBUG
-	}
-
-	backend := logging.NewLogBackend(os.Stdout, "", 0)
-	backendFormatter := logging.NewBackendFormatter(backend, format)
-	logging.SetBackend(backendFormatter)
-	logging.SetLevel(level, "")
+	logger.SetLevel(debug)
 }
 
 // setupDependencies wires runtime collaborators used by the application.
-func setupDependencies(logger *logging.Logger) app.Dependencies {
+func setupDependencies(log *logger.Logger) app.Dependencies {
 	return app.Dependencies{
 		FS:                  afero.NewOsFs(),
 		CmdRunner:           &utils.RealCmdRunner{},
 		FileReader:          utils.OsFileReader{},
-		HelmProcessor:       utils.RealHelmChartProcessor{Log: logger},
+		HelmProcessor:       utils.RealHelmChartProcessor{Log: log},
 		Globber:             utils.CustomGlobber{},
-		Logger:              logger,
+		Logger:              log,
 		SensitiveDataMasker: sanitizer.NewKubernetesSecretMasker(),
 	}
 }

@@ -1,11 +1,11 @@
 package app
 
 import (
+"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -69,7 +69,7 @@ func TestTargetParseReturnsErrorFromFileReader(t *testing.T) {
 	target := Target{
 		CmdRunner:  noopCmdRunner{},
 		FileReader: errFileReader{err: sentinel},
-		Log:        logging.MustGetLogger("target-test"),
+		Log:        logger.New("target-test"),
 		File:       "/some/app.yaml",
 		Type:       TargetTypeSource,
 	}
@@ -91,7 +91,7 @@ func TestTargetMultiSourceInvokesHelmPerSource(t *testing.T) {
 		CacheDir:            "cache",
 		TmpDir:              "tmp",
 		CredentialProviders: nil,
-		Log:                 logging.MustGetLogger("target-test"),
+		Log:                 logger.New("target-test"),
 		Type:                TargetTypeSource,
 		App: models.Application{
 			Spec: struct {

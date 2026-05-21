@@ -3,12 +3,11 @@ package app
 import (
 	"bytes"
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/op/go-logging"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,10 +21,8 @@ func TestExternalDiffStrategyPresent(t *testing.T) {
 	script := "#!/bin/sh\ncat >> \"$(dirname \"$0\")/out.txt\"\n"
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
 
-	logger := logging.MustGetLogger("external-diff")
-	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+	logger := logger.New("external-diff")
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
 	})
 
 	strategy := ExternalDiffStrategy{
@@ -59,10 +56,8 @@ func TestExternalDiffStrategyPresent(t *testing.T) {
 }
 
 func TestExternalDiffStrategyRunToolValidation(t *testing.T) {
-	logger := logging.MustGetLogger("test")
-	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+	logger := logger.New("test")
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
 	})
 
 	tests := []struct {
@@ -180,10 +175,8 @@ func TestExternalDiffStrategyRunToolValidation(t *testing.T) {
 }
 
 func TestExternalDiffStrategyRunSectionCollectsErrors(t *testing.T) {
-	logger := logging.MustGetLogger("test")
-	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+	logger := logger.New("test")
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
 	})
 
 	strategy := ExternalDiffStrategy{
@@ -205,10 +198,8 @@ func TestExternalDiffStrategyRunSectionCollectsErrors(t *testing.T) {
 }
 
 func TestExternalDiffStrategyPresentEmpty(t *testing.T) {
-	logger := logging.MustGetLogger("test")
-	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+	logger := logger.New("test")
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
 	})
 
 	strategy := ExternalDiffStrategy{
@@ -224,10 +215,8 @@ func TestExternalDiffStrategyPresentEmpty(t *testing.T) {
 }
 
 func TestExternalDiffStrategyPresentWithInvalidTool(t *testing.T) {
-	logger := logging.MustGetLogger("test")
-	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+	logger := logger.New("test")
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
 	})
 
 	strategy := ExternalDiffStrategy{
@@ -255,16 +244,14 @@ func TestExternalDiffStrategyPresentPrintsValidationResults(t *testing.T) {
 	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\ncat > /dev/null\n"), 0o755))
 
 	var buf bytes.Buffer
-	backend := logging.NewLogBackend(&buf, "", 0)
-	logging.SetBackend(logging.NewBackendFormatter(backend, logging.MustStringFormatter(`%{message}`)))
+	logger.SetOutput(&buf)
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewBackendFormatter(logging.NewLogBackend(os.Stdout, "", 0), logging.MustStringFormatter(`%{message}`)))
 	})
 
 	t.Run("with diff", func(t *testing.T) {
 		buf.Reset()
 		strategy := ExternalDiffStrategy{
-			Log:  logging.MustGetLogger("test-external-validation"),
+			Log:  logger.New("test-external-validation"),
 			Tool: scriptPath,
 		}
 		result := ComparisonResult{
@@ -290,7 +277,7 @@ func TestExternalDiffStrategyPresentPrintsValidationResults(t *testing.T) {
 	t.Run("with empty diff still prints validation", func(t *testing.T) {
 		buf.Reset()
 		strategy := ExternalDiffStrategy{
-			Log:  logging.MustGetLogger("test-external-validation-empty"),
+			Log:  logger.New("test-external-validation-empty"),
 			Tool: scriptPath,
 		}
 		result := ComparisonResult{
@@ -305,7 +292,7 @@ func TestExternalDiffStrategyPresentPrintsValidationResults(t *testing.T) {
 	t.Run("invocation error is surfaced", func(t *testing.T) {
 		buf.Reset()
 		strategy := ExternalDiffStrategy{
-			Log:  logging.MustGetLogger("test-external-validation-invoke-err"),
+			Log:  logger.New("test-external-validation-invoke-err"),
 			Tool: scriptPath,
 		}
 		result := ComparisonResult{
@@ -323,10 +310,8 @@ func TestExternalDiffStrategyPresentPrintsValidationResults(t *testing.T) {
 }
 
 func TestExternalDiffStrategyPresentShowFlags(t *testing.T) {
-	logger := logging.MustGetLogger("test")
-	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+	logger := logger.New("test")
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
 	})
 
 	// Test with ShowAdded=false, ShowRemoved=false - only Changed runs
@@ -353,10 +338,8 @@ func TestExternalDiffStrategyPresentShowFlags(t *testing.T) {
 }
 
 func TestStdoutStrategyPresentEmptyResult(t *testing.T) {
-	logger := logging.MustGetLogger("test-stdout")
-	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+	logger := logger.New("test-stdout")
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
 	})
 
 	strategy := StdoutStrategy{Log: logger}
@@ -365,10 +348,8 @@ func TestStdoutStrategyPresentEmptyResult(t *testing.T) {
 }
 
 func TestStdoutStrategyPresentWithValidationResults(t *testing.T) {
-	logger := logging.MustGetLogger("test-stdout-validation")
-	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+	logger := logger.New("test-stdout-validation")
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
 	})
 
 	strategy := StdoutStrategy{Log: logger}
@@ -396,10 +377,8 @@ func TestStdoutStrategyPresentWithValidationResults(t *testing.T) {
 }
 
 func TestStdoutStrategyPresentValidationInvocationError(t *testing.T) {
-	logger := logging.MustGetLogger("test-stdout-validation-invoke-err")
-	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+	logger := logger.New("test-stdout-validation-invoke-err")
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
 	})
 
 	strategy := StdoutStrategy{Log: logger}
@@ -418,10 +397,8 @@ func TestStdoutStrategyPresentValidationInvocationError(t *testing.T) {
 }
 
 func TestStdoutStrategyPresentNoValidationResults(t *testing.T) {
-	logger := logging.MustGetLogger("test-stdout-no-validation")
-	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+	logger := logger.New("test-stdout-no-validation")
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
 	})
 
 	strategy := StdoutStrategy{Log: logger}
@@ -437,15 +414,13 @@ func TestStdoutStrategyValidationResultsFormat(t *testing.T) {
 	// Locks in the "<status> <valid>/<total> valid" output format and guards
 	// against regressions where ResourceCount-ErrorCount is miscomputed.
 	var buf bytes.Buffer
-	backend := logging.NewLogBackend(&buf, "", 0)
-	logging.SetBackend(logging.NewBackendFormatter(backend, logging.MustStringFormatter(`%{message}`)))
+	logger.SetOutput(&buf)
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewBackendFormatter(logging.NewLogBackend(os.Stdout, "", 0), logging.MustStringFormatter(`%{message}`)))
 	})
 
 	t.Run("all valid", func(t *testing.T) {
 		buf.Reset()
-		strategy := StdoutStrategy{Log: logging.MustGetLogger("test-stdout-format-ok")}
+		strategy := StdoutStrategy{Log: logger.New("test-stdout-format-ok")}
 		result := ComparisonResult{
 			ValidationResults: map[string]ports.ValidationResult{
 				"src": {Target: "src", Valid: true, ResourceCount: 4},
@@ -459,7 +434,7 @@ func TestStdoutStrategyValidationResultsFormat(t *testing.T) {
 
 	t.Run("with errors", func(t *testing.T) {
 		buf.Reset()
-		strategy := StdoutStrategy{Log: logging.MustGetLogger("test-stdout-format-fail")}
+		strategy := StdoutStrategy{Log: logger.New("test-stdout-format-fail")}
 		result := ComparisonResult{
 			ValidationResults: map[string]ports.ValidationResult{
 				"src": {

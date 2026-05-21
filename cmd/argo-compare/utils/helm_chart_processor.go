@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"context"
 	"errors"
 	"fmt"
@@ -11,7 +12,6 @@ import (
 	"github.com/shini4i/argo-compare/internal/ui"
 	"gopkg.in/yaml.v3"
 
-	"github.com/op/go-logging"
 
 	"github.com/shini4i/argo-compare/internal/ports"
 )
@@ -28,7 +28,7 @@ func isOCIRegistry(repoURL string) bool {
 
 // RealHelmChartProcessor coordinates Helm CLI interactions for chart lifecycle tasks.
 type RealHelmChartProcessor struct {
-	Log *logging.Logger
+	Log *logger.Logger
 }
 
 // GenerateValuesFile creates a Helm values file for a given chart in a specified directory.
@@ -123,7 +123,7 @@ func (g RealHelmChartProcessor) downloadChartFromRepo(ctx context.Context, deps 
 // resolveCredentials iterates the provider chain and returns the first matching credentials.
 // Returns empty credentials if no provider matches. Provider errors are logged and cause
 // fallthrough to the next provider in the chain.
-func resolveCredentials(ctx context.Context, log *logging.Logger, providers []ports.CredentialProvider, registryURL string) ports.RegistryCredentials {
+func resolveCredentials(ctx context.Context, log *logger.Logger, providers []ports.CredentialProvider, registryURL string) ports.RegistryCredentials {
 	for _, p := range providers {
 		if p.Matches(registryURL) {
 			creds, err := p.GetCredentials(ctx, registryURL)

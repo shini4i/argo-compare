@@ -1,12 +1,12 @@
 package app
 
 import (
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
 
-	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"gopkg.in/yaml.v3"
@@ -27,7 +27,7 @@ type Target struct {
 	CacheDir            string
 	TmpDir              string
 	CredentialProviders []ports.CredentialProvider
-	Log                 *logging.Logger
+	Log                 *logger.Logger
 
 	File string
 	Type string

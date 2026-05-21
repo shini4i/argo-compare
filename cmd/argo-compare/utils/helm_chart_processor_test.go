@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"context"
 	"errors"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
@@ -52,7 +52,7 @@ func TestDownloadHelmChart(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	helmChartProcessor := RealHelmChartProcessor{Log: logging.MustGetLogger("test")}
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
 	cacheDir := t.TempDir()
 
 	// Create the mocks
@@ -76,7 +76,7 @@ func TestDownloadHelmChart_HTTPWithCredentials(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	helmChartProcessor := RealHelmChartProcessor{Log: logging.MustGetLogger("test")}
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
 	cacheDir := t.TempDir()
 
 	mockGlobber := mocks.NewMockGlobber(ctrl)
@@ -115,7 +115,7 @@ func TestDownloadHelmChart_HTTPWithoutCredentials(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	helmChartProcessor := RealHelmChartProcessor{Log: logging.MustGetLogger("test")}
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
 	cacheDir := t.TempDir()
 
 	mockGlobber := mocks.NewMockGlobber(ctrl)
@@ -145,7 +145,7 @@ func TestDownloadHelmChart_HTTPFailedDownload(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	helmChartProcessor := RealHelmChartProcessor{Log: logging.MustGetLogger("test")}
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
 	cacheDir := t.TempDir()
 
 	mockGlobber := mocks.NewMockGlobber(ctrl)
@@ -175,7 +175,7 @@ func TestDownloadHelmChart_OCIWithCredentials(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	helmChartProcessor := RealHelmChartProcessor{Log: logging.MustGetLogger("test")}
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
 	cacheDir := t.TempDir()
 
 	mockGlobber := mocks.NewMockGlobber(ctrl)
@@ -219,7 +219,7 @@ func TestDownloadHelmChart_OCIWithoutCredentials(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	helmChartProcessor := RealHelmChartProcessor{Log: logging.MustGetLogger("test")}
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
 	cacheDir := t.TempDir()
 
 	mockGlobber := mocks.NewMockGlobber(ctrl)
@@ -248,7 +248,7 @@ func TestDownloadHelmChart_OCIPrefixNormalization(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	helmChartProcessor := RealHelmChartProcessor{Log: logging.MustGetLogger("test")}
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
 	cacheDir := t.TempDir()
 
 	mockGlobber := mocks.NewMockGlobber(ctrl)
@@ -278,7 +278,7 @@ func TestExtractHelmChart(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	helmChartProcessor := RealHelmChartProcessor{Log: logging.MustGetLogger("test")}
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
 	baseDir := t.TempDir()
 	expectedChartLocation := filepath.Join(baseDir, "cache")
 	expectedTmpDir := filepath.Join(baseDir, "tmp")
@@ -363,7 +363,7 @@ func TestRenderAppSource(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	helmChartProcessor := RealHelmChartProcessor{Log: logging.MustGetLogger("test")}
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
 
 	// Create an instance of the mock CmdRunner
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
@@ -412,7 +412,7 @@ func TestRenderAppSource(t *testing.T) {
 }
 
 func TestResolveCredentials(t *testing.T) {
-	log := logging.MustGetLogger("test")
+	log := logger.New("test")
 
 	t.Run("first matching provider wins", func(t *testing.T) {
 		p1 := NewStaticCredentialProvider([]models.RepoCredentials{
@@ -488,7 +488,7 @@ func TestDownloadHelmChart_OCILoginFailure(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	helmChartProcessor := RealHelmChartProcessor{Log: logging.MustGetLogger("test")}
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
 	cacheDir := t.TempDir()
 
 	mockGlobber := mocks.NewMockGlobber(ctrl)

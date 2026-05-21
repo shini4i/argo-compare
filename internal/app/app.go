@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"github.com/shini4i/argo-compare/internal/comment"
 	"github.com/shini4i/argo-compare/internal/comment/gitlab"
 	"github.com/shini4i/argo-compare/internal/models"
@@ -37,7 +37,7 @@ type Dependencies struct {
 	FileReader            ports.FileReader
 	HelmProcessor         ports.HelmChartsProcessor
 	Globber               ports.Globber
-	Logger                *logging.Logger
+	Logger                *logger.Logger
 	CommentPosterFactory  CommentPosterFactory
 	SensitiveDataMasker   ports.SensitiveDataMasker   // Responsible for redacting sensitive manifest fields.
 	CredentialProviders   []ports.CredentialProvider   // Dynamic credential providers (e.g. ECR). Optional; defaults include ECR.
@@ -52,7 +52,7 @@ type App struct {
 	fileReader          ports.FileReader
 	helmProcessor       ports.HelmChartsProcessor
 	globber             ports.Globber
-	logger              *logging.Logger
+	logger              *logger.Logger
 	repoCredentials     []models.RepoCredentials
 	credentialProviders []ports.CredentialProvider // Base providers (e.g. ECR) set at construction time.
 	activeProviders     []ports.CredentialProvider // Run-scoped chain: base providers + static fallback.

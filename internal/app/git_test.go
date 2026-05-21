@@ -1,6 +1,7 @@
 package app
 
 import (
+"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +11,6 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
@@ -75,7 +75,7 @@ func TestGitRepoGetChangedFilesRespectsIgnore(t *testing.T) {
 		require.NoError(t, os.Chdir(originalWD))
 	})
 
-	logger := logging.MustGetLogger("git-test")
+	logger := logger.New("git-test")
 	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
 	require.NoError(t, err)
 
@@ -151,7 +151,7 @@ func TestGitRepoGetChangedFilesExcludesDstOnlyChanges(t *testing.T) {
 		require.NoError(t, os.Chdir(originalWD))
 	})
 
-	logger := logging.MustGetLogger("git-test-dst-only")
+	logger := logger.New("git-test-dst-only")
 	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
 	require.NoError(t, err)
 
@@ -202,7 +202,7 @@ func TestGitRepoGetChangedFilesUnrelatedHistories(t *testing.T) {
 		require.NoError(t, os.Chdir(originalWD))
 	})
 
-	logger := logging.MustGetLogger("git-test-unrelated")
+	logger := logger.New("git-test-unrelated")
 	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
 	require.NoError(t, err)
 
@@ -255,7 +255,7 @@ func TestGitRepoGetChangedFilesAmbiguousMergeBase(t *testing.T) {
 		require.NoError(t, os.Chdir(originalWD))
 	})
 
-	logger := logging.MustGetLogger("git-test-ambiguous")
+	logger := logger.New("git-test-ambiguous")
 	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
 	require.NoError(t, err)
 
@@ -420,7 +420,7 @@ func buildGitRepo(t *testing.T, includeRemote bool) (*GitRepo, *git.Repository) 
 		require.NoError(t, os.Chdir(originalWD))
 	})
 
-	logger := logging.MustGetLogger(fmt.Sprintf("git-test-%s", t.Name()))
+	logger := logger.New(fmt.Sprintf("git-test-%s", t.Name()))
 	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
 	require.NoError(t, err)
 

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"bytes"
 	"context"
 	"errors"
@@ -15,7 +16,6 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/spf13/afero"
@@ -96,13 +96,13 @@ func TestAppRunIntegration(t *testing.T) {
 	})
 
 	var logBuffer bytes.Buffer
-	testBackend := logging.NewLogBackend(&logBuffer, "", 0)
-	logging.SetBackend(logging.NewBackendFormatter(testBackend, logging.MustStringFormatter(`%{message}`)))
+	logger.SetOutput(&logBuffer)
+	logger.SetOutput(&logBuffer)
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewBackendFormatter(logging.NewLogBackend(os.Stdout, "", 0), logging.MustStringFormatter(`%{message}`)))
+		logger.SetOutput(os.Stdout)
 	})
 
-	logger := logging.MustGetLogger("app-test")
+	appLogger := logger.New("app-test")
 
 	helmStub := newStubHelmProcessor(t)
 	cmdStub := &stubCmdRunner{}
@@ -122,7 +122,7 @@ func TestAppRunIntegration(t *testing.T) {
 		FileReader:    utils.OsFileReader{},
 		HelmProcessor: helmStub,
 		Globber:       utils.CustomGlobber{},
-		Logger:        logger,
+		Logger:        appLogger,
 	})
 	require.NoError(t, err)
 
@@ -333,13 +333,11 @@ func TestAppRunReturnsValidationErrorWhenValidatorFails(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, os.Chdir(oldWD)) })
 
 	var logBuffer bytes.Buffer
-	testBackend := logging.NewLogBackend(&logBuffer, "", 0)
-	logging.SetBackend(logging.NewBackendFormatter(testBackend, logging.MustStringFormatter(`%{message}`)))
+	logger.SetOutput(&logBuffer)
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewBackendFormatter(logging.NewLogBackend(os.Stdout, "", 0), logging.MustStringFormatter(`%{message}`)))
 	})
 
-	logger := logging.MustGetLogger("app-test-validation-fail")
+	logger := logger.New("app-test-validation-fail")
 
 	validator := &stubValidator{
 		result: ports.ValidationResult{
@@ -430,10 +428,8 @@ func TestAppRunSucceedsWhenValidatorReportsValid(t *testing.T) {
 	require.NoError(t, os.Chdir(workDir))
 	t.Cleanup(func() { require.NoError(t, os.Chdir(oldWD)) })
 
-	logger := logging.MustGetLogger("app-test-validation-ok")
-	logging.SetBackend(logging.NewLogBackend(&bytes.Buffer{}, "", 0))
+	logger := logger.New("app-test-validation-ok")
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
 	})
 
 	validator := &stubValidator{

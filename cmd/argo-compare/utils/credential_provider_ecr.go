@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -11,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
-	"github.com/op/go-logging"
 
 	"github.com/shini4i/argo-compare/internal/ports"
 )
@@ -39,7 +39,7 @@ var _ ports.CredentialProvider = (*ECRCredentialProvider)(nil)
 // ecr:GetAuthorizationToken. Tokens are cached per registry URL to avoid redundant
 // API calls when comparing multiple charts from the same registry within a single run.
 type ECRCredentialProvider struct {
-	log       *logging.Logger
+	log       *logger.Logger
 	loadCfg   awsConfigLoader
 	clientFor func(cfg aws.Config, region string) AuthorizationTokenGetter
 
@@ -49,7 +49,7 @@ type ECRCredentialProvider struct {
 
 // NewECRCredentialProvider creates an ECRCredentialProvider that uses the default
 // AWS credential chain (env vars, IRSA, instance profiles, shared config).
-func NewECRCredentialProvider(log *logging.Logger) *ECRCredentialProvider {
+func NewECRCredentialProvider(log *logger.Logger) *ECRCredentialProvider {
 	return &ECRCredentialProvider{
 		log:     log,
 		loadCfg: config.LoadDefaultConfig,

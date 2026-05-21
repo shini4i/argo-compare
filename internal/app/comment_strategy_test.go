@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"testing"
 
-	"github.com/op/go-logging"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,13 +23,13 @@ func (s *stubPoster) Post(_ context.Context, body string) error {
 	return s.err
 }
 
-func setupSilentLogger(name string, t *testing.T) *logging.Logger {
-	logger := logging.MustGetLogger(name)
-	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+func setupSilentLogger(name string, t *testing.T) *logger.Logger {
+	log := logger.New(name)
+	logger.SetOutput(io.Discard)
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
+		// no-op cleanup
 	})
-	return logger
+	return log
 }
 
 func TestCommentStrategyPresentWithDiff(t *testing.T) {

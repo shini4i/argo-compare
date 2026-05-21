@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"context"
 	"errors"
 	"io"
@@ -8,7 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
 	"github.com/shini4i/argo-compare/internal/comment"
 	"github.com/shini4i/argo-compare/internal/models"
@@ -53,13 +53,13 @@ func (p *testPoster) Post(_ context.Context, _ string) error {
 	return nil
 }
 
-func setupTestLogger(t *testing.T, name string) *logging.Logger {
-	logger := logging.MustGetLogger(name)
-	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
+func setupTestLogger(t *testing.T, name string) *logger.Logger {
+	log := logger.New(name)
+	logger.SetOutput(io.Discard)
 	t.Cleanup(func() {
-		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
+		logger.SetOutput(os.Stdout)
 	})
-	return logger
+	return log
 }
 
 func TestSelectDiffStrategiesIncludesCommentStrategy(t *testing.T) {

@@ -1,20 +1,20 @@
 package app
 
 import (
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"context"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
-	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/internal/comment"
 	"github.com/shini4i/argo-compare/internal/ports"
 )
 
 // CommentStrategy delivers comparison results to an upstream comment system.
 type CommentStrategy struct {
-	Log             *logging.Logger
+	Log             *logger.Logger
 	Poster          comment.Poster
 	ShowAdded       bool
 	ShowRemoved     bool
