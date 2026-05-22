@@ -2,3 +2,4 @@ ignore:
   - "**/*_test.go"
   - "cmd/argo-compare/mocks/**"
   - "internal/ports/portstest/**"
+  - "internal/testfixtures/**"
