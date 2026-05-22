@@ -109,6 +109,10 @@ Optional flags:
 
 - `--kubeconform-path <path>` — Override the kubeconform binary location (defaults to `kubeconform` resolved via `PATH`).
 - `--skip-validation-kinds <Kind1,Kind2>` — Comma-separated list of resource kinds to skip (useful for custom resources without published schemas, e.g. `ServiceMonitor,ArgoApplication`).
+- `--schema-location <value>` — Extra kubeconform [`-schema-location`](https://github.com/yannh/kubeconform#overriding-schemas-location---air-gapped-environment) values appended after the built-in `default` registry. Repeat the flag (or pass a comma-separated list) to extend validation to Custom Resources. The most common case is pointing at the community [`datreeio/CRDs-catalog`](https://github.com/datreeio/CRDs-catalog) which ships JSON schemas for KEDA, Kyverno, and many other operators:
+  ```
+  --schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+  ```
 
 Equivalent environment variables (CLI flags take precedence when both are set):
 
@@ -116,6 +120,7 @@ Equivalent environment variables (CLI flags take precedence when both are set):
 ARGO_COMPARE_VALIDATE_MANIFESTS=true \
 ARGO_COMPARE_KUBECONFORM_PATH=/usr/local/bin/kubeconform \
 ARGO_COMPARE_SKIP_VALIDATION_KINDS=ServiceMonitor,ArgoApplication \
+ARGO_COMPARE_KUBECONFORM_SCHEMA_LOCATIONS='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
 argo-compare branch <target-branch>
 ```
 

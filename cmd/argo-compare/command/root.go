@@ -144,25 +144,27 @@ func newBranchCommand(opts Options, dropCache func() bool, debug func() bool) *c
 	cmd.Flags().BoolVar(&flags.validateManifests, "validate-manifests", flags.validateManifests, "Validate rendered manifests against Kubernetes schemas")
 	cmd.Flags().StringVar(&flags.kubeconformPath, "kubeconform-path", flags.kubeconformPath, "Path to kubeconform binary")
 	cmd.Flags().StringSliceVar(&flags.validateSkipKinds, "skip-validation-kinds", flags.validateSkipKinds, "Resource kinds to skip during validation (comma-separated)")
+	cmd.Flags().StringSliceVar(&flags.validateSchemaLocations, "schema-location", flags.validateSchemaLocations, "Additional kubeconform -schema-location values (can be repeated or comma-separated)")
 
 	return cmd
 }
 
 type branchFlags struct {
-	file                string
-	ignore              []string
-	preserveHelmLabels  bool
-	printAdded          bool
-	printRemoved        bool
-	fullOutput          bool
-	commentProvider     string
-	gitlabURL           string
-	gitlabToken         string
-	gitlabProjectID     string
-	gitlabMergeIID      int
-	validateManifests   bool
-	kubeconformPath     string
-	validateSkipKinds   []string
+	file                    string
+	ignore                  []string
+	preserveHelmLabels      bool
+	printAdded              bool
+	printRemoved            bool
+	fullOutput              bool
+	commentProvider         string
+	gitlabURL               string
+	gitlabToken             string
+	gitlabProjectID         string
+	gitlabMergeIID          int
+	validateManifests       bool
+	kubeconformPath         string
+	validateSkipKinds       []string
+	validateSchemaLocations []string
 }
 
 // loadBranchDefaults gathers branch flag defaults from the environment.
@@ -223,6 +225,13 @@ func loadBranchDefaults() branchFlags {
 		}
 	}
 
+	schemaLocationsStr := helpers.GetEnv("ARGO_COMPARE_KUBECONFORM_SCHEMA_LOCATIONS", "")
+	for _, loc := range strings.Split(schemaLocationsStr, ",") {
+		if loc = strings.TrimSpace(loc); loc != "" {
+			defaults.validateSchemaLocations = append(defaults.validateSchemaLocations, loc)
+		}
+	}
+
 	return defaults
 }
 
@@ -250,6 +259,7 @@ func (b branchFlags) configOptions(opts Options, debugEnabled bool) ([]app.Confi
 		app.WithValidateManifests(b.validateManifests),
 		app.WithKubeconformPath(b.kubeconformPath),
 		app.WithValidateSkipKinds(b.validateSkipKinds),
+		app.WithValidateSchemaLocations(b.validateSchemaLocations),
 	}
 
 	commentOption, err := b.commentOption()

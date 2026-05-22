@@ -115,9 +115,10 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 			kubeconformPath = "kubeconform"
 		}
 		validator = &KubeconformValidator{
-			CmdRunner: deps.CmdRunner,
-			Path:      kubeconformPath,
-			SkipKinds: cfg.ValidateSkipKinds,
+			CmdRunner:       deps.CmdRunner,
+			Path:            kubeconformPath,
+			SkipKinds:       cfg.ValidateSkipKinds,
+			SchemaLocations: cfg.ValidateSchemaLocations,
 		}
 	}
 
