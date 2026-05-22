@@ -19,6 +19,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/ports"
+	"github.com/shini4i/argo-compare/internal/ports/portstest"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -102,7 +103,6 @@ func TestAppRunIntegration(t *testing.T) {
 	appLogger := logger.New("app-test")
 
 	helmStub := newStubHelmProcessor(t)
-	cmdStub := &stubCmdRunner{}
 
 	cfg := Config{
 		TargetBranch:          "main",
@@ -115,7 +115,7 @@ func TestAppRunIntegration(t *testing.T) {
 
 	appInstance, err := New(cfg, Dependencies{
 		FS:            afero.NewOsFs(),
-		CmdRunner:     cmdStub,
+		CmdRunner:     portstest.NoopCmdRunner{},
 		FileReader:    utils.OsFileReader{},
 		HelmProcessor: helmStub,
 		Globber:       utils.CustomGlobber{},
@@ -173,12 +173,6 @@ func defaultSignature() *object.Signature {
 		Email: "ci@example.com",
 		When:  time.Now(),
 	}
-}
-
-type stubCmdRunner struct{}
-
-func (s *stubCmdRunner) Run(_ context.Context, _ string, _ ...string) (string, string, error) {
-	return "", "", nil
 }
 
 type stubHelmProcessor struct {
@@ -351,7 +345,7 @@ func TestAppRunReturnsValidationErrorWhenValidatorFails(t *testing.T) {
 
 	appInstance, err := New(cfg, Dependencies{
 		FS:                afero.NewOsFs(),
-		CmdRunner:         &stubCmdRunner{},
+		CmdRunner:         portstest.NoopCmdRunner{},
 		FileReader:        utils.OsFileReader{},
 		HelmProcessor:     newStubHelmProcessor(t),
 		Globber:           utils.CustomGlobber{},
@@ -435,7 +429,7 @@ func TestAppRunSucceedsWhenValidatorReportsValid(t *testing.T) {
 
 	appInstance, err := New(cfg, Dependencies{
 		FS:                afero.NewOsFs(),
-		CmdRunner:         &stubCmdRunner{},
+		CmdRunner:         portstest.NoopCmdRunner{},
 		FileReader:        utils.OsFileReader{},
 		HelmProcessor:     newStubHelmProcessor(t),
 		Globber:           utils.CustomGlobber{},
