@@ -26,11 +26,9 @@ var (
 // only.
 type Logger struct{}
 
-// New returns a Logger.
-//
-// Deprecated: the name parameter is unused and retained only to minimise churn
-// at call sites; prefer passing an empty string in new code. A follow-up may
-// drop the parameter entirely.
+// New returns a Logger. The name parameter is currently unused; it is retained
+// to minimise churn at call sites and reserved for future use (e.g. a structured
+// logging backend).
 func New(_ string) *Logger {
 	return &Logger{}
 }

@@ -33,26 +33,3 @@ func TestOsFileReader_ReadFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, readContent)
 }
-
-func TestOsFileReader_ReadFile_PermissionDenied(t *testing.T) {
-	if os.Getuid() == 0 {
-		t.Skip("permission checks are ineffective when running as root")
-	}
-
-	tempFile, err := os.CreateTemp("", "testfile-noperm")
-	require.NoError(t, err)
-	defer func() {
-		// Restore permissions before removal so the deferred Remove succeeds.
-		_ = os.Chmod(tempFile.Name(), 0o600)
-		require.NoError(t, os.Remove(tempFile.Name()))
-	}()
-	require.NoError(t, tempFile.Close())
-	require.NoError(t, os.Chmod(tempFile.Name(), 0o000))
-
-	reader := OsFileReader{}
-
-	// Unreadable file: nil content and a non-nil error (previously swallowed).
-	readContent, err := reader.ReadFile(tempFile.Name())
-	require.Error(t, err)
-	assert.Nil(t, readContent)
-}

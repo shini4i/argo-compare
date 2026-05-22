@@ -21,9 +21,9 @@ func TestExternalDiffStrategyPresent(t *testing.T) {
 	script := "#!/bin/sh\ncat >> \"$(dirname \"$0\")/out.txt\"\n"
 	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
 
-	logger := logger.New("external-diff")
+	log := logger.New("external-diff")
 	strategy := ExternalDiffStrategy{
-		Log:         logger,
+		Log:         log,
 		Tool:        scriptPath,
 		ShowAdded:   true,
 		ShowRemoved: true,
@@ -53,7 +53,7 @@ func TestExternalDiffStrategyPresent(t *testing.T) {
 }
 
 func TestExternalDiffStrategyRunToolValidation(t *testing.T) {
-	logger := logger.New("test")
+	log := logger.New("test")
 	tests := []struct {
 		name                    string
 		tool                    string
@@ -146,7 +146,7 @@ func TestExternalDiffStrategyRunToolValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			strategy := ExternalDiffStrategy{
-				Log:  logger,
+				Log:  log,
 				Tool: tt.tool,
 			}
 
@@ -169,9 +169,9 @@ func TestExternalDiffStrategyRunToolValidation(t *testing.T) {
 }
 
 func TestExternalDiffStrategyRunSectionCollectsErrors(t *testing.T) {
-	logger := logger.New("test")
+	log := logger.New("test")
 	strategy := ExternalDiffStrategy{
-		Log:  logger,
+		Log:  log,
 		Tool: "nonexistent-tool-12345",
 	}
 
@@ -189,9 +189,9 @@ func TestExternalDiffStrategyRunSectionCollectsErrors(t *testing.T) {
 }
 
 func TestExternalDiffStrategyPresentEmpty(t *testing.T) {
-	logger := logger.New("test")
+	log := logger.New("test")
 	strategy := ExternalDiffStrategy{
-		Log:         logger,
+		Log:         log,
 		Tool:        "diff",
 		ShowAdded:   true,
 		ShowRemoved: true,
@@ -203,9 +203,9 @@ func TestExternalDiffStrategyPresentEmpty(t *testing.T) {
 }
 
 func TestExternalDiffStrategyPresentWithInvalidTool(t *testing.T) {
-	logger := logger.New("test")
+	log := logger.New("test")
 	strategy := ExternalDiffStrategy{
-		Log:         logger,
+		Log:         log,
 		Tool:        "diff;rm",
 		ShowAdded:   true,
 		ShowRemoved: true,
@@ -293,10 +293,10 @@ func TestExternalDiffStrategyPresentPrintsValidationResults(t *testing.T) {
 }
 
 func TestExternalDiffStrategyPresentShowFlags(t *testing.T) {
-	logger := logger.New("test")
+	log := logger.New("test")
 	// Test with ShowAdded=false, ShowRemoved=false - only Changed runs
 	strategy := ExternalDiffStrategy{
-		Log:         logger,
+		Log:         log,
 		Tool:        "nonexistent-tool",
 		ShowAdded:   false,
 		ShowRemoved: false,
@@ -318,15 +318,15 @@ func TestExternalDiffStrategyPresentShowFlags(t *testing.T) {
 }
 
 func TestStdoutStrategyPresentEmptyResult(t *testing.T) {
-	logger := logger.New("test-stdout")
-	strategy := StdoutStrategy{Log: logger}
+	log := logger.New("test-stdout")
+	strategy := StdoutStrategy{Log: log}
 	err := strategy.Present(context.Background(), ComparisonResult{})
 	require.NoError(t, err)
 }
 
 func TestStdoutStrategyPresentWithValidationResults(t *testing.T) {
-	logger := logger.New("test-stdout-validation")
-	strategy := StdoutStrategy{Log: logger}
+	log := logger.New("test-stdout-validation")
+	strategy := StdoutStrategy{Log: log}
 	result := ComparisonResult{
 		ValidationResults: map[string]ports.ValidationResult{
 			"src": {
@@ -351,8 +351,8 @@ func TestStdoutStrategyPresentWithValidationResults(t *testing.T) {
 }
 
 func TestStdoutStrategyPresentValidationInvocationError(t *testing.T) {
-	logger := logger.New("test-stdout-validation-invoke-err")
-	strategy := StdoutStrategy{Log: logger}
+	log := logger.New("test-stdout-validation-invoke-err")
+	strategy := StdoutStrategy{Log: log}
 	result := ComparisonResult{
 		ValidationResults: map[string]ports.ValidationResult{
 			"src": {
@@ -368,8 +368,8 @@ func TestStdoutStrategyPresentValidationInvocationError(t *testing.T) {
 }
 
 func TestStdoutStrategyPresentNoValidationResults(t *testing.T) {
-	logger := logger.New("test-stdout-no-validation")
-	strategy := StdoutStrategy{Log: logger}
+	log := logger.New("test-stdout-no-validation")
+	strategy := StdoutStrategy{Log: log}
 	result := ComparisonResult{
 		Changed: []DiffOutput{{File: File{Name: "test.yaml"}, Diff: "changes"}},
 	}

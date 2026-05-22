@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"io"
 	"path/filepath"
 	"testing"
 
@@ -52,8 +51,9 @@ func (p *testPoster) Post(_ context.Context, _ string) error {
 	return nil
 }
 
-func setupTestLogger(t *testing.T, name string) *logger.Logger {
-	logger.RedirectForTest(t, io.Discard)
+// setupTestLogger returns a Logger for use inside test code. Output is silenced
+// at the package level by TestMain, so individual tests don't need to redirect.
+func setupTestLogger(_ *testing.T, name string) *logger.Logger {
 	return logger.New(name)
 }
 

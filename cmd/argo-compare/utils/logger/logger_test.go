@@ -66,6 +66,23 @@ func TestLogger_DebugEnabledAfterSetLevel(t *testing.T) {
 	require.Contains(t, buf.String(), "visible debug")
 }
 
+func TestLogger_DebugfSuppressedByDefault(t *testing.T) {
+	// Mirrors TestLogger_DebugSuppressedByDefault for the formatted variant;
+	// guards against a regression where Debugf drops the debugEnabled gate.
+	var buf bytes.Buffer
+	SetOutput(&buf)
+	SetLevel(false)
+	t.Cleanup(func() {
+		SetOutput(os.Stdout)
+		SetLevel(false)
+	})
+
+	log := New("test-debugf-off")
+	log.Debugf("hidden debugf=%d", 1)
+
+	require.Empty(t, buf.String())
+}
+
 func TestLogger_SetOutputAffectsExistingLogger(t *testing.T) {
 	log := New("test-shared-handler")
 
@@ -138,4 +155,37 @@ func TestLogger_DiscardOutput(t *testing.T) {
 	log := New("discard-test")
 	// Must not panic.
 	log.Info("nowhere")
+}
+
+func TestLogger_LevelHelpers(t *testing.T) {
+	// Covers every level helper that the codebase relies on but earlier tests
+	// didn't exercise: Debugf (Debug non-f is covered by the level-toggle
+	// tests above) plus Warning/Warningf/Error/Errorf. Fatal is intentionally
+	// skipped — it calls os.Exit and is not unit-testable in-process.
+	SetLevel(true)
+	t.Cleanup(func() { SetLevel(false) })
+
+	tests := []struct {
+		name string
+		emit func(l *Logger)
+		want string
+	}{
+		{"Debugf", func(l *Logger) { l.Debugf("dbg=%d", 7) }, "dbg=7\n"},
+		{"Warning", func(l *Logger) { l.Warning("warn-plain") }, "warn-plain\n"},
+		{"Warningf", func(l *Logger) { l.Warningf("warn=%s", "x") }, "warn=x\n"},
+		{"Error", func(l *Logger) { l.Error("err-plain") }, "err-plain\n"},
+		{"Errorf", func(l *Logger) { l.Errorf("err=%v", 42) }, "err=42\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			RedirectForTest(t, &buf)
+
+			log := New(tt.name)
+			tt.emit(log)
+
+			assert.Equal(t, tt.want, buf.String())
+		})
+	}
 }

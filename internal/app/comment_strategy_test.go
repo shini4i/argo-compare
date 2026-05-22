@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"io"
 	"strings"
 	"testing"
 
@@ -23,8 +22,10 @@ func (s *stubPoster) Post(_ context.Context, body string) error {
 	return s.err
 }
 
-func setupSilentLogger(name string, t *testing.T) *logger.Logger {
-	logger.RedirectForTest(t, io.Discard)
+// setupSilentLogger returns a Logger for use inside test code. Output is
+// silenced at the package level by TestMain, so this is just a thin alias for
+// logger.New that documents the intent at call sites.
+func setupSilentLogger(name string, _ *testing.T) *logger.Logger {
 	return logger.New(name)
 }
 

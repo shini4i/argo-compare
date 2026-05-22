@@ -76,8 +76,8 @@ func TestGitRepoGetChangedFilesRespectsIgnore(t *testing.T) {
 		require.NoError(t, os.Chdir(originalWD))
 	})
 
-	logger := logger.New("git-test")
-	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
+	log := logger.New("git-test")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
 	require.NoError(t, err)
 
 	result, err := repoInstance.GetChangedFiles("main", []string{"apps/secondary.yaml"})
@@ -152,8 +152,8 @@ func TestGitRepoGetChangedFilesExcludesDstOnlyChanges(t *testing.T) {
 		require.NoError(t, os.Chdir(originalWD))
 	})
 
-	logger := logger.New("git-test-dst-only")
-	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
+	log := logger.New("git-test-dst-only")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
 	require.NoError(t, err)
 
 	result, err := repoInstance.GetChangedFiles("main", nil)
@@ -203,8 +203,8 @@ func TestGitRepoGetChangedFilesUnrelatedHistories(t *testing.T) {
 		require.NoError(t, os.Chdir(originalWD))
 	})
 
-	logger := logger.New("git-test-unrelated")
-	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
+	log := logger.New("git-test-unrelated")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
 	require.NoError(t, err)
 
 	_, err = repoInstance.GetChangedFiles("main", nil)
@@ -256,8 +256,8 @@ func TestGitRepoGetChangedFilesAmbiguousMergeBase(t *testing.T) {
 		require.NoError(t, os.Chdir(originalWD))
 	})
 
-	logger := logger.New("git-test-ambiguous")
-	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
+	log := logger.New("git-test-ambiguous")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
 	require.NoError(t, err)
 
 	_, err = repoInstance.GetChangedFiles("main", nil)
@@ -421,8 +421,8 @@ func buildGitRepo(t *testing.T, includeRemote bool) (*GitRepo, *git.Repository) 
 		require.NoError(t, os.Chdir(originalWD))
 	})
 
-	logger := logger.New(fmt.Sprintf("git-test-%s", t.Name()))
-	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
+	log := logger.New(fmt.Sprintf("git-test-%s", t.Name()))
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
 	require.NoError(t, err)
 
 	return repoInstance, repo
