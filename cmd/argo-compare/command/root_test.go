@@ -222,6 +222,8 @@ func TestExecuteValidationFlags(t *testing.T) {
 		"--validate-manifests",
 		"--kubeconform-path", "/usr/local/bin/kubeconform",
 		"--skip-validation-kinds", "ServiceMonitor,ArgoApplication",
+		"--schema-location", "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json",
+		"--schema-location", "schemas/{{.ResourceKind}}{{.KindSuffix}}.json",
 	}
 
 	err := Execute(opts, args)
@@ -230,6 +232,13 @@ func TestExecuteValidationFlags(t *testing.T) {
 	assert.True(t, receivedConfig.ValidateManifests)
 	assert.Equal(t, "/usr/local/bin/kubeconform", receivedConfig.KubeconformPath)
 	assert.Equal(t, []string{"ServiceMonitor", "ArgoApplication"}, receivedConfig.ValidateSkipKinds)
+	assert.Equal(t,
+		[]string{
+			"https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json",
+			"schemas/{{.ResourceKind}}{{.KindSuffix}}.json",
+		},
+		receivedConfig.ValidateSchemaLocations,
+	)
 }
 
 func TestExecuteValidationDisabledByDefault(t *testing.T) {
@@ -253,6 +262,7 @@ func TestExecuteValidationDisabledByDefault(t *testing.T) {
 	assert.False(t, receivedConfig.ValidateManifests)
 	assert.Empty(t, receivedConfig.KubeconformPath)
 	assert.Empty(t, receivedConfig.ValidateSkipKinds)
+	assert.Empty(t, receivedConfig.ValidateSchemaLocations)
 }
 
 func TestExecuteValidationEnvVars(t *testing.T) {
@@ -273,6 +283,8 @@ func TestExecuteValidationEnvVars(t *testing.T) {
 	t.Setenv("ARGO_COMPARE_VALIDATE_MANIFESTS", "true")
 	t.Setenv("ARGO_COMPARE_KUBECONFORM_PATH", "/opt/kubeconform")
 	t.Setenv("ARGO_COMPARE_SKIP_VALIDATION_KINDS", "CustomResource,AnotherKind")
+	t.Setenv("ARGO_COMPARE_KUBECONFORM_SCHEMA_LOCATIONS",
+		"https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json, schemas/{{.ResourceKind}}{{.KindSuffix}}.json")
 
 	err := Execute(opts, []string{"branch", "main"})
 	require.NoError(t, err)
@@ -280,6 +292,13 @@ func TestExecuteValidationEnvVars(t *testing.T) {
 	assert.True(t, receivedConfig.ValidateManifests)
 	assert.Equal(t, "/opt/kubeconform", receivedConfig.KubeconformPath)
 	assert.Equal(t, []string{"CustomResource", "AnotherKind"}, receivedConfig.ValidateSkipKinds)
+	assert.Equal(t,
+		[]string{
+			"https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json",
+			"schemas/{{.ResourceKind}}{{.KindSuffix}}.json",
+		},
+		receivedConfig.ValidateSchemaLocations,
+	)
 }
 
 func TestExecuteValidationEnvVarFalsyValues(t *testing.T) {
@@ -339,6 +358,7 @@ func TestExecuteValidationCLIFlagsBeatEnvVars(t *testing.T) {
 	t.Setenv("ARGO_COMPARE_VALIDATE_MANIFESTS", "false")
 	t.Setenv("ARGO_COMPARE_KUBECONFORM_PATH", "/from/env/kubeconform")
 	t.Setenv("ARGO_COMPARE_SKIP_VALIDATION_KINDS", "FromEnvKind")
+	t.Setenv("ARGO_COMPARE_KUBECONFORM_SCHEMA_LOCATIONS", "schemas/from-env/{{.ResourceKind}}.json")
 
 	// ...CLI flags pass distinct, conflicting values.
 	args := []string{
@@ -346,6 +366,7 @@ func TestExecuteValidationCLIFlagsBeatEnvVars(t *testing.T) {
 		"--validate-manifests",
 		"--kubeconform-path", "/from/cli/kubeconform",
 		"--skip-validation-kinds", "FromCliKind,SecondCliKind",
+		"--schema-location", "schemas/from-cli/{{.ResourceKind}}.json",
 	}
 
 	require.NoError(t, Execute(opts, args))
@@ -353,4 +374,6 @@ func TestExecuteValidationCLIFlagsBeatEnvVars(t *testing.T) {
 	assert.True(t, receivedConfig.ValidateManifests, "CLI --validate-manifests should override env=false")
 	assert.Equal(t, "/from/cli/kubeconform", receivedConfig.KubeconformPath, "CLI path should win")
 	assert.Equal(t, []string{"FromCliKind", "SecondCliKind"}, receivedConfig.ValidateSkipKinds, "CLI kinds should win")
+	assert.Equal(t, []string{"schemas/from-cli/{{.ResourceKind}}.json"}, receivedConfig.ValidateSchemaLocations,
+		"CLI schema locations should win")
 }

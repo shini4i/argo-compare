@@ -28,6 +28,12 @@ type KubeconformValidator struct {
 	// SkipKinds is an optional list of resource kinds to skip during validation
 	// (passed through as `-skip Kind1,Kind2`).
 	SkipKinds []string
+	// SchemaLocations holds additional `-schema-location` values appended after the
+	// hardcoded `default` registry. Each entry is a registry name, local path, or
+	// URL template understood by kubeconform (e.g. the datreeio/CRDs-catalog URL
+	// with `{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json`). Order is
+	// preserved because kubeconform tries locations in the order they appear.
+	SchemaLocations []string
 }
 
 // kubeconformOutput mirrors the JSON structure produced by `kubeconform -output json`.
@@ -69,6 +75,12 @@ func (v *KubeconformValidator) Validate(ctx context.Context, target, manifestDir
 		"-strict",
 		"-summary",
 		"-schema-location", "default",
+	}
+	for _, loc := range v.SchemaLocations {
+		if strings.TrimSpace(loc) == "" {
+			return ports.ValidationResult{}, fmt.Errorf("empty schema location in SchemaLocations")
+		}
+		args = append(args, "-schema-location", loc)
 	}
 	if len(v.SkipKinds) > 0 {
 		for _, kind := range v.SkipKinds {

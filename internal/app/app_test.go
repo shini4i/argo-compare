@@ -384,6 +384,32 @@ func TestNewWithCustomKubeconformPath(t *testing.T) {
 	assert.Equal(t, []string{"ServiceMonitor", "ArgoApplication"}, kubeconformValidator.SkipKinds)
 }
 
+func TestNewPropagatesSchemaLocationsToValidator(t *testing.T) {
+	locations := []string{
+		"https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json",
+		"schemas/{{.ResourceKind}}{{.KindSuffix}}.json",
+	}
+
+	cfg, err := NewConfig("main",
+		WithCacheDir("/tmp/cache"),
+		WithValidateManifests(true),
+		WithValidateSchemaLocations(locations),
+	)
+	require.NoError(t, err)
+
+	logger := setupTestLogger(t, "app-validator-schema-locations")
+
+	appInstance, err := New(cfg, Dependencies{
+		FS:     afero.NewMemMapFs(),
+		Logger: logger,
+	})
+	require.NoError(t, err)
+
+	kubeconformValidator, ok := appInstance.validator.(*KubeconformValidator)
+	require.True(t, ok)
+	assert.Equal(t, locations, kubeconformValidator.SchemaLocations)
+}
+
 func TestNewWithInjectedValidator(t *testing.T) {
 	cfg, err := NewConfig("main",
 		WithCacheDir("/tmp/cache"),

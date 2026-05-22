@@ -8,21 +8,22 @@ import (
 
 // Config captures runtime parameters for a comparison run.
 type Config struct {
-	TargetBranch          string
-	FileToCompare         string
-	FilesToIgnore         []string
-	PreserveHelmLabels    bool
-	PrintAddedManifests   bool
-	PrintRemovedManifests bool
-	CacheDir              string
-	TempDirBase           string
-	ExternalDiffTool      string
-	Debug                 bool
-	Version               string
-	Comment               *CommentConfig
-	ValidateManifests     bool
-	KubeconformPath       string
-	ValidateSkipKinds     []string
+	TargetBranch            string
+	FileToCompare           string
+	FilesToIgnore           []string
+	PreserveHelmLabels      bool
+	PrintAddedManifests     bool
+	PrintRemovedManifests   bool
+	CacheDir                string
+	TempDirBase             string
+	ExternalDiffTool        string
+	Debug                   bool
+	Version                 string
+	Comment                 *CommentConfig
+	ValidateManifests       bool
+	KubeconformPath         string
+	ValidateSkipKinds       []string
+	ValidateSchemaLocations []string
 }
 
 // ConfigOption mutates a Config during construction.
@@ -190,5 +191,16 @@ func WithKubeconformPath(path string) ConfigOption {
 func WithValidateSkipKinds(kinds []string) ConfigOption {
 	return func(cfg *Config) {
 		cfg.ValidateSkipKinds = append([]string{}, kinds...)
+	}
+}
+
+// WithValidateSchemaLocations configures additional kubeconform `-schema-location`
+// values appended after the hardcoded `default` registry. Each entry is a
+// kubeconform-recognised registry name, local path, or URL template (see the
+// project README for the datreeio/CRDs-catalog example used to validate KEDA
+// and Kyverno custom resources).
+func WithValidateSchemaLocations(locations []string) ConfigOption {
+	return func(cfg *Config) {
+		cfg.ValidateSchemaLocations = append([]string{}, locations...)
 	}
 }

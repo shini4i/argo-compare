@@ -208,6 +208,62 @@ func TestKubeconformValidator_PassesSkipKindsFlag(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestKubeconformValidator_PassesSchemaLocationFlags(t *testing.T) {
+	// Verifies that each SchemaLocations entry is rendered as its own
+	// `-schema-location <value>` pair, in order, after the hardcoded
+	// `-schema-location default`. kubeconform tries locations in the order
+	// they are given, so preserving order matters.
+	ctrl := gomock.NewController(t)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	const manifestDir = "/tmp/templates/src"
+
+	crdsCatalog := "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
+	localSchemas := "schemas/{{.ResourceKind}}{{.KindSuffix}}.json"
+
+	mockCmdRunner.EXPECT().
+		Run(gomock.Any(), "kubeconform", gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ string, args ...string) (string, string, error) {
+			var locations []string
+			for i := 0; i < len(args); i++ {
+				if args[i] == "-schema-location" {
+					require.Less(t, i+1, len(args), "-schema-location has no value")
+					locations = append(locations, args[i+1])
+				}
+			}
+			assert.Equal(t, []string{"default", crdsCatalog, localSchemas}, locations,
+				"expected default + configured locations in order")
+			return validResourcesJSON, "", nil
+		})
+
+	v := &KubeconformValidator{
+		CmdRunner:       mockCmdRunner,
+		Path:            "kubeconform",
+		SchemaLocations: []string{crdsCatalog, localSchemas},
+	}
+
+	_, err := v.Validate(context.Background(), "src", manifestDir)
+	require.NoError(t, err)
+}
+
+func TestKubeconformValidator_RejectsEmptySchemaLocation(t *testing.T) {
+	// An empty entry would render as `-schema-location ""`, which kubeconform
+	// rejects with an opaque error. Catch it at the boundary instead.
+	ctrl := gomock.NewController(t)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	// No EXPECT() — any call to Run must not happen.
+
+	v := &KubeconformValidator{
+		CmdRunner:       mockCmdRunner,
+		Path:            "kubeconform",
+		SchemaLocations: []string{"schemas/{{.ResourceKind}}.json", ""},
+	}
+
+	_, err := v.Validate(context.Background(), "src", "/tmp/templates/src")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "schema location")
+}
+
 func TestKubeconformValidator_RejectsInvalidSkipKind(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
