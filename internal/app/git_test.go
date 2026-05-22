@@ -6,11 +6,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
@@ -75,8 +76,8 @@ func TestGitRepoGetChangedFilesRespectsIgnore(t *testing.T) {
 		require.NoError(t, os.Chdir(originalWD))
 	})
 
-	logger := logging.MustGetLogger("git-test")
-	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
+	log := logger.New("git-test")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
 	require.NoError(t, err)
 
 	result, err := repoInstance.GetChangedFiles("main", []string{"apps/secondary.yaml"})
@@ -151,8 +152,8 @@ func TestGitRepoGetChangedFilesExcludesDstOnlyChanges(t *testing.T) {
 		require.NoError(t, os.Chdir(originalWD))
 	})
 
-	logger := logging.MustGetLogger("git-test-dst-only")
-	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
+	log := logger.New("git-test-dst-only")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
 	require.NoError(t, err)
 
 	result, err := repoInstance.GetChangedFiles("main", nil)
@@ -202,8 +203,8 @@ func TestGitRepoGetChangedFilesUnrelatedHistories(t *testing.T) {
 		require.NoError(t, os.Chdir(originalWD))
 	})
 
-	logger := logging.MustGetLogger("git-test-unrelated")
-	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
+	log := logger.New("git-test-unrelated")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
 	require.NoError(t, err)
 
 	_, err = repoInstance.GetChangedFiles("main", nil)
@@ -217,11 +218,11 @@ func TestGitRepoGetChangedFilesUnrelatedHistories(t *testing.T) {
 //
 // The topology built here:
 //
-//	    A---C   (HEAD, "feature": merges B into A's line)
-//	   / \ /
-//	  O   X
-//	   \ / \
-//	    B---D  (origin/main: merges A into B's line)
+//	  A---C   (HEAD, "feature": merges B into A's line)
+//	 / \ /
+//	O   X
+//	 \ / \
+//	  B---D  (origin/main: merges A into B's line)
 //
 // Merge bases of C and D are {A, B} — neither is reachable from the other.
 func TestGitRepoGetChangedFilesAmbiguousMergeBase(t *testing.T) {
@@ -255,8 +256,8 @@ func TestGitRepoGetChangedFilesAmbiguousMergeBase(t *testing.T) {
 		require.NoError(t, os.Chdir(originalWD))
 	})
 
-	logger := logging.MustGetLogger("git-test-ambiguous")
-	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
+	log := logger.New("git-test-ambiguous")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
 	require.NoError(t, err)
 
 	_, err = repoInstance.GetChangedFiles("main", nil)
@@ -420,8 +421,8 @@ func buildGitRepo(t *testing.T, includeRemote bool) (*GitRepo, *git.Repository) 
 		require.NoError(t, os.Chdir(originalWD))
 	})
 
-	logger := logging.MustGetLogger(fmt.Sprintf("git-test-%s", t.Name()))
-	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, logger)
+	log := logger.New(fmt.Sprintf("git-test-%s", t.Name()))
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
 	require.NoError(t, err)
 
 	return repoInstance, repo

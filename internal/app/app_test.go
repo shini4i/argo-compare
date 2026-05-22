@@ -3,13 +3,11 @@ package app
 import (
 	"context"
 	"errors"
-	"io"
-	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/mocks"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"github.com/shini4i/argo-compare/internal/comment"
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
@@ -53,13 +51,10 @@ func (p *testPoster) Post(_ context.Context, _ string) error {
 	return nil
 }
 
-func setupTestLogger(t *testing.T, name string) *logging.Logger {
-	logger := logging.MustGetLogger(name)
-	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
-	t.Cleanup(func() {
-		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
-	})
-	return logger
+// setupTestLogger returns a Logger for use inside test code. Output is silenced
+// at the package level by TestMain, so individual tests don't need to redirect.
+func setupTestLogger(_ *testing.T, name string) *logger.Logger {
+	return logger.New(name)
 }
 
 func TestSelectDiffStrategiesIncludesCommentStrategy(t *testing.T) {
@@ -302,6 +297,42 @@ func TestFilterIgnoredEmpty(t *testing.T) {
 
 	result = filterIgnored(files, []string{})
 	assert.Equal(t, files, result)
+}
+
+func TestDecideDestinationActionFileMissingWithoutPrintAdded(t *testing.T) {
+	action, err := decideDestinationAction(errGitFileDoesNotExist, false)
+	require.NoError(t, err)
+	assert.Equal(t, destinationSkip, action)
+}
+
+func TestDecideDestinationActionFileMissingWithPrintAdded(t *testing.T) {
+	// errGitFileDoesNotExist is only returned by the !printAdded path in
+	// GetChangedFileContent; guard that decideDestinationAction does not
+	// silently absorb it when printAdded is true.
+	action, err := decideDestinationAction(errGitFileDoesNotExist, true)
+	require.Error(t, err, "unhandled error must bubble up")
+	assert.Equal(t, destinationAction(0), action)
+}
+
+func TestDecideDestinationActionEmptyFile(t *testing.T) {
+	action, err := decideDestinationAction(models.ErrEmptyFile, false)
+	require.NoError(t, err)
+	assert.Equal(t, destinationNone, action)
+}
+
+func TestDecideDestinationActionUnknownErrorBubblesUp(t *testing.T) {
+	sentinel := errors.New("git plumbing exploded")
+
+	action, err := decideDestinationAction(sentinel, false)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, sentinel, "unknown errors must be returned, not swallowed")
+	assert.Equal(t, destinationAction(0), action)
+}
+
+func TestDecideDestinationActionNoErrorProcesses(t *testing.T) {
+	action, err := decideDestinationAction(nil, false)
+	require.NoError(t, err)
+	assert.Equal(t, destinationProcess, action)
 }
 
 func TestDefaultCommentPosterFactoryGitLab(t *testing.T) {
@@ -572,7 +603,7 @@ type stubFileReader struct {
 	content []byte
 }
 
-func (s stubFileReader) ReadFile(string) []byte { return s.content }
+func (s stubFileReader) ReadFile(string) ([]byte, error) { return s.content, nil }
 
 func TestProcessFileCallsValidatorForSource(t *testing.T) {
 	// Verifies validator is invoked with <tmpDir>/templates/src for source manifests

@@ -9,7 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/op/go-logging"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
+
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/sanitizer"
 	"github.com/spf13/afero"
@@ -147,14 +148,10 @@ func TestCompareProcessFiles(t *testing.T) {
 
 func TestStdoutStrategyPresent(t *testing.T) {
 	var buf bytes.Buffer
-	backend := logging.NewLogBackend(&buf, "", 0)
-	logging.SetBackend(logging.NewBackendFormatter(backend, logging.MustStringFormatter(`%{message}`)))
-	t.Cleanup(func() {
-		logging.SetBackend(logging.NewBackendFormatter(logging.NewLogBackend(os.Stdout, "", 0), logging.MustStringFormatter(`%{message}`)))
-	})
+	logger.RedirectForTest(t, &buf)
 
 	strategy := StdoutStrategy{
-		Log:         logging.MustGetLogger("compare-print"),
+		Log:         logger.New("compare-print"),
 		ShowAdded:   true,
 		ShowRemoved: true,
 	}

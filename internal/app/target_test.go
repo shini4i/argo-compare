@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"testing"
 
-	"github.com/op/go-logging"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
+
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -47,11 +49,33 @@ func (noopCmdRunner) Run(_ context.Context, _ string, _ ...string) (string, stri
 
 type noopFileReader struct{}
 
-func (noopFileReader) ReadFile(string) []byte { return nil }
+func (noopFileReader) ReadFile(string) ([]byte, error) { return nil, nil }
+
+// errFileReader always returns the configured error from ReadFile.
+type errFileReader struct{ err error }
+
+func (r errFileReader) ReadFile(string) ([]byte, error) { return nil, r.err }
 
 type noopGlobber struct{}
 
 func (noopGlobber) Glob(string) ([]string, error) { return nil, nil }
+
+func TestTargetParseReturnsErrorFromFileReader(t *testing.T) {
+	sentinel := errors.New("permission denied")
+
+	target := Target{
+		CmdRunner:  noopCmdRunner{},
+		FileReader: errFileReader{err: sentinel},
+		Log:        logger.New("target-test"),
+		File:       "/some/app.yaml",
+		Type:       TargetTypeSource,
+	}
+
+	err := target.parse()
+	require.Error(t, err)
+	assert.ErrorIs(t, err, sentinel, "original error must be reachable via errors.Is")
+	assert.Contains(t, err.Error(), "/some/app.yaml", "error must include the file path")
+}
 
 func TestTargetMultiSourceInvokesHelmPerSource(t *testing.T) {
 	processor := &recordingHelmProcessor{}
@@ -64,7 +88,7 @@ func TestTargetMultiSourceInvokesHelmPerSource(t *testing.T) {
 		CacheDir:            "cache",
 		TmpDir:              "tmp",
 		CredentialProviders: nil,
-		Log:                 logging.MustGetLogger("target-test"),
+		Log:                 logger.New("target-test"),
 		Type:                TargetTypeSource,
 		App: models.Application{
 			Spec: struct {

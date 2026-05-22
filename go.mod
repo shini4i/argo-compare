@@ -11,7 +11,6 @@ require (
 	github.com/go-git/go-git/v5 v5.19.0
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/mattn/go-zglob v0.0.6
-	github.com/op/go-logging v0.0.0-20160315200505-970db520ece7
 	github.com/spf13/afero v1.15.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1

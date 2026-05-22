@@ -6,10 +6,11 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
@@ -23,7 +24,7 @@ type GitRepo struct {
 	fs         afero.Fs
 	cmdRunner  ports.CmdRunner
 	fileReader ports.FileReader
-	log        *logging.Logger
+	log        *logger.Logger
 }
 
 // ChangedFilesResult encapsulates the changed application files and any invalid manifests.
@@ -47,7 +48,7 @@ var (
 
 // NewGitRepo opens the Git repository rooted at the current working directory and returns a GitRepo configured with the provided filesystem, command runner, file reader, and logger.
 // It locates the repository root and opens the repository; an error is returned if root discovery or repository opening fails.
-func NewGitRepo(fs afero.Fs, cmdRunner ports.CmdRunner, fileReader ports.FileReader, log *logging.Logger) (*GitRepo, error) {
+func NewGitRepo(fs afero.Fs, cmdRunner ports.CmdRunner, fileReader ports.FileReader, log *logger.Logger) (*GitRepo, error) {
 	repoRoot, err := GetGitRepoRoot()
 	if err != nil {
 		return nil, err

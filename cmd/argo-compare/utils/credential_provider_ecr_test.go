@@ -6,11 +6,12 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/aws/aws-sdk-go-v2/service/ecr/types"
-	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,7 +29,7 @@ func (m *mockECRClient) GetAuthorizationToken(_ context.Context, _ *ecr.GetAutho
 	return m.output, m.err
 }
 
-func newTestECRProvider(log *logging.Logger, client *mockECRClient) *ECRCredentialProvider {
+func newTestECRProvider(log *logger.Logger, client *mockECRClient) *ECRCredentialProvider {
 	return &ECRCredentialProvider{
 		log: log,
 		loadCfg: func(_ context.Context, _ ...func(*config.LoadOptions) error) (aws.Config, error) {
@@ -42,7 +43,7 @@ func newTestECRProvider(log *logging.Logger, client *mockECRClient) *ECRCredenti
 }
 
 func TestECRCredentialProvider_Matches(t *testing.T) {
-	log := logging.MustGetLogger("test-ecr")
+	log := logger.New("test-ecr")
 	provider := NewECRCredentialProvider(log)
 
 	tests := []struct {
@@ -68,7 +69,7 @@ func TestECRCredentialProvider_Matches(t *testing.T) {
 }
 
 func TestECRCredentialProvider_GetCredentials_Success(t *testing.T) {
-	log := logging.MustGetLogger("test-ecr")
+	log := logger.New("test-ecr")
 	token := base64.StdEncoding.EncodeToString([]byte("AWS:my-secret-token"))
 
 	client := &mockECRClient{
@@ -91,7 +92,7 @@ func TestECRCredentialProvider_GetCredentials_Success(t *testing.T) {
 }
 
 func TestECRCredentialProvider_GetCredentials_CachedToken(t *testing.T) {
-	log := logging.MustGetLogger("test-ecr")
+	log := logger.New("test-ecr")
 	token := base64.StdEncoding.EncodeToString([]byte("AWS:cached-token"))
 
 	client := &mockECRClient{
@@ -121,7 +122,7 @@ func TestECRCredentialProvider_GetCredentials_CachedToken(t *testing.T) {
 }
 
 func TestECRCredentialProvider_GetCredentials_AWSCredsUnavailable(t *testing.T) {
-	log := logging.MustGetLogger("test-ecr")
+	log := logger.New("test-ecr")
 
 	provider := &ECRCredentialProvider{
 		log: log,
@@ -140,7 +141,7 @@ func TestECRCredentialProvider_GetCredentials_AWSCredsUnavailable(t *testing.T) 
 }
 
 func TestECRCredentialProvider_GetCredentials_APICredentialError(t *testing.T) {
-	log := logging.MustGetLogger("test-ecr")
+	log := logger.New("test-ecr")
 
 	client := &mockECRClient{
 		err: errors.New("NoCredentialProviders: no valid providers in chain"),
@@ -154,7 +155,7 @@ func TestECRCredentialProvider_GetCredentials_APICredentialError(t *testing.T) {
 }
 
 func TestECRCredentialProvider_GetCredentials_NetworkError(t *testing.T) {
-	log := logging.MustGetLogger("test-ecr")
+	log := logger.New("test-ecr")
 
 	client := &mockECRClient{
 		err: errors.New("dial tcp: lookup ecr.us-east-1.amazonaws.com: no such host"),
@@ -212,7 +213,7 @@ func TestDecodeAuthToken(t *testing.T) {
 }
 
 func TestECRCredentialProvider_GetCredentials_InvalidURL(t *testing.T) {
-	log := logging.MustGetLogger("test-ecr")
+	log := logger.New("test-ecr")
 	provider := NewECRCredentialProvider(log)
 
 	_, err := provider.GetCredentials(context.Background(), "not-an-ecr-url")
@@ -221,7 +222,7 @@ func TestECRCredentialProvider_GetCredentials_InvalidURL(t *testing.T) {
 }
 
 func TestECRCredentialProvider_GetCredentials_EmptyAuthData(t *testing.T) {
-	log := logging.MustGetLogger("test-ecr")
+	log := logger.New("test-ecr")
 
 	client := &mockECRClient{
 		output: &ecr.GetAuthorizationTokenOutput{
@@ -237,7 +238,7 @@ func TestECRCredentialProvider_GetCredentials_EmptyAuthData(t *testing.T) {
 }
 
 func TestECRCredentialProvider_GetCredentials_MalformedToken(t *testing.T) {
-	log := logging.MustGetLogger("test-ecr")
+	log := logger.New("test-ecr")
 
 	client := &mockECRClient{
 		output: &ecr.GetAuthorizationTokenOutput{

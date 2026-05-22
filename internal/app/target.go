@@ -6,7 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/op/go-logging"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
+
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"gopkg.in/yaml.v3"
@@ -27,7 +28,7 @@ type Target struct {
 	CacheDir            string
 	TmpDir              string
 	CredentialProviders []ports.CredentialProvider
-	Log                 *logging.Logger
+	Log                 *logger.Logger
 
 	File string
 	Type string
@@ -53,7 +54,10 @@ func (t *Target) parse() error {
 
 	t.Log.Debugf("Parsing %s...", file)
 
-	yamlContent := t.FileReader.ReadFile(file)
+	yamlContent, err := t.FileReader.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("read application file %q: %w", file, err)
+	}
 	if err := yaml.Unmarshal(yamlContent, &app); err != nil {
 		return err
 	}

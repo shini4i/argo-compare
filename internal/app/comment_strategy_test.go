@@ -3,12 +3,10 @@ package app
 import (
 	"context"
 	"fmt"
-	"io"
-	"os"
 	"strings"
 	"testing"
 
-	"github.com/op/go-logging"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,13 +22,11 @@ func (s *stubPoster) Post(_ context.Context, body string) error {
 	return s.err
 }
 
-func setupSilentLogger(name string, t *testing.T) *logging.Logger {
-	logger := logging.MustGetLogger(name)
-	logging.SetBackend(logging.NewLogBackend(io.Discard, "", 0))
-	t.Cleanup(func() {
-		logging.SetBackend(logging.NewLogBackend(os.Stdout, "", 0))
-	})
-	return logger
+// setupSilentLogger returns a Logger for use inside test code. Output is
+// silenced at the package level by TestMain, so this is just a thin alias for
+// logger.New that documents the intent at call sites.
+func setupSilentLogger(name string, _ *testing.T) *logger.Logger {
+	return logger.New(name)
 }
 
 func TestCommentStrategyPresentWithDiff(t *testing.T) {

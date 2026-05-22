@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/op/go-logging"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"github.com/shini4i/argo-compare/internal/comment"
 	"github.com/shini4i/argo-compare/internal/comment/gitlab"
 	"github.com/shini4i/argo-compare/internal/models"
@@ -32,16 +32,16 @@ var ErrManifestValidationFailed = errors.New("manifest validation failed")
 
 // Dependencies aggregates runtime collaborators required by App.
 type Dependencies struct {
-	FS                    afero.Fs
-	CmdRunner             ports.CmdRunner
-	FileReader            ports.FileReader
-	HelmProcessor         ports.HelmChartsProcessor
-	Globber               ports.Globber
-	Logger                *logging.Logger
-	CommentPosterFactory  CommentPosterFactory
-	SensitiveDataMasker   ports.SensitiveDataMasker   // Responsible for redacting sensitive manifest fields.
-	CredentialProviders   []ports.CredentialProvider   // Dynamic credential providers (e.g. ECR). Optional; defaults include ECR.
-	ManifestValidator     ports.ManifestValidator      // Validator for rendered manifests. Optional; defaults to KubeconformValidator if validation is enabled.
+	FS                   afero.Fs
+	CmdRunner            ports.CmdRunner
+	FileReader           ports.FileReader
+	HelmProcessor        ports.HelmChartsProcessor
+	Globber              ports.Globber
+	Logger               *logger.Logger
+	CommentPosterFactory CommentPosterFactory
+	SensitiveDataMasker  ports.SensitiveDataMasker  // Responsible for redacting sensitive manifest fields.
+	CredentialProviders  []ports.CredentialProvider // Dynamic credential providers (e.g. ECR). Optional; defaults include ECR.
+	ManifestValidator    ports.ManifestValidator    // Validator for rendered manifests. Optional; defaults to KubeconformValidator if validation is enabled.
 }
 
 // App orchestrates the end-to-end comparison workflow.
@@ -52,7 +52,7 @@ type App struct {
 	fileReader          ports.FileReader
 	helmProcessor       ports.HelmChartsProcessor
 	globber             ports.Globber
-	logger              *logging.Logger
+	logger              *logger.Logger
 	repoCredentials     []models.RepoCredentials
 	credentialProviders []ports.CredentialProvider // Base providers (e.g. ECR) set at construction time.
 	activeProviders     []ports.CredentialProvider // Run-scoped chain: base providers + static fallback.
@@ -278,19 +278,36 @@ func (a *App) processChangedFile(ctx context.Context, repo *GitRepo, file string
 }
 
 // resolveTargetApplication retrieves the target branch manifest and determines follow-up actions.
+// Unknown errors are propagated so the user sees the real failure (e.g. a git plumbing issue)
+// instead of a cascading Helm error caused by processing with an empty Application.
 func (a *App) resolveTargetApplication(repo *GitRepo, file string) (models.Application, destinationAction, error) {
 	app, err := repo.GetChangedFileContent(a.cfg.TargetBranch, file, a.cfg.PrintAddedManifests)
 
+	action, decideErr := decideDestinationAction(err, a.cfg.PrintAddedManifests)
+	if decideErr != nil {
+		return models.Application{}, 0, fmt.Errorf("get target Application from branch %q: %w", a.cfg.TargetBranch, decideErr)
+	}
+
+	if action == destinationProcess {
+		return app, action, nil
+	}
+	return models.Application{}, action, nil
+}
+
+// decideDestinationAction maps the outcome of GetChangedFileContent to a destinationAction.
+// Errors other than the two named sentinels are returned to the caller; previously they
+// were logged and silently downgraded to destinationProcess, which produced confusing
+// downstream Helm failures instead of surfacing the real cause.
+func decideDestinationAction(err error, printAdded bool) (destinationAction, error) {
 	switch {
-	case errors.Is(err, errGitFileDoesNotExist) && !a.cfg.PrintAddedManifests:
-		return models.Application{}, destinationSkip, nil
+	case errors.Is(err, errGitFileDoesNotExist) && !printAdded:
+		return destinationSkip, nil
 	case errors.Is(err, models.ErrEmptyFile):
-		return models.Application{}, destinationNone, nil
+		return destinationNone, nil
 	case err != nil:
-		a.logger.Errorf("Could not get the target Application from branch [%s]: %s", a.cfg.TargetBranch, err)
-		return app, destinationProcess, nil
+		return 0, err
 	default:
-		return app, destinationProcess, nil
+		return destinationProcess, nil
 	}
 }
 
