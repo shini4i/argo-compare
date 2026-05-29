@@ -1,0 +1,3 @@
+application:
+  # No `repo:` set — the Application lives in this same repo.
+  path: apps/myapp.yaml
