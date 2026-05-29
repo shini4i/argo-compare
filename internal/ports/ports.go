@@ -5,6 +5,8 @@ package ports
 import (
 	"context"
 	"os"
+
+	"github.com/shini4i/argo-compare/internal/models"
 )
 
 // CmdRunner executes shell commands and returns captured output.
@@ -144,4 +146,33 @@ type ManifestValidator interface {
 	// A non-nil error indicates the validator itself failed to run; schema
 	// errors in the manifests are returned via ValidationResult.
 	Validate(ctx context.Context, target, manifestDir string) (ValidationResult, error)
+}
+
+// ApplicationRef points to an ArgoCD Application manifest in Git.
+// It is the port-layer mirror of anchor.ApplicationRef, kept here to avoid
+// pulling an anchor-package dependency into ports. The canonical schema lives
+// in `internal/anchor` (the on-disk YAML format); when adding fields, update
+// `anchor.ApplicationRef` first, then this struct, then the mapping at the
+// call site that loads anchors and invokes the fetcher.
+type ApplicationRef struct {
+	// Repo is the Git URL of the repository hosting the Application.
+	// Empty means "the local repo argo-compare is running in".
+	Repo string
+	// Path is the path to the Application YAML inside Repo, relative to repo root.
+	Path string
+	// Branch is the branch to read from. Empty means "the remote's default branch"
+	// for cross-repo fetches, and is ignored for same-repo fetches.
+	Branch string
+}
+
+// ApplicationFetcher resolves an ApplicationRef to a parsed Application model.
+//
+// For same-repo refs (Repo == ""), implementations read from the working tree
+// at localRepoRoot. For cross-repo refs, implementations fetch the file from
+// the named remote at Branch tip without affecting the local working tree.
+//
+// Any failure (network, missing file, parse error) is returned as a hard
+// error so the caller can fail loudly; partial results are not supported.
+type ApplicationFetcher interface {
+	Fetch(ctx context.Context, ref ApplicationRef, localRepoRoot string) (models.Application, error)
 }
