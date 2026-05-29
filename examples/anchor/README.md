@@ -1,12 +1,16 @@
 # `.argo-compare.yml` anchor examples
 
-These fixtures illustrate the two layouts that the anchor flow supports.
-Replace `example.com` and `group/repo` with the URLs that match your
-environment; the files are not exercised by tests.
+Structural reference fixtures for the two repository layouts the anchor
+flow supports. These are not runnable — the umbrella `Chart.yaml`
+declares a dependency on `https://charts.example.com` which does not
+resolve. Replace the placeholder URLs (`example.com`, `group/repo`)
+with the values that match your environment before using these files
+in a real repository.
 
 ## Same-repo / all-in-one
 
-The ArgoCD Application and the chart it consumes live in the same repository:
+The ArgoCD Application and the chart it consumes live in the same
+repository. See [`same-repo/`](./same-repo) for the files.
 
 ```
 .
@@ -16,17 +20,14 @@ The ArgoCD Application and the chart it consumes live in the same repository:
     └── myapp/
         ├── .argo-compare.yml       # anchor pointing back at apps/myapp.yaml
         ├── Chart.yaml
-        ├── values.yaml
-        └── templates/
-            └── deployment.yaml
+        └── values.yaml
 ```
-
-See [`same-repo/`](./same-repo) for the file contents.
 
 ## Manifest-only repository
 
 The ArgoCD Application lives in a different repo (an "apps" repo); this
-repo just hosts the chart content the Application consumes:
+repo just hosts the chart content the Application consumes. See
+[`cross-repo/`](./cross-repo) for the files.
 
 ```
 .
@@ -34,23 +35,14 @@ repo just hosts the chart content the Application consumes:
     └── myapp/
         ├── .argo-compare.yml       # anchor pointing at the external apps repo
         ├── Chart.yaml
-        ├── values.yaml
-        └── templates/
-            └── deployment.yaml
+        └── values.yaml
 ```
 
-See [`cross-repo/`](./cross-repo) for the file contents.
+## How the anchor flow uses these files
 
-## How to test against a fixture
-
-From inside a clone of either repository layout, run:
-
-```bash
-argo-compare branch main
-```
-
-Argo Compare detects the changed file under `charts/myapp/`, walks up to
-the nearest `.argo-compare.yml`, fetches the named Application (locally
-or via a clone of the apps repo), and renders the chart twice — once
-against the working tree (post-PR state) and once against the merge-base
-(pre-PR state) — before producing the diff.
+When a PR touches a file under `charts/myapp/`, argo-compare walks up
+to the nearest `.argo-compare.yml`, fetches the named Application
+(reading from the local working tree for same-repo, or via an
+in-memory clone for cross-repo), and renders the chart twice — once
+against the working tree (post-PR state) and once against the
+merge-base (pre-PR state) — before producing the diff.
