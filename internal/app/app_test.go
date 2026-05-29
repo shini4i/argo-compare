@@ -499,7 +499,7 @@ func TestProcessFileRecordsValidatorInvocationError(t *testing.T) {
 	appFile := filepath.Join(t.TempDir(), "test-app.yaml")
 
 	validationResults := make(map[string]ports.ValidationResult)
-	err = appInstance.processFile(context.Background(), appFile, TargetTypeSource, models.Application{}, tmpDir, validationResults)
+	err = appInstance.processFile(context.Background(), nil, appFile, TargetTypeSource, models.Application{}, tmpDir, validationResults)
 	require.NoError(t, err, "validator invocation failure should not propagate from processFile")
 
 	require.Contains(t, validationResults, TargetTypeSource)
@@ -553,7 +553,7 @@ func TestProcessFileRecordsInvalidValidationResult(t *testing.T) {
 	appFile := filepath.Join(t.TempDir(), "test-app.yaml")
 
 	validationResults := make(map[string]ports.ValidationResult)
-	err = appInstance.processFile(context.Background(), appFile, TargetTypeSource, models.Application{}, tmpDir, validationResults)
+	err = appInstance.processFile(context.Background(), nil, appFile, TargetTypeSource, models.Application{}, tmpDir, validationResults)
 	require.NoError(t, err, "schema-invalid manifests must not cause processFile to fail")
 
 	require.Contains(t, validationResults, TargetTypeSource)
@@ -592,7 +592,7 @@ func TestProcessFileSkipsValidationWhenValidatorNil(t *testing.T) {
 	validationResults := make(map[string]ports.ValidationResult)
 	// Use TargetTypeSource so parse() is exercised and the nil-validator guard is
 	// reached on the same code path that production code takes.
-	err = appInstance.processFile(context.Background(), appFile, TargetTypeSource, models.Application{}, tmpDir, validationResults)
+	err = appInstance.processFile(context.Background(), nil, appFile, TargetTypeSource, models.Application{}, tmpDir, validationResults)
 	require.NoError(t, err)
 
 	assert.Empty(t, validationResults, "validationResults must remain empty when no validator is configured")
@@ -651,7 +651,7 @@ func TestProcessFileCallsValidatorForSource(t *testing.T) {
 	appFile := filepath.Join(t.TempDir(), "test-app.yaml")
 
 	validationResults := make(map[string]ports.ValidationResult)
-	err = appInstance.processFile(context.Background(), appFile, TargetTypeSource, models.Application{}, tmpDir, validationResults)
+	err = appInstance.processFile(context.Background(), nil, appFile, TargetTypeSource, models.Application{}, tmpDir, validationResults)
 	require.NoError(t, err)
 
 	require.Contains(t, validationResults, TargetTypeSource)
@@ -696,7 +696,7 @@ func TestProcessFileSkipsValidationForDestination(t *testing.T) {
 	testApp.Spec.Destination = &models.Destination{Server: "https://kubernetes.default.svc", Namespace: "default"}
 
 	validationResults := make(map[string]ports.ValidationResult)
-	err = appInstance.processFile(context.Background(), "apps/test.yaml", TargetTypeDestination, testApp, tmpDir, validationResults)
+	err = appInstance.processFile(context.Background(), nil, "apps/test.yaml", TargetTypeDestination, testApp, tmpDir, validationResults)
 	require.NoError(t, err)
 
 	assert.Empty(t, validationResults, "validation must be skipped for destination manifests")

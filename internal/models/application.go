@@ -72,15 +72,20 @@ func (app *Application) validateHelmSources() error {
 }
 
 // validateSourceShape ensures the supplied Source declares exactly one of
-// Chart or Path. "Neither" and "both" both yield ErrUnsupportedAppConfiguration.
+// Chart or Path. Each failure mode wraps ErrUnsupportedAppConfiguration with
+// a specific message so users see *why* their manifest was rejected without
+// losing the sentinel for errors.Is checks.
 func validateSourceShape(source *Source) error {
 	if source == nil {
-		return ErrUnsupportedAppConfiguration
+		return fmt.Errorf("%w: source is nil", ErrUnsupportedAppConfiguration)
 	}
 	hasChart := len(source.Chart) > 0
 	hasPath := len(source.Path) > 0
-	if hasChart == hasPath {
-		return ErrUnsupportedAppConfiguration
+	switch {
+	case hasChart && hasPath:
+		return fmt.Errorf("%w: source has both chart=%q and path=%q set; only one is allowed", ErrUnsupportedAppConfiguration, source.Chart, source.Path)
+	case !hasChart && !hasPath:
+		return fmt.Errorf("%w: source has neither chart nor path set", ErrUnsupportedAppConfiguration)
 	}
 	return nil
 }

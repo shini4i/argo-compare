@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"strings"
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"github.com/shini4i/argo-compare/internal/helpers"
@@ -42,9 +43,17 @@ func (f *RealApplicationFetcher) Fetch(ctx context.Context, ref ports.Applicatio
 }
 
 // fetchFromLocal reads ref.Path under localRepoRoot through the same Target.parse
-// pipeline used for in-repo Application files.
+// pipeline used for in-repo Application files. The path is constrained to stay
+// within localRepoRoot — a same-repo anchor pointing at `../../etc/passwd`
+// would otherwise resolve to a file outside the project. The threat is low
+// (the attacker already needs commit access to plant the anchor), but the
+// guard matches the symmetric defense in MaterializeTreeDir.
 func (f *RealApplicationFetcher) fetchFromLocal(path, localRepoRoot string) (models.Application, error) {
-	abs := filepath.Join(localRepoRoot, path)
+	rootClean := filepath.Clean(localRepoRoot)
+	abs := filepath.Clean(filepath.Join(rootClean, path))
+	if abs != rootClean && !strings.HasPrefix(abs, rootClean+string(filepath.Separator)) {
+		return models.Application{}, fmt.Errorf("anchor application.path %q escapes repository root", path)
+	}
 	target := Target{
 		CmdRunner:  f.CmdRunner,
 		FileReader: f.FileReader,

@@ -78,14 +78,10 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 		return nil, errors.New("cache directory must be provided")
 	}
 
-	// Default the anchor file name when callers use a Config struct literal
-	// directly (NewConfig already sets it). Users who actively want to disable
-	// anchor discovery should simply not commit any anchor files; setting the
-	// name to an unused string is supported but explicit "disable" is out of
-	// scope for v1.
-	if cfg.AnchorFileName == "" {
-		cfg.AnchorFileName = DefaultAnchorFileName
-	}
+	// NewConfig defaults AnchorFileName to DefaultAnchorFileName for the
+	// public-API path. Struct-literal Config users get whatever they set,
+	// including the empty-string opt-out documented on WithAnchorFileName
+	// and surfaced via --anchor-file / ARGO_COMPARE_ANCHOR_FILE.
 
 	if deps.FS == nil {
 		deps.FS = afero.NewOsFs()
@@ -296,7 +292,7 @@ func (a *App) processChangedFile(ctx context.Context, repo *GitRepo, file string
 	// Scoped per-comparison: keeps state local and avoids cross-app leakage.
 	validationResults := make(map[string]ports.ValidationResult)
 
-	if err = a.processFile(ctx, file, TargetTypeSource, models.Application{}, tmpDir, validationResults); err != nil {
+	if err = a.processFile(ctx, repo, file, TargetTypeSource, models.Application{}, tmpDir, validationResults); err != nil {
 		return false, err
 	}
 
@@ -310,7 +306,7 @@ func (a *App) processChangedFile(ctx context.Context, repo *GitRepo, file string
 	}
 
 	if action == destinationProcess {
-		if destErr := a.processFile(ctx, file, TargetTypeDestination, targetApp, tmpDir, validationResults); destErr != nil && !a.cfg.PrintAddedManifests {
+		if destErr := a.processFile(ctx, repo, file, TargetTypeDestination, targetApp, tmpDir, validationResults); destErr != nil && !a.cfg.PrintAddedManifests {
 			return false, destErr
 		}
 	}
@@ -345,6 +341,29 @@ func (a *App) resolveTargetApplication(repo *GitRepo, file string) (models.Appli
 	return models.Application{}, action, nil
 }
 
+// prepareChartFromPath materializes a path-based source's chart directory into
+// the layout the renderer expects. The source leg copies from the local
+// working tree; the destination leg extracts from the merge-base tree of the
+// configured target branch.
+func (a *App) prepareChartFromPath(ctx context.Context, repo *GitRepo, target *Target, fileType string) error {
+	switch fileType {
+	case TargetTypeSource:
+		repoRoot, err := GetGitRepoRoot()
+		if err != nil {
+			return fmt.Errorf("resolve repo root for path-based source: %w", err)
+		}
+		return target.MaterializeChartFromWorkingTree(ctx, a.fs, repoRoot)
+	case TargetTypeDestination:
+		tree, err := repo.MergeBaseTreeFor(a.cfg.TargetBranch)
+		if err != nil {
+			return err
+		}
+		return target.MaterializeChartFromTree(ctx, a.fs, tree)
+	default:
+		return fmt.Errorf("unknown render leg %q", fileType)
+	}
+}
+
 // decideDestinationAction maps the outcome of GetChangedFileContent to a destinationAction.
 // Errors other than the two named sentinels are returned to the caller; previously they
 // were logged and silently downgraded to destinationProcess, which produced confusing
@@ -364,7 +383,13 @@ func decideDestinationAction(err error, printAdded bool) (destinationAction, err
 
 // processFile prepares Helm inputs for a single manifest and renders its templates.
 // validationResults is populated when a validator is configured; entries are keyed by fileType.
-func (a *App) processFile(ctx context.Context, fileName, fileType string, application models.Application, tmpDir string, validationResults map[string]ports.ValidationResult) error {
+//
+// For registry-based sources (spec.source.chart set) the chart is fetched via
+// the existing helm pull + extract pipeline. For path-based sources
+// (spec.source.path set) the chart directory is materialized into the same
+// on-disk layout from the local working tree (src leg) or the merge-base tree
+// (dst leg), and the registry plumbing is skipped.
+func (a *App) processFile(ctx context.Context, repo *GitRepo, fileName, fileType string, application models.Application, tmpDir string, validationResults map[string]ports.ValidationResult) error {
 	target := Target{
 		CmdRunner:           a.cmdRunner,
 		FileReader:          a.fileReader,
@@ -385,16 +410,25 @@ func (a *App) processFile(ctx context.Context, fileName, fileType string, applic
 		}
 	}
 
+	if err := target.ClassifySources(); err != nil {
+		return err
+	}
+
 	if err := target.generateValuesFiles(); err != nil {
 		return err
 	}
 
-	if err := target.ensureHelmCharts(ctx); err != nil {
-		return err
-	}
-
-	if err := target.extractCharts(ctx); err != nil {
-		return err
+	if target.PathBased() {
+		if err := a.prepareChartFromPath(ctx, repo, &target, fileType); err != nil {
+			return err
+		}
+	} else {
+		if err := target.ensureHelmCharts(ctx); err != nil {
+			return err
+		}
+		if err := target.extractCharts(ctx); err != nil {
+			return err
+		}
 	}
 
 	if err := target.renderAppSources(ctx); err != nil {
