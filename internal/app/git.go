@@ -160,6 +160,49 @@ func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string, a
 	return ChangedFilesResult{Applications: filtered, Invalid: invalid, AnchorGroups: anchorGroups}, nil
 }
 
+// MergeBaseTreeFor returns the tree of the merge-base commit between HEAD and
+// origin/targetBranch. Path-based rendering uses this tree to materialize the
+// "before the PR" snapshot of a chart directory while the working tree holds
+// the "after the PR" snapshot.
+func (g *GitRepo) MergeBaseTreeFor(targetBranch string) (*object.Tree, error) {
+	targetRef, err := g.repo.Reference(plumbing.ReferenceName("refs/remotes/origin/"+targetBranch), true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve target branch %s: %w", targetBranch, err)
+	}
+	headRef, err := g.repo.Head()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get HEAD: %w", err)
+	}
+	targetCommit, err := g.repo.CommitObject(targetRef.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get commit object for target branch %s: %w", targetBranch, err)
+	}
+	headCommit, err := g.repo.CommitObject(headRef.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get commit object for current branch: %w", err)
+	}
+	return g.mergeBaseTree(headCommit, targetCommit)
+}
+
+// OriginURL returns the URL configured for the `origin` remote, or an empty
+// string with a nil error when the local repo has no `origin` remote. Callers
+// use this to verify that an Application's spec.source.repoURL points back at
+// the local repo (path-based v1 requires this).
+func (g *GitRepo) OriginURL() (string, error) {
+	remote, err := g.repo.Remote("origin")
+	if err != nil {
+		if errors.Is(err, git.ErrRemoteNotFound) {
+			return "", nil
+		}
+		return "", fmt.Errorf("read origin remote: %w", err)
+	}
+	urls := remote.Config().URLs
+	if len(urls) == 0 {
+		return "", nil
+	}
+	return urls[0], nil
+}
+
 // mergeBaseTree returns the tree of the merge-base commit between headCommit
 // and targetCommit — the snapshot from which the source branch diverged.
 // Diffing against this snapshot yields only the changes the source branch

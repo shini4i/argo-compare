@@ -42,6 +42,7 @@ type Dependencies struct {
 	SensitiveDataMasker  ports.SensitiveDataMasker  // Responsible for redacting sensitive manifest fields.
 	CredentialProviders  []ports.CredentialProvider // Dynamic credential providers (e.g. ECR). Optional; defaults include ECR.
 	ManifestValidator    ports.ManifestValidator    // Validator for rendered manifests. Optional; defaults to KubeconformValidator if validation is enabled.
+	ApplicationFetcher   ports.ApplicationFetcher   // Resolves anchored Applications. Optional; defaults to RealApplicationFetcher.
 }
 
 // App orchestrates the end-to-end comparison workflow.
@@ -59,6 +60,7 @@ type App struct {
 	commentFactory      CommentPosterFactory
 	sensitiveDataMasker ports.SensitiveDataMasker // Applied to manifest content prior to diff generation.
 	validator           ports.ManifestValidator   // Optional validator for rendered manifests.
+	fetcher             ports.ApplicationFetcher  // Resolves anchored Applications. Optional; defaults to a real impl.
 }
 
 // CommentPosterFactory builds a comment poster based on the active configuration.
@@ -134,6 +136,7 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 		commentFactory:      deps.CommentPosterFactory,
 		sensitiveDataMasker: deps.SensitiveDataMasker,
 		validator:           validator,
+		fetcher:             deps.ApplicationFetcher,
 	}, nil
 }
 
@@ -161,6 +164,7 @@ func (a *App) Run(ctx context.Context) error {
 	var (
 		changedFiles []string
 		invalidFiles []string
+		anchorGroups []AnchorGroup
 	)
 
 	if a.cfg.FileToCompare != "" {
@@ -177,16 +181,29 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		changedFiles = result.Applications
 		invalidFiles = result.Invalid
+		anchorGroups = dedupAnchorGroups(result.AnchorGroups, changedFiles)
 	}
 
-	if len(changedFiles) == 0 {
+	if len(changedFiles) == 0 && len(anchorGroups) == 0 {
 		a.logger.Info("No changed Application files found. Exiting...")
 		return nil
 	}
 
-	validationFailed, err := a.compareFiles(ctx, repo, changedFiles)
-	if err != nil {
-		return err
+	validationFailed := false
+	if len(changedFiles) > 0 {
+		failed, cmpErr := a.compareFiles(ctx, repo, changedFiles)
+		if cmpErr != nil {
+			return cmpErr
+		}
+		validationFailed = validationFailed || failed
+	}
+
+	if len(anchorGroups) > 0 {
+		failed, anchorErr := a.compareAnchorGroups(ctx, repo, anchorGroups)
+		if anchorErr != nil {
+			return anchorErr
+		}
+		validationFailed = validationFailed || failed
 	}
 
 	if err := a.reportInvalidFiles(invalidFiles); err != nil {
@@ -198,6 +215,31 @@ func (a *App) Run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// dedupAnchorGroups drops anchor groups whose target Application file already
+// appears among the changed Application files — that path is handled by the
+// existing flow, so processing the anchor on top would render the same
+// Application twice. Cross-repo anchors are never deduplicated since their
+// target Application lives outside the local diff.
+func dedupAnchorGroups(groups []AnchorGroup, changedApps []string) []AnchorGroup {
+	if len(groups) == 0 || len(changedApps) == 0 {
+		return groups
+	}
+	changed := make(map[string]struct{}, len(changedApps))
+	for _, f := range changedApps {
+		changed[f] = struct{}{}
+	}
+	out := groups[:0]
+	for _, g := range groups {
+		if g.Anchor.Application.Repo == "" {
+			if _, dup := changed[g.Anchor.Application.Path]; dup {
+				continue
+			}
+		}
+		out = append(out, g)
+	}
+	return out
 }
 
 // compareFiles renders and evaluates each changed Application manifest against the target branch.
