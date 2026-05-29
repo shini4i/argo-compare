@@ -51,19 +51,35 @@ type Source struct {
 	} `yaml:"helm"`
 }
 
-// validateHelmSources checks that all sources have a non-empty chart field.
-// Currently we support only helm repository based charts as a source.
+// validateHelmSources checks that every source declares exactly one chart kind:
+// either a Helm-registry chart (Source.Chart) or a Git path (Source.Path).
+// Sources with neither set, or with both set, are rejected with
+// ErrUnsupportedAppConfiguration. A nil Source is also rejected.
 func (app *Application) validateHelmSources() error {
 	if len(app.Spec.Sources) > 0 {
 		for _, source := range app.Spec.Sources {
-			if len(source.Chart) == 0 {
-				return ErrUnsupportedAppConfiguration
+			if err := validateSourceShape(source); err != nil {
+				return err
 			}
 		}
 		return nil
 	}
 
-	if app.Spec.Source == nil || len(app.Spec.Source.Chart) == 0 {
+	if app.Spec.Source == nil {
+		return ErrUnsupportedAppConfiguration
+	}
+	return validateSourceShape(app.Spec.Source)
+}
+
+// validateSourceShape ensures the supplied Source declares exactly one of
+// Chart or Path. "Neither" and "both" both yield ErrUnsupportedAppConfiguration.
+func validateSourceShape(source *Source) error {
+	if source == nil {
+		return ErrUnsupportedAppConfiguration
+	}
+	hasChart := len(source.Chart) > 0
+	hasPath := len(source.Path) > 0
+	if hasChart == hasPath {
 		return ErrUnsupportedAppConfiguration
 	}
 	return nil
@@ -74,7 +90,8 @@ func (app *Application) validateHelmSources() error {
 // - If the Application struct is empty, returns ErrEmptyFile.
 // - If both the 'source' and 'sources' fields are set at the same time, returns an error.
 // - If the kind of the application is not "Application", returns ErrNotApplication.
-// - If the application specifies sources, ensures that each source has a non-empty 'chart' field.
+// - For each source, ensures it declares exactly one of 'chart' (Helm-registry)
+//   or 'path' (Git path); both empty or both set yields ErrUnsupportedAppConfiguration.
 // - Sets the 'MultiSource' field to true if sources are specified.
 // - Returns nil if all validation checks pass.
 func (app *Application) Validate() error {
