@@ -17,6 +17,17 @@ func TestNewConfigDefaults(t *testing.T) {
 	assert.False(t, cfg.PreserveHelmLabels)
 	assert.False(t, cfg.PrintAddedManifests)
 	assert.False(t, cfg.PrintRemovedManifests)
+	assert.Equal(t, DefaultAnchorFileName, cfg.AnchorFileName)
+}
+
+func TestWithAnchorFileName(t *testing.T) {
+	cfg, err := NewConfig("main", WithAnchorFileName("custom-anchor.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, "custom-anchor.yaml", cfg.AnchorFileName)
+
+	disabled, err := NewConfig("main", WithAnchorFileName(""))
+	require.NoError(t, err)
+	assert.Equal(t, "", disabled.AnchorFileName, "explicit empty disables anchor discovery before New() defaulting")
 }
 
 func TestNewConfigWithOptions(t *testing.T) {

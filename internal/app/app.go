@@ -78,6 +78,15 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 		return nil, errors.New("cache directory must be provided")
 	}
 
+	// Default the anchor file name when callers use a Config struct literal
+	// directly (NewConfig already sets it). Users who actively want to disable
+	// anchor discovery should simply not commit any anchor files; setting the
+	// name to an unused string is supported but explicit "disable" is out of
+	// scope for v1.
+	if cfg.AnchorFileName == "" {
+		cfg.AnchorFileName = DefaultAnchorFileName
+	}
+
 	if deps.FS == nil {
 		deps.FS = afero.NewOsFs()
 	}
@@ -175,7 +184,7 @@ func (a *App) Run(ctx context.Context) error {
 		}
 	} else {
 		var result ChangedFilesResult
-		result, err = repo.GetChangedFiles(a.cfg.TargetBranch, a.cfg.FilesToIgnore, DefaultAnchorFileName)
+		result, err = repo.GetChangedFiles(a.cfg.TargetBranch, a.cfg.FilesToIgnore, a.cfg.AnchorFileName)
 		if err != nil {
 			return err
 		}

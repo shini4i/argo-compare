@@ -145,6 +145,7 @@ func newBranchCommand(opts Options, dropCache func() bool, debug func() bool) *c
 	cmd.Flags().StringVar(&flags.kubeconformPath, "kubeconform-path", flags.kubeconformPath, "Path to kubeconform binary")
 	cmd.Flags().StringSliceVar(&flags.validateSkipKinds, "skip-validation-kinds", flags.validateSkipKinds, "Resource kinds to skip during validation (comma-separated)")
 	cmd.Flags().StringSliceVar(&flags.validateSchemaLocations, "schema-location", flags.validateSchemaLocations, "Additional kubeconform -schema-location values (can be repeated or comma-separated)")
+	cmd.Flags().StringVar(&flags.anchorFileName, "anchor-file", flags.anchorFileName, "Name of the file that marks an anchor directory (default .argo-compare.yml; empty disables discovery)")
 
 	return cmd
 }
@@ -165,6 +166,7 @@ type branchFlags struct {
 	kubeconformPath         string
 	validateSkipKinds       []string
 	validateSchemaLocations []string
+	anchorFileName          string
 }
 
 // loadBranchDefaults gathers branch flag defaults from the environment.
@@ -232,6 +234,8 @@ func loadBranchDefaults() branchFlags {
 		}
 	}
 
+	defaults.anchorFileName = helpers.GetEnv("ARGO_COMPARE_ANCHOR_FILE", app.DefaultAnchorFileName)
+
 	return defaults
 }
 
@@ -260,6 +264,7 @@ func (b branchFlags) configOptions(opts Options, debugEnabled bool) ([]app.Confi
 		app.WithKubeconformPath(b.kubeconformPath),
 		app.WithValidateSkipKinds(b.validateSkipKinds),
 		app.WithValidateSchemaLocations(b.validateSchemaLocations),
+		app.WithAnchorFileName(b.anchorFileName),
 	}
 
 	commentOption, err := b.commentOption()
