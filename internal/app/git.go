@@ -27,11 +27,27 @@ type GitRepo struct {
 	log        *logger.Logger
 }
 
-// ChangedFilesResult encapsulates the changed application files and any invalid manifests.
+// ChangedFilesResult encapsulates the changed application files, any invalid
+// manifests, and anchor groups discovered from changed files that fall under
+// a directory containing an anchor file (default `.argo-compare.yml`).
+//
+// Applications and Invalid are unchanged from the original contract: every
+// changed *.yaml that parses as a valid ArgoCD Application (kind: Application)
+// appears in Applications; manifests that fail to parse appear in Invalid.
+//
+// AnchorGroups is populated in addition to Applications, not instead of it.
+// A single PR can touch both an Application file and a chart directory that
+// sits under an anchor — the caller is responsible for deduplicating before
+// rendering, since the anchor flow ultimately points back at an Application.
 type ChangedFilesResult struct {
 	Applications []string
 	Invalid      []string
+	AnchorGroups []AnchorGroup
 }
+
+// DefaultAnchorFileName is the conventional file name for an anchor config.
+// Callers may override via the anchorFileName parameter of GetChangedFiles.
+const DefaultAnchorFileName = ".argo-compare.yml"
 
 var (
 	errGitFileDoesNotExist = errors.New("file does not exist in target branch")
@@ -72,7 +88,12 @@ func NewGitRepo(fs afero.Fs, cmdRunner ports.CmdRunner, fileReader ports.FileRea
 // has modified since it diverged from targetBranch. Files modified only on
 // targetBranch after the divergence point are intentionally excluded — those
 // are not changes the source branch is proposing.
-func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string) (ChangedFilesResult, error) {
+//
+// anchorFileName names the file that marks an "anchor" directory (e.g.
+// `.argo-compare.yml`). Changed files that fall under such a directory are
+// additionally returned in the result's AnchorGroups field. Passing an empty
+// string disables anchor discovery — useful for callers that opt out.
+func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string, anchorFileName string) (ChangedFilesResult, error) {
 	targetRef, err := g.repo.Reference(plumbing.ReferenceName(fmt.Sprintf("refs/remotes/origin/%s", targetBranch)), true)
 	if err != nil {
 		return ChangedFilesResult{}, fmt.Errorf("failed to resolve target branch %s: %w", targetBranch, err)
@@ -123,7 +144,20 @@ func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string) (
 	applications, invalid := g.sortChangedFiles(foundFiles)
 	filtered := filterIgnored(applications, filesToIgnore)
 
-	return ChangedFilesResult{Applications: filtered, Invalid: invalid}, nil
+	var anchorGroups []AnchorGroup
+	if anchorFileName != "" {
+		repoRoot, rootErr := GetGitRepoRoot()
+		if rootErr != nil {
+			return ChangedFilesResult{}, fmt.Errorf("resolve repo root for anchor discovery: %w", rootErr)
+		}
+		anchorChanged := filterIgnored(foundFiles, filesToIgnore)
+		anchorGroups, err = DiscoverAnchors(repoRoot, anchorChanged, g.fs, anchorFileName)
+		if err != nil {
+			return ChangedFilesResult{}, err
+		}
+	}
+
+	return ChangedFilesResult{Applications: filtered, Invalid: invalid, AnchorGroups: anchorGroups}, nil
 }
 
 // mergeBaseTree returns the tree of the merge-base commit between headCommit

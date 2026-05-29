@@ -171,7 +171,7 @@ func (a *App) Run(ctx context.Context) error {
 		}
 	} else {
 		var result ChangedFilesResult
-		result, err = repo.GetChangedFiles(a.cfg.TargetBranch, a.cfg.FilesToIgnore)
+		result, err = repo.GetChangedFiles(a.cfg.TargetBranch, a.cfg.FilesToIgnore, DefaultAnchorFileName)
 		if err != nil {
 			return err
 		}

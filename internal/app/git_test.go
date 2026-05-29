@@ -80,7 +80,7 @@ func TestGitRepoGetChangedFilesRespectsIgnore(t *testing.T) {
 	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
 	require.NoError(t, err)
 
-	result, err := repoInstance.GetChangedFiles("main", []string{"apps/secondary.yaml"})
+	result, err := repoInstance.GetChangedFiles("main", []string{"apps/secondary.yaml"}, "")
 	require.NoError(t, err)
 
 	require.ElementsMatch(t, []string{"apps/demo.yaml"}, result.Applications)
@@ -156,7 +156,7 @@ func TestGitRepoGetChangedFilesExcludesDstOnlyChanges(t *testing.T) {
 	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
 	require.NoError(t, err)
 
-	result, err := repoInstance.GetChangedFiles("main", nil)
+	result, err := repoInstance.GetChangedFiles("main", nil, "")
 	require.NoError(t, err)
 
 	// Only the file src actually touched should be reported.
@@ -207,7 +207,7 @@ func TestGitRepoGetChangedFilesUnrelatedHistories(t *testing.T) {
 	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
 	require.NoError(t, err)
 
-	_, err = repoInstance.GetChangedFiles("main", nil)
+	_, err = repoInstance.GetChangedFiles("main", nil, "")
 	require.ErrorIs(t, err, ErrNoCommonAncestor)
 }
 
@@ -260,7 +260,7 @@ func TestGitRepoGetChangedFilesAmbiguousMergeBase(t *testing.T) {
 	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
 	require.NoError(t, err)
 
-	_, err = repoInstance.GetChangedFiles("main", nil)
+	_, err = repoInstance.GetChangedFiles("main", nil, "")
 	require.ErrorIs(t, err, ErrAmbiguousMergeBase)
 }
 
@@ -354,6 +354,117 @@ spec:
 	require.NoError(t, err)
 	require.Equal(t, "parsed", application.Metadata.Name)
 	require.Equal(t, "parsed-chart", application.Spec.Source.Chart)
+}
+
+func TestGitRepoGetChangedFilesPopulatesAnchorGroups(t *testing.T) {
+	tempDir := t.TempDir()
+	workDir := filepath.Join(tempDir, "repo")
+	require.NoError(t, os.MkdirAll(workDir, 0o755))
+
+	repo, err := git.PlainInit(workDir, false)
+	require.NoError(t, err)
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))))
+
+	chartDir := filepath.Join(workDir, "charts", "foo")
+	require.NoError(t, os.MkdirAll(chartDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(chartDir, ".argo-compare.yml"), []byte("application:\n  path: apps/foo.yaml\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("apiVersion: v2\nname: foo\nversion: 0.0.1\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte("replicaCount: 1\n"), 0o644))
+
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+	_, err = worktree.Add("charts/foo")
+	require.NoError(t, err)
+	commitHash, err := worktree.Commit("initial", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	remotePath := filepath.Join(tempDir, "origin.git")
+	_, err = git.PlainInit(remotePath, true)
+	require.NoError(t, err)
+	_, err = repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{remotePath}})
+	require.NoError(t, err)
+	require.NoError(t, repo.Push(&git.PushOptions{RemoteName: "origin", RefSpecs: []config.RefSpec{"refs/heads/main:refs/heads/main"}}))
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), commitHash)))
+
+	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("feature"), Create: true}))
+	require.NoError(t, os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte("replicaCount: 2\n"), 0o644))
+	_, err = worktree.Add("charts/foo/values.yaml")
+	require.NoError(t, err)
+	_, err = worktree.Commit("bump replicas", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	originalWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(workDir))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(originalWD))
+	})
+
+	log := logger.New("git-test-anchor")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
+	require.NoError(t, err)
+
+	result, err := repoInstance.GetChangedFiles("main", nil, ".argo-compare.yml")
+	require.NoError(t, err)
+
+	require.Empty(t, result.Applications, "the chart files are not Application manifests")
+	require.Len(t, result.AnchorGroups, 1)
+	g := result.AnchorGroups[0]
+	require.True(t, filepath.IsAbs(g.Dir))
+	require.Equal(t, "apps/foo.yaml", g.Anchor.Application.Path)
+	require.Equal(t, []string{"charts/foo/values.yaml"}, g.ChangedFiles)
+}
+
+func TestGitRepoGetChangedFilesNoAnchorDiscoveryWhenDisabled(t *testing.T) {
+	tempDir := t.TempDir()
+	workDir := filepath.Join(tempDir, "repo")
+	require.NoError(t, os.MkdirAll(workDir, 0o755))
+
+	repo, err := git.PlainInit(workDir, false)
+	require.NoError(t, err)
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))))
+
+	chartDir := filepath.Join(workDir, "charts", "foo")
+	require.NoError(t, os.MkdirAll(chartDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(chartDir, ".argo-compare.yml"), []byte("application:\n  path: apps/foo.yaml\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte("replicaCount: 1\n"), 0o644))
+
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+	_, err = worktree.Add("charts/foo")
+	require.NoError(t, err)
+	commitHash, err := worktree.Commit("initial", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	remotePath := filepath.Join(tempDir, "origin.git")
+	_, err = git.PlainInit(remotePath, true)
+	require.NoError(t, err)
+	_, err = repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{remotePath}})
+	require.NoError(t, err)
+	require.NoError(t, repo.Push(&git.PushOptions{RemoteName: "origin", RefSpecs: []config.RefSpec{"refs/heads/main:refs/heads/main"}}))
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), commitHash)))
+
+	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("feature"), Create: true}))
+	require.NoError(t, os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte("replicaCount: 2\n"), 0o644))
+	_, err = worktree.Add("charts/foo/values.yaml")
+	require.NoError(t, err)
+	_, err = worktree.Commit("bump", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	originalWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(workDir))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(originalWD))
+	})
+
+	log := logger.New("git-test-anchor-disabled")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
+	require.NoError(t, err)
+
+	result, err := repoInstance.GetChangedFiles("main", nil, "")
+	require.NoError(t, err)
+	require.Empty(t, result.AnchorGroups, "anchor discovery must be skipped when anchorFileName is empty")
 }
 
 func writeExtraApplication(t *testing.T, repoDir, name, version string, replicas int) {
