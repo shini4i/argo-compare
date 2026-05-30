@@ -227,18 +227,21 @@ func (a *App) Run(ctx context.Context) error {
 // existing flow, so processing the anchor on top would render the same
 // Application twice. Cross-repo anchors are never deduplicated since their
 // target Application lives outside the local diff.
+//
+// Paths on both sides are normalized via filepath.Clean so that anchor entries
+// spelled "./apps/foo.yaml" still match a changedApps entry of "apps/foo.yaml".
 func dedupAnchorGroups(groups []AnchorGroup, changedApps []string) []AnchorGroup {
 	if len(groups) == 0 || len(changedApps) == 0 {
 		return groups
 	}
 	changed := make(map[string]struct{}, len(changedApps))
 	for _, f := range changedApps {
-		changed[f] = struct{}{}
+		changed[filepath.Clean(f)] = struct{}{}
 	}
 	out := groups[:0]
 	for _, g := range groups {
 		if g.Anchor.Application.Repo == "" {
-			if _, dup := changed[g.Anchor.Application.Path]; dup {
+			if _, dup := changed[filepath.Clean(g.Anchor.Application.Path)]; dup {
 				continue
 			}
 		}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,18 +91,46 @@ func (t *Target) ClassifySources() error {
 // the registry pipeline produces (TmpDir/charts/<TargetType>/<ChartName>). It
 // is only meaningful for source-side rendering (t.Type == TargetTypeSource);
 // the destination side reads from a Git tree via MaterializeChartFromTree.
+//
+// spec.source.path is treated as untrusted (a malicious or misconfigured
+// Application can set it to "../../etc" or an absolute path); resolveRepoPath
+// rejects anything that escapes repoRoot before any I/O happens. The
+// destination leg does not need the same guard because go-git tree walks
+// cannot contain ".." entries.
 func (t *Target) MaterializeChartFromWorkingTree(ctx context.Context, fs afero.Fs, repoRoot string) error {
 	for _, src := range t.pathSources() {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		from := filepath.Join(repoRoot, src.Path)
+		from, err := resolveRepoPath(repoRoot, src.Path)
+		if err != nil {
+			return fmt.Errorf("materialize chart %q from working tree: %w", src.Path, err)
+		}
 		to := filepath.Join(t.TmpDir, "charts", t.Type, effectiveChartName(src))
 		if err := copyDirOnDisk(fs, from, to); err != nil {
 			return fmt.Errorf("materialize chart %q from working tree: %w", src.Path, err)
 		}
 	}
 	return nil
+}
+
+// resolveRepoPath joins rel onto repoRoot and rejects results that escape
+// repoRoot via ".." segments. It is the shared defense against untrusted-path
+// inputs from anchor / Application YAML on the local-filesystem code paths
+// (MaterializeChartFromWorkingTree, RealApplicationFetcher.fetchFromLocal).
+// The matching defense on the Git-tree code paths lives inside
+// MaterializeTreeDir; go-git tree entries cannot themselves contain "..".
+//
+// Note: an absolute rel (e.g. "/etc/passwd") is rebased under repoRoot by
+// filepath.Join and is therefore not an escape vector — it resolves to a
+// nonsense path inside the repo that will fail benignly at later I/O.
+func resolveRepoPath(repoRoot, rel string) (string, error) {
+	rootClean := filepath.Clean(repoRoot)
+	abs := filepath.Clean(filepath.Join(rootClean, rel))
+	if abs != rootClean && !strings.HasPrefix(abs, rootClean+string(filepath.Separator)) {
+		return "", fmt.Errorf("path %q escapes repository root", rel)
+	}
+	return abs, nil
 }
 
 // MaterializeChartFromTree extracts the chart directory referenced by each
@@ -130,23 +159,32 @@ func (t *Target) pathSources() []*models.Source {
 	return []*models.Source{t.App.Spec.Source}
 }
 
-// copyDirOnDisk recursively copies the contents of src into dst using fs.
-// It is intentionally minimal: no symlink handling, no permissions beyond what
-// os.Stat reports, no atomicity. The caller owns the destination directory.
-func copyDirOnDisk(fs afero.Fs, src, dst string) error {
-	info, err := os.Stat(src)
+// copyDirOnDisk recursively copies the contents of src into dst using dstFs.
+// Only regular files and directories are accepted; symlinks, FIFOs, sockets,
+// and devices are rejected. Symlinks would let an attacker-controlled chart
+// leak files outside the chart dir into rendered manifests (and the Git-tree
+// dst-leg counterpart cannot mirror them faithfully — it records the link
+// target, not the resolved content, producing misleading diffs). FIFOs and
+// sockets would hang copyFile's os.Open indefinitely on CI runners. Charts
+// wanting shared content can commit the file directly. The caller owns the
+// destination directory.
+func copyDirOnDisk(dstFs afero.Fs, src, dst string) error {
+	info, err := os.Lstat(src)
 	if err != nil {
 		return err
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("source %q is not a directory", src)
+		return fmt.Errorf("source %q is not a regular directory (mode %s); only regular files and directories are supported in path-based chart sources", src, info.Mode())
 	}
-	if err := fs.MkdirAll(dst, 0o755); err != nil {
+	if err := dstFs.MkdirAll(dst, 0o755); err != nil {
 		return err
 	}
 	return filepath.WalkDir(src, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		if !d.IsDir() && d.Type()&fs.ModeType != 0 {
+			return fmt.Errorf("source %q contains %q with unsupported mode %s; only regular files and directories are supported in path-based chart sources", src, path, d.Type())
 		}
 		rel, err := filepath.Rel(src, path)
 		if err != nil {
@@ -154,23 +192,23 @@ func copyDirOnDisk(fs afero.Fs, src, dst string) error {
 		}
 		target := filepath.Join(dst, rel)
 		if d.IsDir() {
-			return fs.MkdirAll(target, 0o755)
+			return dstFs.MkdirAll(target, 0o755)
 		}
-		return copyFile(fs, path, target)
+		return copyFile(dstFs, path, target)
 	})
 }
 
-func copyFile(fs afero.Fs, src, dst string) error {
-	in, err := os.Open(src) // #nosec G304 -- src is derived from a path inside the local repo
+func copyFile(dstFs afero.Fs, src, dst string) error {
+	in, err := os.Open(src) // #nosec G304 -- src is constrained to the local repo by resolveRepoPath; symlinks are rejected in copyDirOnDisk
 	if err != nil {
 		return err
 	}
 	defer func() { _ = in.Close() }()
 
-	if err := fs.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := dstFs.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	out, err := fs.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	out, err := dstFs.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}

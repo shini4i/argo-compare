@@ -4,10 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"path/filepath"
-	"strings"
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
+	"github.com/shini4i/argo-compare/internal/anchor"
 	"github.com/shini4i/argo-compare/internal/helpers"
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
@@ -35,7 +34,7 @@ type RealApplicationFetcher struct {
 }
 
 // Fetch resolves ref to a parsed Application.
-func (f *RealApplicationFetcher) Fetch(ctx context.Context, ref ports.ApplicationRef, localRepoRoot string) (models.Application, error) {
+func (f *RealApplicationFetcher) Fetch(ctx context.Context, ref anchor.ApplicationRef, localRepoRoot string) (models.Application, error) {
 	if ref.Repo == "" {
 		return f.fetchFromLocal(ref.Path, localRepoRoot)
 	}
@@ -47,12 +46,12 @@ func (f *RealApplicationFetcher) Fetch(ctx context.Context, ref ports.Applicatio
 // within localRepoRoot — a same-repo anchor pointing at `../../etc/passwd`
 // would otherwise resolve to a file outside the project. The threat is low
 // (the attacker already needs commit access to plant the anchor), but the
-// guard matches the symmetric defense in MaterializeTreeDir.
+// guard matches the symmetric defense in MaterializeTreeDir, and is shared
+// with MaterializeChartFromWorkingTree via resolveRepoPath.
 func (f *RealApplicationFetcher) fetchFromLocal(path, localRepoRoot string) (models.Application, error) {
-	rootClean := filepath.Clean(localRepoRoot)
-	abs := filepath.Clean(filepath.Join(rootClean, path))
-	if abs != rootClean && !strings.HasPrefix(abs, rootClean+string(filepath.Separator)) {
-		return models.Application{}, fmt.Errorf("anchor application.path %q escapes repository root", path)
+	abs, err := resolveRepoPath(localRepoRoot, path)
+	if err != nil {
+		return models.Application{}, fmt.Errorf("anchor application.path %q: %w", path, err)
 	}
 	target := Target{
 		CmdRunner:  f.CmdRunner,
@@ -70,7 +69,7 @@ func (f *RealApplicationFetcher) fetchFromLocal(path, localRepoRoot string) (mod
 // from the resulting tree. The clone happens against memory storage and a
 // memfs worktree so nothing touches the local filesystem until the parsed
 // content is written to a temp file for Target.parse.
-func (f *RealApplicationFetcher) fetchFromRemote(ctx context.Context, ref ports.ApplicationRef) (models.Application, error) {
+func (f *RealApplicationFetcher) fetchFromRemote(ctx context.Context, ref anchor.ApplicationRef) (models.Application, error) {
 	cloneOpts := &git.CloneOptions{
 		URL:          ref.Repo,
 		SingleBranch: true,

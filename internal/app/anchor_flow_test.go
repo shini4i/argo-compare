@@ -22,6 +22,7 @@ func TestNormalizeRepoIdentity(t *testing.T) {
 		{"oci prefix", "oci://host.example.com/group/repo", "host.example.com/group/repo"},
 		{"lowercase host", "HTTPS://Host.Example.Com/group/repo.git", "host.example.com/group/repo"},
 		{"local path", "/tmp/foo.git", "/tmp/foo"},
+		{"file scheme", "file:///tmp/foo.git", "/tmp/foo"},
 		{"empty", "", ""},
 	}
 	for _, c := range cases {
@@ -41,6 +42,7 @@ func TestRepoIdentityMatches(t *testing.T) {
 		{"scp vs https same repo", "git@host.example.com:group/repo.git", "https://host.example.com/group/repo.git", true},
 		{"different repo", "https://host.example.com/group/repo.git", "https://host.example.com/group/other.git", false},
 		{"different host", "https://a.example.com/group/repo.git", "https://b.example.com/group/repo.git", false},
+		{"file vs bare path same repo", "file:///tmp/foo.git", "/tmp/foo.git", true},
 		{"one empty", "", "https://host.example.com/group/repo.git", false},
 	}
 	for _, c := range cases {

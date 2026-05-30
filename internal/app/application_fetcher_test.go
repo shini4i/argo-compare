@@ -8,7 +8,7 @@ import (
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
-	"github.com/shini4i/argo-compare/internal/ports"
+	"github.com/shini4i/argo-compare/internal/anchor"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -53,7 +53,7 @@ func TestFetcher_SameRepo_HappyPath(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "apps", "example.yaml"), []byte(sampleApplicationYAML), 0o644))
 
 	f := newTestFetcher(t)
-	app, err := f.Fetch(context.Background(), ports.ApplicationRef{Path: "apps/example.yaml"}, repoRoot)
+	app, err := f.Fetch(context.Background(), anchor.ApplicationRef{Path: "apps/example.yaml"}, repoRoot)
 	require.NoError(t, err)
 	assert.Equal(t, "Application", app.Kind)
 	assert.Equal(t, "example", app.Metadata.Name)
@@ -64,7 +64,7 @@ func TestFetcher_SameRepo_FileMissing(t *testing.T) {
 	repoRoot := t.TempDir()
 
 	f := newTestFetcher(t)
-	_, err := f.Fetch(context.Background(), ports.ApplicationRef{Path: "apps/missing.yaml"}, repoRoot)
+	_, err := f.Fetch(context.Background(), anchor.ApplicationRef{Path: "apps/missing.yaml"}, repoRoot)
 	require.Error(t, err)
 }
 
@@ -74,8 +74,18 @@ func TestFetcher_SameRepo_NotAnApplication(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "apps", "x.yaml"), []byte("kind: ConfigMap\nmetadata:\n  name: not-an-app\n"), 0o644))
 
 	f := newTestFetcher(t)
-	_, err := f.Fetch(context.Background(), ports.ApplicationRef{Path: "apps/x.yaml"}, repoRoot)
+	_, err := f.Fetch(context.Background(), anchor.ApplicationRef{Path: "apps/x.yaml"}, repoRoot)
 	require.Error(t, err)
+}
+
+func TestFetcher_SameRepo_PathEscape(t *testing.T) {
+	repoRoot := t.TempDir()
+	f := newTestFetcher(t)
+	for _, path := range []string{"../escape.yaml", "charts/../../../escape.yaml"} {
+		_, err := f.Fetch(context.Background(), anchor.ApplicationRef{Path: path}, repoRoot)
+		require.Error(t, err, "path %q must be rejected", path)
+		assert.Contains(t, err.Error(), "escapes repository root")
+	}
 }
 
 func TestFetcher_CrossRepo_HappyPath(t *testing.T) {
@@ -88,7 +98,7 @@ func TestFetcher_CrossRepo_HappyPath(t *testing.T) {
 	require.NoError(t, seedBareRepoWithApplication(t, bareDir, "main", "apps/example.yaml", sampleApplicationYAML))
 
 	f := newTestFetcher(t)
-	app, err := f.Fetch(context.Background(), ports.ApplicationRef{
+	app, err := f.Fetch(context.Background(), anchor.ApplicationRef{
 		Repo:   bareDir,
 		Path:   "apps/example.yaml",
 		Branch: "main",
@@ -108,7 +118,7 @@ func TestFetcher_CrossRepo_FileMissing(t *testing.T) {
 	require.NoError(t, seedBareRepoWithApplication(t, bareDir, "main", "apps/other.yaml", sampleApplicationYAML))
 
 	f := newTestFetcher(t)
-	_, err := f.Fetch(context.Background(), ports.ApplicationRef{
+	_, err := f.Fetch(context.Background(), anchor.ApplicationRef{
 		Repo:   bareDir,
 		Path:   "apps/missing.yaml",
 		Branch: "main",
@@ -122,7 +132,7 @@ func TestFetcher_CrossRepo_BadURL(t *testing.T) {
 	}
 
 	f := newTestFetcher(t)
-	_, err := f.Fetch(context.Background(), ports.ApplicationRef{
+	_, err := f.Fetch(context.Background(), anchor.ApplicationRef{
 		Repo:   "file:///nonexistent/path/that/does/not/exist.git",
 		Path:   "apps/x.yaml",
 		Branch: "main",
@@ -140,7 +150,7 @@ func TestFetcher_CrossRepo_BadBranch(t *testing.T) {
 	require.NoError(t, seedBareRepoWithApplication(t, bareDir, "main", "apps/example.yaml", sampleApplicationYAML))
 
 	f := newTestFetcher(t)
-	_, err := f.Fetch(context.Background(), ports.ApplicationRef{
+	_, err := f.Fetch(context.Background(), anchor.ApplicationRef{
 		Repo:   bareDir,
 		Path:   "apps/example.yaml",
 		Branch: "nonexistent-branch",
@@ -158,7 +168,7 @@ func TestFetcher_CrossRepo_BranchDefaultsToHEAD(t *testing.T) {
 	require.NoError(t, seedBareRepoWithApplication(t, bareDir, "main", "apps/example.yaml", sampleApplicationYAML))
 
 	f := newTestFetcher(t)
-	app, err := f.Fetch(context.Background(), ports.ApplicationRef{
+	app, err := f.Fetch(context.Background(), anchor.ApplicationRef{
 		Repo: bareDir,
 		Path: "apps/example.yaml",
 		// Branch intentionally omitted.

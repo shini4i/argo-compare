@@ -66,12 +66,7 @@ func (a *App) compareAnchorGroups(ctx context.Context, repo *GitRepo, groups []A
 func (a *App) processAnchorGroup(ctx context.Context, repo *GitRepo, group AnchorGroup, fetcher ports.ApplicationFetcher, repoRoot, originURL string) (validationFailed bool, err error) {
 	a.logger.Infof("===> Processing anchored chart in [%s]", ui.Cyan(group.Dir))
 
-	ref := ports.ApplicationRef{
-		Repo:   group.Anchor.Application.Repo,
-		Path:   group.Anchor.Application.Path,
-		Branch: group.Anchor.Application.Branch,
-	}
-	app, err := fetcher.Fetch(ctx, ref, repoRoot)
+	app, err := fetcher.Fetch(ctx, group.Anchor.Application, repoRoot)
 	if err != nil {
 		return false, err
 	}
@@ -230,14 +225,17 @@ func assertSameRepo(single *models.Source, sources []*models.Source, originURL s
 }
 
 // normalizeRepoIdentity collapses common Git URL spellings (https, ssh,
-// scp-style, oci-prefixed) into a host[:port]/path key that is stable across
-// formats. .git suffix and trailing slashes are stripped.
+// scp-style, oci-prefixed, file://) into a host[:port]/path key that is
+// stable across formats. .git suffix and trailing slashes are stripped.
+// file:// is stripped so that a bare local-path origin (e.g. /srv/git/foo.git)
+// matches its file:///srv/git/foo.git equivalent.
 func normalizeRepoIdentity(repoURL string) string {
 	s := strings.TrimSpace(repoURL)
 	if s == "" {
 		return ""
 	}
 	s = strings.TrimPrefix(s, "oci://")
+	s = strings.TrimPrefix(s, "file://")
 
 	// scp-style: user@host:path (no scheme, no slashes before colon)
 	if i := strings.Index(s, "@"); i > 0 && !strings.Contains(s[:i], "://") {

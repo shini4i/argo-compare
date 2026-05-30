@@ -144,6 +144,147 @@ func TestMaterializeChartFromWorkingTree(t *testing.T) {
 	}
 }
 
+func TestResolveRepoPath(t *testing.T) {
+	repoRoot := "/repo/root"
+	cases := []struct {
+		name    string
+		rel     string
+		wantAbs string
+		wantErr bool
+	}{
+		{"plain subdir", "charts/foo", "/repo/root/charts/foo", false},
+		{"current dir", "", "/repo/root", false},
+		{"dot prefix", "./charts/foo", "/repo/root/charts/foo", false},
+		{"parent escape", "../escape", "", true},
+		{"deep parent escape", "charts/../../../etc", "", true},
+		// Absolute paths are rebased under repoRoot by filepath.Join, not an escape.
+		{"absolute rebased", "/etc/passwd", "/repo/root/etc/passwd", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			abs, err := resolveRepoPath(repoRoot, c.rel)
+			if c.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, c.wantAbs, abs)
+		})
+	}
+}
+
+func TestMaterializeChartFromWorkingTree_PathEscape(t *testing.T) {
+	// Threat: a malicious or misconfigured Application sets spec.source.path to
+	// a value that resolves outside the local repo. The guard must reject the
+	// path before any I/O lands content from outside the repo in tmpDir.
+	repoRoot := t.TempDir()
+	tmpDir := t.TempDir()
+
+	cases := []struct {
+		name string
+		path string
+	}{
+		{"parent escape", "../../etc"},
+		{"deep parent escape", "charts/../../etc"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			tgt := Target{
+				TmpDir: tmpDir,
+				Type:   TargetTypeSource,
+				Log:    logger.New("target-path-escape-test"),
+				App: models.Application{Spec: struct {
+					Source      *models.Source      `yaml:"source"`
+					Sources     []*models.Source    `yaml:"sources"`
+					MultiSource bool                `yaml:"-"`
+					Destination *models.Destination `yaml:"destination"`
+				}{Source: &models.Source{Path: c.path}}},
+			}
+
+			err := tgt.MaterializeChartFromWorkingTree(context.Background(), afero.NewOsFs(), repoRoot)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "escapes repository root")
+
+			// Nothing should have been written to tmpDir/charts.
+			_, statErr := os.Stat(filepath.Join(tmpDir, "charts"))
+			assert.True(t, os.IsNotExist(statErr), "no chart dir must be materialized for %q", c.path)
+		})
+	}
+}
+
+func TestMaterializeChartFromWorkingTree_RejectsSymlinks(t *testing.T) {
+	// Threat: an attacker plants a symlink inside the chart directory pointing
+	// at /etc/passwd (or any file outside the chart). os.Open would silently
+	// dereference, copy the target into tmpDir, and helm template would surface
+	// the content in rendered manifests / PR comments. The materializer must
+	// refuse symlinks rather than follow them.
+	repoRoot := t.TempDir()
+	chartDir := filepath.Join(repoRoot, "charts", "demo")
+	require.NoError(t, os.MkdirAll(chartDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("name: demo\n"), 0o644))
+
+	// Plant a file outside the chart that the symlink would expose.
+	outsideTarget := filepath.Join(t.TempDir(), "sensitive.txt")
+	require.NoError(t, os.WriteFile(outsideTarget, []byte("secret\n"), 0o644))
+
+	// values.yaml is a symlink to the outside file.
+	require.NoError(t, os.Symlink(outsideTarget, filepath.Join(chartDir, "values.yaml")))
+
+	tmpDir := t.TempDir()
+	tgt := Target{
+		TmpDir: tmpDir,
+		Type:   TargetTypeSource,
+		Log:    logger.New("target-path-symlink-test"),
+		App: models.Application{Spec: struct {
+			Source      *models.Source      `yaml:"source"`
+			Sources     []*models.Source    `yaml:"sources"`
+			MultiSource bool                `yaml:"-"`
+			Destination *models.Destination `yaml:"destination"`
+		}{Source: &models.Source{Path: "charts/demo"}}},
+	}
+
+	err := tgt.MaterializeChartFromWorkingTree(context.Background(), afero.NewOsFs(), repoRoot)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported mode")
+
+	// Confirm the sensitive file content was NOT copied into tmpDir.
+	leaked, statErr := os.Stat(filepath.Join(tmpDir, "charts", "src", "demo", "values.yaml"))
+	if statErr == nil {
+		t.Fatalf("symlinked file leaked into tmpDir: %v bytes", leaked.Size())
+	}
+}
+
+func TestMaterializeChartFromWorkingTree_RejectsSymlinkedChartDir(t *testing.T) {
+	// Variant of the above where the chart directory itself is a symlink to a
+	// directory outside the repo. Lstat must catch this before any I/O.
+	repoRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "charts"), 0o755))
+
+	outsideDir := filepath.Join(t.TempDir(), "outside-chart")
+	require.NoError(t, os.MkdirAll(outsideDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(outsideDir, "Chart.yaml"), []byte("name: outside\n"), 0o644))
+
+	// charts/demo -> outsideDir
+	require.NoError(t, os.Symlink(outsideDir, filepath.Join(repoRoot, "charts", "demo")))
+
+	tmpDir := t.TempDir()
+	tgt := Target{
+		TmpDir: tmpDir,
+		Type:   TargetTypeSource,
+		Log:    logger.New("target-path-symlink-dir-test"),
+		App: models.Application{Spec: struct {
+			Source      *models.Source      `yaml:"source"`
+			Sources     []*models.Source    `yaml:"sources"`
+			MultiSource bool                `yaml:"-"`
+			Destination *models.Destination `yaml:"destination"`
+		}{Source: &models.Source{Path: "charts/demo"}}},
+	}
+
+	err := tgt.MaterializeChartFromWorkingTree(context.Background(), afero.NewOsFs(), repoRoot)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a regular directory")
+}
+
 func TestMaterializeChartFromTree(t *testing.T) {
 	tree := commitTreeWith(t, map[string]string{
 		"charts/foo/Chart.yaml":          "name: foo\n",
