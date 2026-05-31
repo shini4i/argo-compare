@@ -58,6 +58,30 @@ func TestNewConfigWithOptions(t *testing.T) {
 	assert.Equal(t, "1.2.3", cfg.Version)
 }
 
+func TestWithGitAuth(t *testing.T) {
+	cfg, err := NewConfig("main", WithGitAuth("x-access-token", "ghp_secret"))
+	require.NoError(t, err)
+	assert.Equal(t, "x-access-token", cfg.GitUsername)
+	assert.Equal(t, "ghp_secret", cfg.GitToken)
+}
+
+func TestWithGitAuth_EmptyValuesAreFine(t *testing.T) {
+	// Both unset is the default, no-auth path — must not error.
+	cfg, err := NewConfig("main")
+	require.NoError(t, err)
+	assert.Empty(t, cfg.GitUsername)
+	assert.Empty(t, cfg.GitToken)
+}
+
+func TestWithGitAuth_TokenOnlyDefaultsUsername(t *testing.T) {
+	// Token without username is valid — buildCloneOptions falls back to
+	// "x-access-token", which works for GitHub, GitLab PAT, and Gitea.
+	cfg, err := NewConfig("main", WithGitAuth("", "ghp_secret"))
+	require.NoError(t, err)
+	assert.Empty(t, cfg.GitUsername, "Config stores whatever the caller passed; the default is applied later in buildCloneOptions")
+	assert.Equal(t, "ghp_secret", cfg.GitToken)
+}
+
 func TestNewConfigRequiresTargetBranch(t *testing.T) {
 	_, err := NewConfig("")
 	assert.Error(t, err)

@@ -1,5 +1,9 @@
 # Repository credentials
 
+This page covers credentials for **Helm chart repositories** (and OCI registries hosting Helm charts).
+
+For credentials used to **clone a cross-repo anchored Application** (`.argo-compare.yml` with a `repo:` pointing at a different Git repo), see [`anchored-repositories.md`](anchored-repositories.md#authenticating-cross-repo-clones). The two mechanisms are deliberately separate — they authenticate against different surfaces (a Helm registry vs. a Git host) and typically need different scopes.
+
 Public Helm repositories work with no configuration. For private sources, `argo-compare` reads credentials from environment variables matched against the `repoURL` of each Application.
 
 ## Password-protected Helm repositories

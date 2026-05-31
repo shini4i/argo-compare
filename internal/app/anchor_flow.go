@@ -177,10 +177,12 @@ func (a *App) applicationFetcher() ports.ApplicationFetcher {
 		return a.fetcher
 	}
 	return &RealApplicationFetcher{
-		FS:         a.fs,
-		FileReader: a.fileReader,
-		CmdRunner:  a.cmdRunner,
-		Log:        a.logger,
+		FS:          a.fs,
+		FileReader:  a.fileReader,
+		CmdRunner:   a.cmdRunner,
+		Log:         a.logger,
+		GitUsername: a.cfg.GitUsername,
+		GitToken:    a.cfg.GitToken,
 	}
 }
 

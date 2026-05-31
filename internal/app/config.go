@@ -25,6 +25,8 @@ type Config struct {
 	ValidateSkipKinds       []string
 	ValidateSchemaLocations []string
 	AnchorFileName          string
+	GitUsername             string
+	GitToken                string
 }
 
 // ConfigOption mutates a Config during construction.
@@ -204,6 +206,20 @@ func WithValidateSkipKinds(kinds []string) ConfigOption {
 func WithValidateSchemaLocations(locations []string) ConfigOption {
 	return func(cfg *Config) {
 		cfg.ValidateSchemaLocations = append([]string{}, locations...)
+	}
+}
+
+// WithGitAuth configures HTTP Basic auth for cross-repo anchor clones.
+//
+// Pass the token (typically a PAT) and, optionally, a username. When username
+// is empty and token is non-empty, the clone defaults to "x-access-token" as
+// the username, which works for GitHub, GitLab PATs, and Gitea. Set an explicit
+// username for GitLab CI_JOB_TOKEN (gitlab-ci-token) or Bitbucket app passwords.
+// Empty token disables auth and preserves the local-Git fallback.
+func WithGitAuth(username, token string) ConfigOption {
+	return func(cfg *Config) {
+		cfg.GitUsername = username
+		cfg.GitToken = token
 	}
 }
 

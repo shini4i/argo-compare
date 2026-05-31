@@ -146,6 +146,8 @@ func newBranchCommand(opts Options, dropCache func() bool, debug func() bool) *c
 	cmd.Flags().StringSliceVar(&flags.validateSkipKinds, "skip-validation-kinds", flags.validateSkipKinds, "Resource kinds to skip during validation (comma-separated)")
 	cmd.Flags().StringSliceVar(&flags.validateSchemaLocations, "schema-location", flags.validateSchemaLocations, "Additional kubeconform -schema-location values (can be repeated or comma-separated)")
 	cmd.Flags().StringVar(&flags.anchorFileName, "anchor-file", flags.anchorFileName, "Name of the file that marks an anchor directory (default .argo-compare.yml; empty disables discovery)")
+	cmd.Flags().StringVar(&flags.gitUsername, "git-username", flags.gitUsername, "Username for HTTP Basic auth when cloning cross-repo anchored Applications (defaults to x-access-token; set to gitlab-ci-token for GitLab CI_JOB_TOKEN or your account name for Bitbucket)")
+	cmd.Flags().StringVar(&flags.gitToken, "git-token", flags.gitToken, "Token (typically a PAT) for HTTP Basic auth when cloning cross-repo anchored Applications")
 
 	return cmd
 }
@@ -167,6 +169,8 @@ type branchFlags struct {
 	validateSkipKinds       []string
 	validateSchemaLocations []string
 	anchorFileName          string
+	gitUsername             string
+	gitToken                string
 }
 
 // loadBranchDefaults gathers branch flag defaults from the environment.
@@ -236,6 +240,9 @@ func loadBranchDefaults() branchFlags {
 
 	defaults.anchorFileName = helpers.GetEnv("ARGO_COMPARE_ANCHOR_FILE", app.DefaultAnchorFileName)
 
+	defaults.gitUsername = helpers.GetEnv("ARGO_COMPARE_GIT_USERNAME", "")
+	defaults.gitToken = helpers.GetEnv("ARGO_COMPARE_GIT_TOKEN", "")
+
 	return defaults
 }
 
@@ -265,6 +272,7 @@ func (b branchFlags) configOptions(opts Options, debugEnabled bool) ([]app.Confi
 		app.WithValidateSkipKinds(b.validateSkipKinds),
 		app.WithValidateSchemaLocations(b.validateSchemaLocations),
 		app.WithAnchorFileName(b.anchorFileName),
+		app.WithGitAuth(b.gitUsername, b.gitToken),
 	}
 
 	commentOption, err := b.commentOption()

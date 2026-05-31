@@ -1,5 +1,7 @@
 application:
   # The Application lives in a different repo (an "apps" repo).
-  repo: ssh://git@git.example.com/group/apps.git
+  # Use https:// so the same anchor works both locally and in CI;
+  # CI authenticates via ARGO_COMPARE_GIT_USERNAME + ARGO_COMPARE_GIT_TOKEN.
+  repo: https://git.example.com/group/apps.git
   path: cluster-state/myapp/myapp.yaml
   branch: main
