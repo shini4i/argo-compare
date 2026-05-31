@@ -3,7 +3,8 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*.*.*'        # stable release, e.g. v1.2.3
+      - 'v*.*.*-pre.*'  # pre-release, e.g. v1.2.3-pre.20260601
 
 permissions:
   contents: write # needed to write releases
@@ -14,32 +15,43 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
+        uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4.1.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0 # this is important, otherwise it won't checkout the full tree (i.e. no previous tags)
 
       - name: Login to GHCR
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Nix
-        uses: cachix/install-nix-action@19effe9fe722874e6d46dd7182e4b8b7a43c4a99 # v31.10.0
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
+
+      - name: Resolve previous stable tag
+        id: previous-stable-tag
+        if: ${{ !contains(github.ref, '-pre.') }}
+        run: |
+          # Pick the last stable tag before the current one so the changelog
+          # for a stable release skips any -pre.* tags published in between.
+          previous_stable=$(git tag --list 'v*.*.*' --sort=-v:refname | grep -v -- '-' | sed -n '2p')
+          echo "GORELEASER_PREVIOUS_TAG=$previous_stable" >> "$GITHUB_OUTPUT"
 
       - name: Run GoReleaser
         run: nix develop --command goreleaser release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+          GORELEASER_PREVIOUS_TAG: ${{ steps.previous-stable-tag.outputs.GORELEASER_PREVIOUS_TAG }}
 
       - name: Update nixpkgs
-        if: success()
+        if: ${{ success() && !contains(github.ref, '-pre.') }}
         uses: shini4i/nixpkgs-updater@v1
         with:
           package-name: argo-compare
