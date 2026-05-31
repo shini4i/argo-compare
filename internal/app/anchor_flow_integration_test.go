@@ -10,6 +10,7 @@ import (
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"github.com/shini4i/argo-compare/internal/anchor"
+	"github.com/shini4i/argo-compare/internal/ports/portstest"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -88,7 +89,7 @@ func TestAppRunAnchorFlowSameRepo(t *testing.T) {
 	}
 	appInstance, err := New(cfg, Dependencies{
 		FS:            afero.NewOsFs(),
-		CmdRunner:     &stubCmdRunner{},
+		CmdRunner:     portstest.NoopCmdRunner{},
 		FileReader:    utils.OsFileReader{},
 		HelmProcessor: helmStub,
 		Globber:       utils.CustomGlobber{},
@@ -274,7 +275,7 @@ func TestAppRunPathBasedApplicationFileInDiff(t *testing.T) {
 	}
 	appInstance, err := New(cfg, Dependencies{
 		FS:            afero.NewOsFs(),
-		CmdRunner:     &stubCmdRunner{},
+		CmdRunner:     portstest.NoopCmdRunner{},
 		FileReader:    utils.OsFileReader{},
 		HelmProcessor: helmStub,
 		Globber:       utils.CustomGlobber{},
@@ -369,7 +370,7 @@ func runAnchorFailureScenario(t *testing.T, mutate func(workDir, originURL strin
 	}
 	appInstance, err := New(cfg, Dependencies{
 		FS:            afero.NewOsFs(),
-		CmdRunner:     &stubCmdRunner{},
+		CmdRunner:     portstest.NoopCmdRunner{},
 		FileReader:    utils.OsFileReader{},
 		HelmProcessor: helmStub,
 		Globber:       utils.CustomGlobber{},

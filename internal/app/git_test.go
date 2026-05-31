@@ -402,7 +402,7 @@ func TestGitRepoGetChangedFilesPopulatesAnchorGroups(t *testing.T) {
 	})
 
 	log := logger.New("git-test-anchor")
-	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), portstest.NoopCmdRunner{}, utils.OsFileReader{}, log)
 	require.NoError(t, err)
 
 	result, err := repoInstance.GetChangedFiles("main", nil, ".argo-compare.yml")
@@ -460,7 +460,7 @@ func TestGitRepoGetChangedFilesNoAnchorDiscoveryWhenDisabled(t *testing.T) {
 	})
 
 	log := logger.New("git-test-anchor-disabled")
-	repoInstance, err := NewGitRepo(afero.NewOsFs(), noopCmdRunner{}, utils.OsFileReader{}, log)
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), portstest.NoopCmdRunner{}, utils.OsFileReader{}, log)
 	require.NoError(t, err)
 
 	result, err := repoInstance.GetChangedFiles("main", nil, "")

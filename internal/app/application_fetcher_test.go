@@ -9,6 +9,7 @@ import (
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"github.com/shini4i/argo-compare/internal/anchor"
+	"github.com/shini4i/argo-compare/internal/ports/portstest"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -42,7 +43,7 @@ func newTestFetcher(t *testing.T) *RealApplicationFetcher {
 	return &RealApplicationFetcher{
 		FS:         afero.NewOsFs(),
 		FileReader: utils.OsFileReader{},
-		CmdRunner:  noopCmdRunner{},
+		CmdRunner:  portstest.NoopCmdRunner{},
 		Log:        logger.New("fetcher-test-" + t.Name()),
 	}
 }
