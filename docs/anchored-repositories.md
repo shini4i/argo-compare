@@ -8,7 +8,8 @@ To bridge that gap, drop a `.argo-compare.yml` file into any directory where cha
 # .argo-compare.yml — universal schema
 application:
   # Optional. Omit when the Application lives in this same repo.
-  repo: ssh://git@example.com/group/apps.git
+  # Prefer https:// so the same anchor works in CI (PAT auth — see below).
+  repo: https://example.com/group/apps.git
   # Required. Path to the Application YAML inside that repo.
   path: cluster-state/myapp/myapp.yaml
   # Optional. Defaults to the remote's default branch.
@@ -30,9 +31,38 @@ A worked example lives under [`examples/anchor/`](../examples/anchor).
 - For path-based Applications, `spec.source.repoURL` must identify the local repository — chart sources living in a _third_ repo are out of scope.
 - A multi-source Application must use one kind consistently; mixing `chart` and `path` entries is rejected.
 - The anchored Application is read at the configured branch tip; commit-pinning is not supported.
-- Cross-repo Application reads use your local Git environment (SSH agent, `~/.gitconfig`). The `REPO_CREDS_*` mechanism remains Helm-only.
 - Any failure to fetch, parse, or validate an anchored Application is a hard error — partial output would silently hide a broken configuration.
 
 ## Configuration
 
 - `--anchor-file <name>` (or `ARGO_COMPARE_ANCHOR_FILE`) overrides the anchor file name. Default: `.argo-compare.yml`. Pass an empty string to suppress discovery.
+
+## Authenticating cross-repo clones
+
+Same-repo anchors read from the local working tree — no credentials involved.
+
+Cross-repo anchors clone the target repository over its `repo:` URL. There are two auth paths, picked at runtime:
+
+- **Local development** — if no credentials are configured, `argo-compare` lets go-git fall back to its defaults: SSH agent + default keys for `ssh://` URLs, anonymous for `https://` URLs against public repos. This is the only mode that existed before the `ARGO_COMPARE_GIT_*` env vars were introduced; nothing changes for users who rely on it.
+- **CI / unattended** — set `ARGO_COMPARE_GIT_TOKEN` (or pass `--git-token`). Every cross-repo clone is sent with HTTP Basic auth. If `ARGO_COMPARE_GIT_USERNAME` is not set it defaults to `x-access-token`, which works for GitHub PATs, GitLab PATs, and Gitea. Set `ARGO_COMPARE_GIT_USERNAME` explicitly only when a different username is required (e.g. `gitlab-ci-token` for GitLab `CI_JOB_TOKEN`, or your account username for Bitbucket app passwords). Only `https://` URLs in the anchor file pick up these credentials — `ssh://` URLs continue to use the SSH agent regardless.
+
+The right username depends on the host (this table covers `https://` URLs only — `ssh://` URLs always use the SSH agent regardless of these env vars):
+
+| Host       | `ARGO_COMPARE_GIT_USERNAME`               | `ARGO_COMPARE_GIT_TOKEN`              |
+| ---------- | ----------------------------------------- | ------------------------------------- |
+| GitHub     | omit (defaults to `x-access-token`)       | PAT (or `${{ secrets.GITHUB_TOKEN }}` in Actions) |
+| GitLab     | omit for PAT; `gitlab-ci-token` for CI_JOB_TOKEN | PAT or `$CI_JOB_TOKEN`          |
+| Gitea      | omit (defaults to `x-access-token`)       | PAT                                   |
+| Bitbucket  | your Bitbucket account username           | App password                          |
+
+`ARGO_COMPARE_GIT_*` is intentionally separate from `ARGO_COMPARE_GITLAB_TOKEN` even though both can sometimes hold the same value. The GitLab token authenticates the **REST API** (posting MR comments); the git token authenticates **git clone**. Different scopes, different lifetimes, sometimes different hosts. If you want one source of truth in GitLab CI, set both:
+
+```yaml
+# .gitlab-ci.yml
+variables:
+  ARGO_COMPARE_GITLAB_TOKEN: $CI_JOB_TOKEN     # for posting MR comments
+  ARGO_COMPARE_GIT_USERNAME: gitlab-ci-token   # required when using CI_JOB_TOKEN for git clones
+  ARGO_COMPARE_GIT_TOKEN: $CI_JOB_TOKEN        # for cloning cross-repo anchors
+```
+
+For Helm chart credentials (a separate mechanism), see [`repository-credentials.md`](repository-credentials.md).

@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/spf13/afero"
 )
@@ -24,13 +25,23 @@ import (
 // existing FileReader port (no Git plumbing involved). Cross-repo fetches
 // perform an in-memory clone of Repo at Branch tip (or the remote's default
 // branch when Branch is empty) and read the manifest from the resulting
-// tree. Auth relies on the user's local Git environment (SSH agent,
-// ~/.gitconfig); no credentials are passed in.
+// tree.
+//
+// Auth precedence for cross-repo clones:
+//  1. If GitUsername AND GitToken are both non-empty, an HTTP Basic auth
+//     header is attached to the clone — the canonical PAT path for GitHub,
+//     GitLab, Bitbucket, and Gitea (go-git's TokenAuth is Bearer and is
+//     not what those providers want; see go-git transport/http/common.go).
+//  2. Otherwise no Auth is set and go-git falls back to its defaults — SSH
+//     agent + default keys for ssh:// URLs, unauthenticated for https://.
+//     This preserves the pre-PAT behavior for local development.
 type RealApplicationFetcher struct {
-	FS         afero.Fs
-	FileReader ports.FileReader
-	CmdRunner  ports.CmdRunner
-	Log        *logger.Logger
+	FS          afero.Fs
+	FileReader  ports.FileReader
+	CmdRunner   ports.CmdRunner
+	Log         *logger.Logger
+	GitUsername string
+	GitToken    string
 }
 
 // Fetch resolves ref to a parsed Application.
@@ -70,15 +81,7 @@ func (f *RealApplicationFetcher) fetchFromLocal(path, localRepoRoot string) (mod
 // memfs worktree so nothing touches the local filesystem until the parsed
 // content is written to a temp file for Target.parse.
 func (f *RealApplicationFetcher) fetchFromRemote(ctx context.Context, ref anchor.ApplicationRef) (models.Application, error) {
-	cloneOpts := &git.CloneOptions{
-		URL:          ref.Repo,
-		SingleBranch: true,
-		Depth:        1,
-		Tags:         git.NoTags,
-	}
-	if ref.Branch != "" {
-		cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(ref.Branch)
-	}
+	cloneOpts := f.buildCloneOptions(ref)
 
 	safeRepo := redactRepo(ref.Repo)
 	repo, err := git.CloneContext(ctx, memory.NewStorage(), memfs.New(), cloneOpts)
@@ -133,10 +136,36 @@ func (f *RealApplicationFetcher) fetchFromRemote(ctx context.Context, ref anchor
 	return target.App, nil
 }
 
+// buildCloneOptions assembles the *git.CloneOptions used by fetchFromRemote.
+//
+// Auth is attached when GitToken is non-empty. GitUsername defaults to
+// "x-access-token" when not set — sufficient for GitHub PATs, GitLab PATs,
+// and Gitea. Set GitUsername explicitly for CI_JOB_TOKEN or Bitbucket.
+func (f *RealApplicationFetcher) buildCloneOptions(ref anchor.ApplicationRef) *git.CloneOptions {
+	opts := &git.CloneOptions{
+		URL:          ref.Repo,
+		SingleBranch: true,
+		Depth:        1,
+		Tags:         git.NoTags,
+	}
+	if ref.Branch != "" {
+		opts.ReferenceName = plumbing.NewBranchReferenceName(ref.Branch)
+	}
+	if f.GitToken != "" {
+		username := f.GitUsername
+		if username == "" {
+			username = "x-access-token"
+		}
+		opts.Auth = &githttp.BasicAuth{Username: username, Password: f.GitToken}
+	}
+	return opts
+}
+
 // redactRepo strips userinfo from a Git URL before it lands in an error or log
-// message. Embedding credentials in the URL is unsupported by this fetcher
-// (auth flows via the user's local Git environment), but defending against a
-// foot-gun is cheap.
+// message. Embedding credentials in the URL is unsupported — auth flows either
+// via the local Git environment (SSH agent for ssh:// URLs) or via the
+// ARGO_COMPARE_GIT_* env vars (BasicAuth for https:// URLs). Defending against
+// a URL-embedded credential foot-gun is cheap regardless.
 func redactRepo(repo string) string {
 	u, err := url.Parse(repo)
 	if err != nil || u.User == nil {

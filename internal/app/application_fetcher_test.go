@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -176,6 +177,80 @@ func TestFetcher_CrossRepo_BranchDefaultsToHEAD(t *testing.T) {
 	}, "")
 	require.NoError(t, err)
 	assert.Equal(t, "example", app.Metadata.Name)
+}
+
+func TestFetcher_buildCloneOptions_NoAuthWhenTokenEmpty(t *testing.T) {
+	f := newTestFetcher(t)
+	// GitUsername and GitToken intentionally left zero — emulates a runtime
+	// with no PAT configured (today's only mode).
+	opts := f.buildCloneOptions(anchor.ApplicationRef{
+		Repo:   "https://github.com/example/repo.git",
+		Path:   "apps/example.yaml",
+		Branch: "main",
+	})
+	assert.Nil(t, opts.Auth, "no Auth must be set when GitToken is empty (backwards compat with local-Git auth flows)")
+	assert.Equal(t, "https://github.com/example/repo.git", opts.URL)
+	assert.Equal(t, plumbing.NewBranchReferenceName("main"), opts.ReferenceName)
+	assert.True(t, opts.SingleBranch)
+	assert.Equal(t, 1, opts.Depth)
+	assert.Equal(t, git.NoTags, opts.Tags)
+}
+
+func TestFetcher_buildCloneOptions_NoAuthWhenOnlyUsername(t *testing.T) {
+	f := newTestFetcher(t)
+	f.GitUsername = "x-access-token"
+	// Token missing — must NOT set auth (username alone is meaningless and
+	// silently sending a blank password would be confusing).
+	opts := f.buildCloneOptions(anchor.ApplicationRef{
+		Repo: "https://github.com/example/repo.git",
+		Path: "apps/example.yaml",
+	})
+	assert.Nil(t, opts.Auth)
+}
+
+func TestFetcher_buildCloneOptions_BasicAuthWhenBothSet(t *testing.T) {
+	f := newTestFetcher(t)
+	f.GitUsername = "x-access-token"
+	f.GitToken = "ghp_secret"
+
+	opts := f.buildCloneOptions(anchor.ApplicationRef{
+		Repo: "https://github.com/example/repo.git",
+		Path: "apps/example.yaml",
+	})
+
+	require.NotNil(t, opts.Auth)
+	basic, ok := opts.Auth.(*githttp.BasicAuth)
+	require.True(t, ok, "Auth must be *githttp.BasicAuth (GitHub/GitLab/Gitea/Bitbucket all expect basic, not bearer — see go-git transport/http/common.go:530)")
+	assert.Equal(t, "x-access-token", basic.Username)
+	assert.Equal(t, "ghp_secret", basic.Password)
+}
+
+func TestFetcher_buildCloneOptions_DefaultsUsernameWhenTokenOnly(t *testing.T) {
+	f := newTestFetcher(t)
+	// Typical CI setup: only token provided. Username defaults to "x-access-token",
+	// which works for GitHub PATs, GitLab PATs, and Gitea — the common-case providers.
+	f.GitToken = "ghp_secret"
+
+	opts := f.buildCloneOptions(anchor.ApplicationRef{
+		Repo: "https://github.com/example/repo.git",
+		Path: "apps/example.yaml",
+	})
+
+	require.NotNil(t, opts.Auth)
+	basic, ok := opts.Auth.(*githttp.BasicAuth)
+	require.True(t, ok)
+	assert.Equal(t, "x-access-token", basic.Username)
+	assert.Equal(t, "ghp_secret", basic.Password)
+}
+
+func TestFetcher_buildCloneOptions_OmitsBranchWhenEmpty(t *testing.T) {
+	f := newTestFetcher(t)
+	opts := f.buildCloneOptions(anchor.ApplicationRef{
+		Repo: "https://github.com/example/repo.git",
+		Path: "apps/example.yaml",
+		// Branch intentionally omitted — go-git uses the remote's default.
+	})
+	assert.Empty(t, string(opts.ReferenceName))
 }
 
 func TestRedactRepo(t *testing.T) {
