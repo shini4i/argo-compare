@@ -72,10 +72,13 @@ func (t *Target) parse() error {
 }
 
 // generateValuesFiles materializes Helm values files so templates can be rendered.
+// The chart name used for the values file derives from effectiveChartName so
+// registry-based (chart) and Git-path-based (path) sources both produce
+// stably-named values files for the downstream render step to find.
 func (t *Target) generateValuesFiles() error {
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
-			if err := t.HelmProcessor.GenerateValuesFile(source.Chart, t.TmpDir, t.Type, source.Helm.Values, source.Helm.ValuesObject); err != nil {
+			if err := t.HelmProcessor.GenerateValuesFile(effectiveChartName(source), t.TmpDir, t.Type, source.Helm.Values, source.Helm.ValuesObject); err != nil {
 				return err
 			}
 		}
@@ -83,7 +86,7 @@ func (t *Target) generateValuesFiles() error {
 	}
 
 	return t.HelmProcessor.GenerateValuesFile(
-		t.App.Spec.Source.Chart,
+		effectiveChartName(t.App.Spec.Source),
 		t.TmpDir,
 		t.Type,
 		t.App.Spec.Source.Helm.Values,
@@ -168,7 +171,7 @@ func (t *Target) renderAppSources(ctx context.Context) error {
 			}
 			req := ports.ChartRenderRequest{
 				ReleaseName:  releaseName,
-				ChartName:    source.Chart,
+				ChartName:    effectiveChartName(source),
 				ChartVersion: source.TargetRevision,
 				TmpDir:       t.TmpDir,
 				TargetType:   t.Type,
@@ -187,7 +190,7 @@ func (t *Target) renderAppSources(ctx context.Context) error {
 	}
 	req := ports.ChartRenderRequest{
 		ReleaseName:  releaseName,
-		ChartName:    t.App.Spec.Source.Chart,
+		ChartName:    effectiveChartName(t.App.Spec.Source),
 		ChartVersion: t.App.Spec.Source.TargetRevision,
 		TmpDir:       t.TmpDir,
 		TargetType:   t.Type,

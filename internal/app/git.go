@@ -27,11 +27,27 @@ type GitRepo struct {
 	log        *logger.Logger
 }
 
-// ChangedFilesResult encapsulates the changed application files and any invalid manifests.
+// ChangedFilesResult encapsulates the changed application files, any invalid
+// manifests, and anchor groups discovered from changed files that fall under
+// a directory containing an anchor file (default `.argo-compare.yml`).
+//
+// Applications and Invalid are unchanged from the original contract: every
+// changed *.yaml that parses as a valid ArgoCD Application (kind: Application)
+// appears in Applications; manifests that fail to parse appear in Invalid.
+//
+// AnchorGroups is populated in addition to Applications, not instead of it.
+// A single PR can touch both an Application file and a chart directory that
+// sits under an anchor — the caller is responsible for deduplicating before
+// rendering, since the anchor flow ultimately points back at an Application.
 type ChangedFilesResult struct {
 	Applications []string
 	Invalid      []string
+	AnchorGroups []AnchorGroup
 }
+
+// DefaultAnchorFileName is the conventional file name for an anchor config.
+// Callers may override via the anchorFileName parameter of GetChangedFiles.
+const DefaultAnchorFileName = ".argo-compare.yml"
 
 var (
 	errGitFileDoesNotExist = errors.New("file does not exist in target branch")
@@ -72,20 +88,20 @@ func NewGitRepo(fs afero.Fs, cmdRunner ports.CmdRunner, fileReader ports.FileRea
 // has modified since it diverged from targetBranch. Files modified only on
 // targetBranch after the divergence point are intentionally excluded — those
 // are not changes the source branch is proposing.
-func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string) (ChangedFilesResult, error) {
-	targetRef, err := g.repo.Reference(plumbing.ReferenceName(fmt.Sprintf("refs/remotes/origin/%s", targetBranch)), true)
+//
+// anchorFileName names the file that marks an "anchor" directory (e.g.
+// `.argo-compare.yml`). Changed files that fall under such a directory are
+// additionally returned in the result's AnchorGroups field. Passing an empty
+// string disables anchor discovery — useful for callers that opt out.
+func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string, anchorFileName string) (ChangedFilesResult, error) {
+	targetCommit, err := g.commitForBranch(targetBranch)
 	if err != nil {
-		return ChangedFilesResult{}, fmt.Errorf("failed to resolve target branch %s: %w", targetBranch, err)
+		return ChangedFilesResult{}, err
 	}
 
 	headRef, err := g.repo.Head()
 	if err != nil {
 		return ChangedFilesResult{}, fmt.Errorf("failed to get HEAD: %w", err)
-	}
-
-	targetCommit, err := g.repo.CommitObject(targetRef.Hash())
-	if err != nil {
-		return ChangedFilesResult{}, fmt.Errorf("failed to get commit object for target branch %s: %w", targetBranch, err)
 	}
 
 	headCommit, err := g.repo.CommitObject(headRef.Hash())
@@ -123,7 +139,74 @@ func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string) (
 	applications, invalid := g.sortChangedFiles(foundFiles)
 	filtered := filterIgnored(applications, filesToIgnore)
 
-	return ChangedFilesResult{Applications: filtered, Invalid: invalid}, nil
+	var anchorGroups []AnchorGroup
+	if anchorFileName != "" {
+		repoRoot, rootErr := GetGitRepoRoot()
+		if rootErr != nil {
+			return ChangedFilesResult{}, fmt.Errorf("resolve repo root for anchor discovery: %w", rootErr)
+		}
+		anchorChanged := filterIgnored(foundFiles, filesToIgnore)
+		anchorGroups, err = DiscoverAnchors(repoRoot, anchorChanged, g.fs, anchorFileName)
+		if err != nil {
+			return ChangedFilesResult{}, err
+		}
+	}
+
+	return ChangedFilesResult{Applications: filtered, Invalid: invalid, AnchorGroups: anchorGroups}, nil
+}
+
+// MergeBaseTreeFor returns the tree of the merge-base commit between HEAD and
+// origin/targetBranch. Path-based rendering uses this tree to materialize the
+// "before the PR" snapshot of a chart directory while the working tree holds
+// the "after the PR" snapshot.
+func (g *GitRepo) MergeBaseTreeFor(targetBranch string) (*object.Tree, error) {
+	targetCommit, err := g.commitForBranch(targetBranch)
+	if err != nil {
+		return nil, err
+	}
+	headRef, err := g.repo.Head()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get HEAD: %w", err)
+	}
+	headCommit, err := g.repo.CommitObject(headRef.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get commit object for current branch: %w", err)
+	}
+	return g.mergeBaseTree(headCommit, targetCommit)
+}
+
+// commitForBranch resolves the commit at the tip of origin/<branch>. It centralizes
+// the ref + commit-object lookup so the surrounding error strings are not duplicated
+// across each caller (SonarCloud go:S1192).
+func (g *GitRepo) commitForBranch(branch string) (*object.Commit, error) {
+	ref, err := g.repo.Reference(plumbing.ReferenceName("refs/remotes/origin/"+branch), true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve target branch %s: %w", branch, err)
+	}
+	commit, err := g.repo.CommitObject(ref.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get commit object for target branch %s: %w", branch, err)
+	}
+	return commit, nil
+}
+
+// OriginURL returns the URL configured for the `origin` remote, or an empty
+// string with a nil error when the local repo has no `origin` remote. Callers
+// use this to verify that an Application's spec.source.repoURL points back at
+// the local repo (path-based v1 requires this).
+func (g *GitRepo) OriginURL() (string, error) {
+	remote, err := g.repo.Remote("origin")
+	if err != nil {
+		if errors.Is(err, git.ErrRemoteNotFound) {
+			return "", nil
+		}
+		return "", fmt.Errorf("read origin remote: %w", err)
+	}
+	urls := remote.Config().URLs
+	if len(urls) == 0 {
+		return "", nil
+	}
+	return urls[0], nil
 }
 
 // mergeBaseTree returns the tree of the merge-base commit between headCommit
@@ -175,14 +258,9 @@ func (g *GitRepo) GetChangedFileContent(targetBranch, targetFile string, printAd
 
 // treeForBranch resolves the Git tree for the provided remote branch reference.
 func (g *GitRepo) treeForBranch(targetBranch string) (*object.Tree, error) {
-	targetRef, err := g.repo.Reference(plumbing.ReferenceName("refs/remotes/origin/"+targetBranch), true)
+	targetCommit, err := g.commitForBranch(targetBranch)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve target branch %s: %w", targetBranch, err)
-	}
-
-	targetCommit, err := g.repo.CommitObject(targetRef.Hash())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get commit object for target branch %s: %w", targetBranch, err)
+		return nil, err
 	}
 
 	targetTree, err := targetCommit.Tree()

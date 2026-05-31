@@ -1,0 +1,7 @@
+myapp:
+  image:
+    repository: registry.example.com/myapp/myapp
+    tag: "1.2.3"
+  service:
+    port: 80
+    targetPort: 8080

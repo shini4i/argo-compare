@@ -5,6 +5,9 @@ package ports
 import (
 	"context"
 	"os"
+
+	"github.com/shini4i/argo-compare/internal/anchor"
+	"github.com/shini4i/argo-compare/internal/models"
 )
 
 // CmdRunner executes shell commands and returns captured output.
@@ -144,4 +147,17 @@ type ManifestValidator interface {
 	// A non-nil error indicates the validator itself failed to run; schema
 	// errors in the manifests are returned via ValidationResult.
 	Validate(ctx context.Context, target, manifestDir string) (ValidationResult, error)
+}
+
+// ApplicationFetcher resolves an anchor.ApplicationRef to a parsed
+// Application model.
+//
+// For same-repo refs (Repo == ""), implementations read from the working tree
+// at localRepoRoot. For cross-repo refs, implementations fetch the file from
+// the named remote at Branch tip without affecting the local working tree.
+//
+// Any failure (network, missing file, parse error) is returned as a hard
+// error so the caller can fail loudly; partial results are not supported.
+type ApplicationFetcher interface {
+	Fetch(ctx context.Context, ref anchor.ApplicationRef, localRepoRoot string) (models.Application, error)
 }

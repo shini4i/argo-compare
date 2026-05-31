@@ -1,0 +1,20 @@
+# Argo Compare
+
+> A CLI that shows what would change in helm-rendered ArgoCD Application manifests once a pull request is merged into the target branch.
+
+Argo Compare renders both the source and target branches with `helm template`, strips Helm-injected noise, and prints the diff. Optional features layer on top of the core flow: manifest schema validation via kubeconform, posting the diff as a GitLab Merge Request comment, anchored discovery for repos where the PR touches chart content instead of the Application YAML, and credential handling for private chart sources (password-protected Helm repos, OCI registries, AWS ECR).
+
+## Docs
+
+- [Installation](https://raw.githubusercontent.com/shini4i/argo-compare/main/docs/installation.md): Binary downloads and Docker image setup.
+- [Usage](https://raw.githubusercontent.com/shini4i/argo-compare/main/docs/usage.md): CLI flags, output modes, external diff tools, Helm label stripping, and secret masking.
+- [How it works](https://raw.githubusercontent.com/shini4i/argo-compare/main/docs/how-it-works.md): The end-to-end comparison pipeline.
+- [Anchored repositories](https://raw.githubusercontent.com/shini4i/argo-compare/main/docs/anchored-repositories.md): Path-based sources and the `.argo-compare.yml` anchor flow for chart-only repos.
+- [Manifest validation](https://raw.githubusercontent.com/shini4i/argo-compare/main/docs/manifest-validation.md): Schema validation with `kubeconform`, including flags and environment variables.
+- [Repository credentials](https://raw.githubusercontent.com/shini4i/argo-compare/main/docs/repository-credentials.md): Private Helm repos via `REPO_CREDS_*`, OCI registries, and automatic AWS ECR authentication.
+- [GitLab integration](https://raw.githubusercontent.com/shini4i/argo-compare/main/docs/gitlab-integration.md): Posting the diff as a Merge Request comment, with GitLab CI auto-detection.
+
+## Optional
+
+- [Project README](https://raw.githubusercontent.com/shini4i/argo-compare/main/README.md): Top-level overview, badges, quick start, and roadmap.
+- [Anchor examples](https://raw.githubusercontent.com/shini4i/argo-compare/main/examples/anchor/README.md): Structural reference fixtures for the same-repo and cross-repo anchor layouts.

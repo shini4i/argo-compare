@@ -42,6 +42,7 @@ type Dependencies struct {
 	SensitiveDataMasker  ports.SensitiveDataMasker  // Responsible for redacting sensitive manifest fields.
 	CredentialProviders  []ports.CredentialProvider // Dynamic credential providers (e.g. ECR). Optional; defaults include ECR.
 	ManifestValidator    ports.ManifestValidator    // Validator for rendered manifests. Optional; defaults to KubeconformValidator if validation is enabled.
+	ApplicationFetcher   ports.ApplicationFetcher   // Resolves anchored Applications. Optional; defaults to RealApplicationFetcher.
 }
 
 // App orchestrates the end-to-end comparison workflow.
@@ -59,6 +60,7 @@ type App struct {
 	commentFactory      CommentPosterFactory
 	sensitiveDataMasker ports.SensitiveDataMasker // Applied to manifest content prior to diff generation.
 	validator           ports.ManifestValidator   // Optional validator for rendered manifests.
+	fetcher             ports.ApplicationFetcher  // Resolves anchored Applications. Optional; defaults to a real impl.
 }
 
 // CommentPosterFactory builds a comment poster based on the active configuration.
@@ -75,6 +77,11 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 	if cfg.CacheDir == "" {
 		return nil, errors.New("cache directory must be provided")
 	}
+
+	// NewConfig defaults AnchorFileName to DefaultAnchorFileName for the
+	// public-API path. Struct-literal Config users get whatever they set,
+	// including the empty-string opt-out documented on WithAnchorFileName
+	// and surfaced via --anchor-file / ARGO_COMPARE_ANCHOR_FILE.
 
 	if deps.FS == nil {
 		deps.FS = afero.NewOsFs()
@@ -134,6 +141,7 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 		commentFactory:      deps.CommentPosterFactory,
 		sensitiveDataMasker: deps.SensitiveDataMasker,
 		validator:           validator,
+		fetcher:             deps.ApplicationFetcher,
 	}, nil
 }
 
@@ -158,38 +166,25 @@ func (a *App) Run(ctx context.Context) error {
 
 	a.logger.Infof("===> Running Argo Compare version [%s]", ui.Cyan(a.cfg.Version))
 
-	var (
-		changedFiles []string
-		invalidFiles []string
-	)
-
-	if a.cfg.FileToCompare != "" {
-		changedFiles = filterIgnored([]string{a.cfg.FileToCompare}, a.cfg.FilesToIgnore)
-		if len(changedFiles) == 0 {
-			a.logger.Infof("Specified file [%s] ignored by filters. Exiting...", a.cfg.FileToCompare)
-			return nil
-		}
-	} else {
-		var result ChangedFilesResult
-		result, err = repo.GetChangedFiles(a.cfg.TargetBranch, a.cfg.FilesToIgnore)
-		if err != nil {
-			return err
-		}
-		changedFiles = result.Applications
-		invalidFiles = result.Invalid
+	inputs, err := a.collectComparisonInputs(repo)
+	if err != nil {
+		return err
+	}
+	if inputs.exitEarly {
+		return nil
 	}
 
-	if len(changedFiles) == 0 {
+	if len(inputs.changed) == 0 && len(inputs.groups) == 0 {
 		a.logger.Info("No changed Application files found. Exiting...")
 		return nil
 	}
 
-	validationFailed, err := a.compareFiles(ctx, repo, changedFiles)
+	validationFailed, err := a.runComparisons(ctx, repo, inputs.changed, inputs.groups)
 	if err != nil {
 		return err
 	}
 
-	if err := a.reportInvalidFiles(invalidFiles); err != nil {
+	if err := a.reportInvalidFiles(inputs.invalid); err != nil {
 		return err
 	}
 
@@ -198,6 +193,95 @@ func (a *App) Run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// comparisonInputs bundles the inputs needed by the comparison loop. exitEarly
+// is set when the only configured target was filtered out, allowing the caller
+// to short-circuit without surfacing an error.
+type comparisonInputs struct {
+	changed   []string
+	invalid   []string
+	groups    []AnchorGroup
+	exitEarly bool
+}
+
+// collectComparisonInputs resolves the changed Application files, invalid
+// manifests, and anchor groups that should be processed in this run. The
+// explicit FileToCompare path and the diff-based path are handled here so Run
+// stays a flat orchestration step.
+func (a *App) collectComparisonInputs(repo *GitRepo) (comparisonInputs, error) {
+	if a.cfg.FileToCompare != "" {
+		changed := filterIgnored([]string{a.cfg.FileToCompare}, a.cfg.FilesToIgnore)
+		if len(changed) == 0 {
+			a.logger.Infof("Specified file [%s] ignored by filters. Exiting...", a.cfg.FileToCompare)
+			return comparisonInputs{exitEarly: true}, nil
+		}
+		return comparisonInputs{changed: changed}, nil
+	}
+
+	result, err := repo.GetChangedFiles(a.cfg.TargetBranch, a.cfg.FilesToIgnore, a.cfg.AnchorFileName)
+	if err != nil {
+		return comparisonInputs{}, err
+	}
+	return comparisonInputs{
+		changed: result.Applications,
+		invalid: result.Invalid,
+		groups:  dedupAnchorGroups(result.AnchorGroups, result.Applications),
+	}, nil
+}
+
+// runComparisons fans out the comparison work across changed Application files
+// and anchor groups, returning whether any validation step produced a non-Valid
+// result. Errors short-circuit; the validation flag is accumulated across both
+// branches so a single failure surfaces ErrManifestValidationFailed.
+func (a *App) runComparisons(ctx context.Context, repo *GitRepo, changedFiles []string, anchorGroups []AnchorGroup) (bool, error) {
+	validationFailed := false
+
+	if len(changedFiles) > 0 {
+		failed, err := a.compareFiles(ctx, repo, changedFiles)
+		if err != nil {
+			return false, err
+		}
+		validationFailed = validationFailed || failed
+	}
+
+	if len(anchorGroups) > 0 {
+		failed, err := a.compareAnchorGroups(ctx, repo, anchorGroups)
+		if err != nil {
+			return false, err
+		}
+		validationFailed = validationFailed || failed
+	}
+
+	return validationFailed, nil
+}
+
+// dedupAnchorGroups drops anchor groups whose target Application file already
+// appears among the changed Application files — that path is handled by the
+// existing flow, so processing the anchor on top would render the same
+// Application twice. Cross-repo anchors are never deduplicated since their
+// target Application lives outside the local diff.
+//
+// Paths on both sides are normalized via filepath.Clean so that anchor entries
+// spelled "./apps/foo.yaml" still match a changedApps entry of "apps/foo.yaml".
+func dedupAnchorGroups(groups []AnchorGroup, changedApps []string) []AnchorGroup {
+	if len(groups) == 0 || len(changedApps) == 0 {
+		return groups
+	}
+	changed := make(map[string]struct{}, len(changedApps))
+	for _, f := range changedApps {
+		changed[filepath.Clean(f)] = struct{}{}
+	}
+	out := groups[:0]
+	for _, g := range groups {
+		if g.Anchor.Application.Repo == "" {
+			if _, dup := changed[filepath.Clean(g.Anchor.Application.Path)]; dup {
+				continue
+			}
+		}
+		out = append(out, g)
+	}
+	return out
 }
 
 // compareFiles renders and evaluates each changed Application manifest against the target branch.
@@ -245,7 +329,7 @@ func (a *App) processChangedFile(ctx context.Context, repo *GitRepo, file string
 	// Scoped per-comparison: keeps state local and avoids cross-app leakage.
 	validationResults := make(map[string]ports.ValidationResult)
 
-	if err = a.processFile(ctx, file, TargetTypeSource, models.Application{}, tmpDir, validationResults); err != nil {
+	if err = a.processFile(ctx, repo, file, TargetTypeSource, models.Application{}, tmpDir, validationResults); err != nil {
 		return false, err
 	}
 
@@ -259,7 +343,7 @@ func (a *App) processChangedFile(ctx context.Context, repo *GitRepo, file string
 	}
 
 	if action == destinationProcess {
-		if destErr := a.processFile(ctx, file, TargetTypeDestination, targetApp, tmpDir, validationResults); destErr != nil && !a.cfg.PrintAddedManifests {
+		if destErr := a.processFile(ctx, repo, file, TargetTypeDestination, targetApp, tmpDir, validationResults); destErr != nil && !a.cfg.PrintAddedManifests {
 			return false, destErr
 		}
 	}
@@ -294,6 +378,29 @@ func (a *App) resolveTargetApplication(repo *GitRepo, file string) (models.Appli
 	return models.Application{}, action, nil
 }
 
+// prepareChartFromPath materializes a path-based source's chart directory into
+// the layout the renderer expects. The source leg copies from the local
+// working tree; the destination leg extracts from the merge-base tree of the
+// configured target branch.
+func (a *App) prepareChartFromPath(ctx context.Context, repo *GitRepo, target *Target, fileType string) error {
+	switch fileType {
+	case TargetTypeSource:
+		repoRoot, err := GetGitRepoRoot()
+		if err != nil {
+			return fmt.Errorf("resolve repo root for path-based source: %w", err)
+		}
+		return target.MaterializeChartFromWorkingTree(ctx, a.fs, repoRoot)
+	case TargetTypeDestination:
+		tree, err := repo.MergeBaseTreeFor(a.cfg.TargetBranch)
+		if err != nil {
+			return err
+		}
+		return target.MaterializeChartFromTree(ctx, a.fs, tree)
+	default:
+		return fmt.Errorf("unknown render leg %q", fileType)
+	}
+}
+
 // decideDestinationAction maps the outcome of GetChangedFileContent to a destinationAction.
 // Errors other than the two named sentinels are returned to the caller; previously they
 // were logged and silently downgraded to destinationProcess, which produced confusing
@@ -313,7 +420,13 @@ func decideDestinationAction(err error, printAdded bool) (destinationAction, err
 
 // processFile prepares Helm inputs for a single manifest and renders its templates.
 // validationResults is populated when a validator is configured; entries are keyed by fileType.
-func (a *App) processFile(ctx context.Context, fileName, fileType string, application models.Application, tmpDir string, validationResults map[string]ports.ValidationResult) error {
+//
+// For registry-based sources (spec.source.chart set) the chart is fetched via
+// the existing helm pull + extract pipeline. For path-based sources
+// (spec.source.path set) the chart directory is materialized into the same
+// on-disk layout from the local working tree (src leg) or the merge-base tree
+// (dst leg), and the registry plumbing is skipped.
+func (a *App) processFile(ctx context.Context, repo *GitRepo, fileName, fileType string, application models.Application, tmpDir string, validationResults map[string]ports.ValidationResult) error {
 	target := Target{
 		CmdRunner:           a.cmdRunner,
 		FileReader:          a.fileReader,
@@ -334,15 +447,15 @@ func (a *App) processFile(ctx context.Context, fileName, fileType string, applic
 		}
 	}
 
+	if err := target.ClassifySources(); err != nil {
+		return err
+	}
+
 	if err := target.generateValuesFiles(); err != nil {
 		return err
 	}
 
-	if err := target.ensureHelmCharts(ctx); err != nil {
-		return err
-	}
-
-	if err := target.extractCharts(ctx); err != nil {
+	if err := a.prepareChart(ctx, repo, &target, fileType); err != nil {
 		return err
 	}
 
@@ -350,29 +463,49 @@ func (a *App) processFile(ctx context.Context, fileName, fileType string, applic
 		return err
 	}
 
-	// Only validate source manifests: src represents the post-merge state (what will land
-	// on the target branch). Validating dst (current target branch state) would surface
-	// pre-existing breakage unrelated to the PR, which is noise for a merge gate.
-	if a.validator != nil && fileType == TargetTypeSource {
-		// Rendered manifests land at <tmpDir>/templates/<src|dst> (set by RenderAppSource).
-		manifests := filepath.Join(tmpDir, "templates", fileType)
-		result, err := a.validator.Validate(ctx, fileType, manifests)
-		if err != nil {
-			a.logger.Warningf("Manifest validation failed: %v", err)
-			// Record a synthetic result so the failure surfaces in presenters.
-			validationResults[fileType] = ports.ValidationResult{
-				Target:          fileType,
-				InvocationError: err.Error(),
-			}
-		} else {
-			validationResults[fileType] = result
-			if !result.Valid {
-				a.logger.Warningf("Validation errors found: %d issues", result.ErrorCount)
-			}
-		}
-	}
-
+	a.runManifestValidation(ctx, fileType, tmpDir, validationResults)
 	return nil
+}
+
+// prepareChart materializes the chart inputs for a target. Path-based sources
+// are copied from the working tree (src) or extracted from the merge-base tree
+// (dst); registry-based sources go through the existing helm pull + extract
+// pipeline.
+func (a *App) prepareChart(ctx context.Context, repo *GitRepo, target *Target, fileType string) error {
+	if target.PathBased() {
+		return a.prepareChartFromPath(ctx, repo, target, fileType)
+	}
+	if err := target.ensureHelmCharts(ctx); err != nil {
+		return err
+	}
+	return target.extractCharts(ctx)
+}
+
+// runManifestValidation invokes the configured validator on rendered source
+// manifests and records the outcome. Destination manifests are intentionally
+// skipped: src reflects the post-merge state, while dst reflects the current
+// target branch — validating dst would surface pre-existing breakage unrelated
+// to the PR, which is noise for a merge gate.
+func (a *App) runManifestValidation(ctx context.Context, fileType, tmpDir string, validationResults map[string]ports.ValidationResult) {
+	if a.validator == nil || fileType != TargetTypeSource {
+		return
+	}
+	// Rendered manifests land at <tmpDir>/templates/<src|dst> (set by RenderAppSource).
+	manifests := filepath.Join(tmpDir, "templates", fileType)
+	result, err := a.validator.Validate(ctx, fileType, manifests)
+	if err != nil {
+		a.logger.Warningf("Manifest validation failed: %v", err)
+		// Record a synthetic result so the failure surfaces in presenters.
+		validationResults[fileType] = ports.ValidationResult{
+			Target:          fileType,
+			InvocationError: err.Error(),
+		}
+		return
+	}
+	validationResults[fileType] = result
+	if !result.Valid {
+		a.logger.Warningf("Validation errors found: %d issues", result.ErrorCount)
+	}
 }
 
 // runComparison executes the diff strategy for the prepared temporary workspace.

@@ -1,0 +1,5 @@
+application:
+  # The Application lives in a different repo (an "apps" repo).
+  repo: ssh://git@git.example.com/group/apps.git
+  path: cluster-state/myapp/myapp.yaml
+  branch: main

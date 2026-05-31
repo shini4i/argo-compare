@@ -24,6 +24,7 @@ type Config struct {
 	KubeconformPath         string
 	ValidateSkipKinds       []string
 	ValidateSchemaLocations []string
+	AnchorFileName          string
 }
 
 // ConfigOption mutates a Config during construction.
@@ -36,8 +37,9 @@ func NewConfig(targetBranch string, opts ...ConfigOption) (Config, error) {
 	}
 
 	cfg := Config{
-		TargetBranch: targetBranch,
-		TempDirBase:  os.TempDir(),
+		TargetBranch:   targetBranch,
+		TempDirBase:    os.TempDir(),
+		AnchorFileName: DefaultAnchorFileName,
 	}
 
 	for _, opt := range opts {
@@ -202,5 +204,14 @@ func WithValidateSkipKinds(kinds []string) ConfigOption {
 func WithValidateSchemaLocations(locations []string) ConfigOption {
 	return func(cfg *Config) {
 		cfg.ValidateSchemaLocations = append([]string{}, locations...)
+	}
+}
+
+// WithAnchorFileName overrides the file name that marks an anchor directory
+// (default `.argo-compare.yml`). Pass an empty string to disable anchor
+// discovery entirely; pass a custom name to use a different convention.
+func WithAnchorFileName(name string) ConfigOption {
+	return func(cfg *Config) {
+		cfg.AnchorFileName = name
 	}
 }

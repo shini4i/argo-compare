@@ -1,0 +1,10 @@
+apiVersion: v2
+name: myapp
+description: Example umbrella chart wrapping an upstream Helm chart.
+type: application
+version: 0.1.0
+dependencies:
+  - name: web-app
+    version: "0.9.0"
+    repository: "https://charts.example.com"
+    alias: myapp
