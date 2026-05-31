@@ -9,6 +9,7 @@ Argo Compare renders both the source and target branches with `helm template`, s
 - [Installation](https://raw.githubusercontent.com/shini4i/argo-compare/main/docs/installation.md): Binary downloads and Docker image setup.
 - [Usage](https://raw.githubusercontent.com/shini4i/argo-compare/main/docs/usage.md): CLI flags, output modes, external diff tools, Helm label stripping, and secret masking.
 - [How it works](https://raw.githubusercontent.com/shini4i/argo-compare/main/docs/how-it-works.md): The end-to-end comparison pipeline.
+- [Architecture](https://raw.githubusercontent.com/shini4i/argo-compare/main/docs/architecture.md): Package map, dependency direction, and the two entry flows.
 - [Anchored repositories](https://raw.githubusercontent.com/shini4i/argo-compare/main/docs/anchored-repositories.md): Path-based sources and the `.argo-compare.yml` anchor flow for chart-only repos.
 - [Manifest validation](https://raw.githubusercontent.com/shini4i/argo-compare/main/docs/manifest-validation.md): Schema validation with `kubeconform`, including flags and environment variables.
 - [Repository credentials](https://raw.githubusercontent.com/shini4i/argo-compare/main/docs/repository-credentials.md): Private Helm repos via `REPO_CREDS_*`, OCI registries, and automatic AWS ECR authentication.

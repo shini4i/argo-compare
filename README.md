@@ -39,6 +39,7 @@ See [Installation](docs/installation.md) and [Usage](docs/usage.md) for the full
 - [Installation](docs/installation.md) — binary downloads and Docker image.
 - [Usage](docs/usage.md) — CLI flags, output modes, external diff tools.
 - [How it works](docs/how-it-works.md) — the comparison pipeline.
+- [Architecture](docs/architecture.md) — package map, dependency direction, entry flows.
 - [Anchored repositories](docs/anchored-repositories.md) — path-based sources and chart-only repos via `.argo-compare.yml`.
 - [Manifest validation](docs/manifest-validation.md) — schema validation with `kubeconform`.
 - [Repository credentials](docs/repository-credentials.md) — private Helm repos, OCI registries, AWS ECR.
