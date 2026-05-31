@@ -8,36 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shini4i/argo-compare/internal/testfixtures"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-)
-
-const (
-	expectedStrippedOutput = `# for testing purpose we need only limited fields
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    app.kubernetes.io/instance: traefik-web
-    app.kubernetes.io/name: traefik
-    argocd.argoproj.io/instance: traefik
-  name: traefik
-  namespace: web
-`
-	helmDeploymentWithManagedLabels = `# for testing purpose we need only limited fields
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    app.kubernetes.io/instance: traefik-web
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: traefik
-    argocd.argoproj.io/instance: traefik
-    helm.sh/chart: traefik-23.0.1
-  name: traefik
-  namespace: web
-`
 )
 
 func TestGetEnv(t *testing.T) {
@@ -57,12 +31,12 @@ func TestGetEnv(t *testing.T) {
 func TestStripHelmLabels(t *testing.T) {
 	tmpDir := t.TempDir()
 	sourcePath := filepath.Join(tmpDir, "deployment.yaml")
-	require.NoError(t, os.WriteFile(sourcePath, []byte(helmDeploymentWithManagedLabels), 0o644))
+	require.NoError(t, os.WriteFile(sourcePath, []byte(testfixtures.HelmDeploymentWithManagedLabels), 0o644))
 
 	fileContent, err := StripHelmLabels(sourcePath)
 
 	assert.NoError(t, err)
-	assert.Equal(t, expectedStrippedOutput, string(fileContent))
+	assert.Equal(t, testfixtures.HelmDeploymentStripped, string(fileContent))
 
 	// We want to be sure that the function returns an error if the file cannot be read
 	_, err = StripHelmLabels(filepath.Join(tmpDir, "missing.yaml"))
@@ -76,7 +50,7 @@ func TestWriteToFile(t *testing.T) {
 	filePath := "output.txt"
 
 	// Call the function to write data to file
-	err := WriteToFile(fs, filePath, []byte(expectedStrippedOutput))
+	err := WriteToFile(fs, filePath, []byte(testfixtures.HelmDeploymentStripped))
 	assert.NoError(t, err)
 
 	// Read the written file
@@ -84,7 +58,7 @@ func TestWriteToFile(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Compare the written data with the test data
-	assert.Equal(t, expectedStrippedOutput, string(writtenData))
+	assert.Equal(t, testfixtures.HelmDeploymentStripped, string(writtenData))
 
 	// Cleanup: Remove the written file
 	err = fs.Remove(filePath)
@@ -94,7 +68,7 @@ func TestWriteToFile(t *testing.T) {
 	fs = afero.NewReadOnlyFs(fs)
 
 	filePath = "invalid/output.txt"
-	err = WriteToFile(fs, filePath, []byte(expectedStrippedOutput))
+	err = WriteToFile(fs, filePath, []byte(testfixtures.HelmDeploymentStripped))
 	assert.Error(t, err)
 }
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/internal/sanitizer"
+	"github.com/shini4i/argo-compare/internal/testfixtures"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,30 +29,6 @@ func (f failingMasker) Mask([]byte) ([]byte, bool, error) {
 }
 
 const (
-	helmDeploymentWithManagedLabels = `# for testing purpose we need only limited fields
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    app.kubernetes.io/instance: traefik-web
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: traefik
-    argocd.argoproj.io/instance: traefik
-    helm.sh/chart: traefik-23.0.1
-  name: traefik
-  namespace: web
-`
-	expectedStrippedDeployment = `# for testing purpose we need only limited fields
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    app.kubernetes.io/instance: traefik-web
-    app.kubernetes.io/name: traefik
-    argocd.argoproj.io/instance: traefik
-  name: traefik
-  namespace: web
-`
 	appManifestYAML = `apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -107,7 +84,7 @@ func TestCompareGenerateFilesStatus(t *testing.T) {
 func TestCompareFindAndStripHelmLabels(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "deployment.yaml")
-	require.NoError(t, os.WriteFile(testFile, []byte(helmDeploymentWithManagedLabels), 0o644))
+	require.NoError(t, os.WriteFile(testFile, []byte(testfixtures.HelmDeploymentWithManagedLabels), 0o644))
 
 	c := &Compare{
 		Fs:      afero.NewOsFs(),
@@ -120,7 +97,7 @@ func TestCompareFindAndStripHelmLabels(t *testing.T) {
 	modified, err := os.ReadFile(testFile)
 	require.NoError(t, err)
 
-	assert.Equal(t, expectedStrippedDeployment, string(modified))
+	assert.Equal(t, testfixtures.HelmDeploymentStripped, string(modified))
 }
 
 func TestCompareProcessFiles(t *testing.T) {

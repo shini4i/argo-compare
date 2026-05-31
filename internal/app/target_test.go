@@ -8,6 +8,7 @@ import (
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 
 	"github.com/shini4i/argo-compare/internal/ports"
+	"github.com/shini4i/argo-compare/internal/ports/portstest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -41,31 +42,12 @@ func (r *recordingHelmProcessor) RenderAppSource(_ context.Context, _ ports.CmdR
 	return nil
 }
 
-type noopCmdRunner struct{}
-
-func (noopCmdRunner) Run(_ context.Context, _ string, _ ...string) (string, string, error) {
-	return "", "", nil
-}
-
-type noopFileReader struct{}
-
-func (noopFileReader) ReadFile(string) ([]byte, error) { return nil, nil }
-
-// errFileReader always returns the configured error from ReadFile.
-type errFileReader struct{ err error }
-
-func (r errFileReader) ReadFile(string) ([]byte, error) { return nil, r.err }
-
-type noopGlobber struct{}
-
-func (noopGlobber) Glob(string) ([]string, error) { return nil, nil }
-
 func TestTargetParseReturnsErrorFromFileReader(t *testing.T) {
 	sentinel := errors.New("permission denied")
 
 	target := Target{
-		CmdRunner:  noopCmdRunner{},
-		FileReader: errFileReader{err: sentinel},
+		CmdRunner:  portstest.NoopCmdRunner{},
+		FileReader: portstest.ErrFileReader{Err: sentinel},
 		Log:        logger.New("target-test"),
 		File:       "/some/app.yaml",
 		Type:       TargetTypeSource,
@@ -81,10 +63,10 @@ func TestTargetMultiSourceInvokesHelmPerSource(t *testing.T) {
 	processor := &recordingHelmProcessor{}
 
 	target := Target{
-		CmdRunner:           noopCmdRunner{},
-		FileReader:          noopFileReader{},
+		CmdRunner:           portstest.NoopCmdRunner{},
+		FileReader:          portstest.NoopFileReader{},
 		HelmProcessor:       processor,
-		Globber:             noopGlobber{},
+		Globber:             portstest.NoopGlobber{},
 		CacheDir:            "cache",
 		TmpDir:              "tmp",
 		CredentialProviders: nil,
