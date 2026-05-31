@@ -41,6 +41,10 @@ EXTERNAL_DIFF_TOOL=diff-so-fancy argo-compare branch <target-branch>
 
 Helm-injected labels are stripped from rendered manifests before comparison because they add noise without changing the deployed state. Pass `--preserve-helm-labels` to keep them.
 
+## Sensitive data
+
+`argo-compare` masks the rendered contents of Kubernetes `Secret` manifests before they reach stdout logs, external diff tools, or merge request comments. Each secret entry is replaced with a deterministic hash placeholder, allowing reviewers to spot that a value changed without exposing the underlying secret material.
+
 ## Where to next
 
 - [Anchored repositories](anchored-repositories.md) — for repos where the PR touches chart content instead of the Application YAML.

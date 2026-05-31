@@ -42,7 +42,6 @@ See [Installation](docs/installation.md) and [Usage](docs/usage.md) for the full
 - [Anchored repositories](docs/anchored-repositories.md) — path-based sources and chart-only repos via `.argo-compare.yml`.
 - [Manifest validation](docs/manifest-validation.md) — schema validation with `kubeconform`.
 - [Repository credentials](docs/repository-credentials.md) — private Helm repos, OCI registries, AWS ECR.
-- [Sensitive data handling](docs/sensitive-data.md) — Secret masking in diff output.
 - [GitLab integration](docs/gitlab-integration.md) — posting the diff as a Merge Request comment.
 
 ## Current limitations
