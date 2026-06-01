@@ -491,6 +491,7 @@ func TestProcessFileRecordsValidatorInvocationError(t *testing.T) {
 	mockHelmProcessor.EXPECT().DownloadHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	mockHelmProcessor.EXPECT().ExtractHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	mockHelmProcessor.EXPECT().RenderAppSource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().BuildChartDependencies(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	mockValidator.EXPECT().
 		Validate(gomock.Any(), TargetTypeSource, gomock.Any()).
@@ -536,6 +537,7 @@ func TestProcessFileRecordsInvalidValidationResult(t *testing.T) {
 	mockHelmProcessor.EXPECT().DownloadHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	mockHelmProcessor.EXPECT().ExtractHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	mockHelmProcessor.EXPECT().RenderAppSource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().BuildChartDependencies(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	invalidResult := ports.ValidationResult{
 		Target:        TargetTypeSource,
@@ -586,6 +588,7 @@ func TestProcessFileSkipsValidationWhenValidatorNil(t *testing.T) {
 	mockHelmProcessor.EXPECT().DownloadHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	mockHelmProcessor.EXPECT().ExtractHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	mockHelmProcessor.EXPECT().RenderAppSource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().BuildChartDependencies(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	appFile := filepath.Join(t.TempDir(), "test-app.yaml")
 
@@ -633,6 +636,7 @@ func TestProcessFileCallsValidatorForSource(t *testing.T) {
 	mockHelmProcessor.EXPECT().DownloadHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	mockHelmProcessor.EXPECT().ExtractHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	mockHelmProcessor.EXPECT().RenderAppSource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().BuildChartDependencies(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	// Match the path layout that processFile uses (filepath.Join, not string concat).
 	expectedManifestDir := filepath.Join(tmpDir, "templates", TargetTypeSource)
@@ -685,6 +689,7 @@ func TestProcessFileSkipsValidationForDestination(t *testing.T) {
 	mockHelmProcessor.EXPECT().DownloadHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	mockHelmProcessor.EXPECT().ExtractHelmChart(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	mockHelmProcessor.EXPECT().RenderAppSource(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockHelmProcessor.EXPECT().BuildChartDependencies(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	// No EXPECT on mockValidator: gomock.NewController(t) will fail the test if
 	// Validate is called.

@@ -96,7 +96,7 @@ type RealHelmChartProcessor struct {
 // It takes a chart name, a temporary directory for storing the file, the target type categorizing the application,
 // and the content of the values file in string format.
 // The function first attempts to create the file and writes the provided values content to disk.
-func (g RealHelmChartProcessor) GenerateValuesFile(chartName, tmpDir, targetType, values string, valuesObject map[string]interface{}) error {
+func (g RealHelmChartProcessor) GenerateValuesFile(chartName, tmpDir, targetType, values string, valuesObject map[string]any) error {
 	yamlFile, err := os.Create(fmt.Sprintf("%s/%s-values-%s.yaml", tmpDir, chartName, targetType))
 	if err != nil {
 		return err
@@ -303,6 +303,7 @@ type helmRepoFile struct {
 	Repositories []helmRepoEntry `yaml:"repositories"`
 }
 
+// helmRepoEntry represents a single repository entry in helm's repositories.yaml.
 type helmRepoEntry struct {
 	Name     string `yaml:"name"`
 	URL      string `yaml:"url"`
@@ -392,7 +393,8 @@ func readChartMetadata(chartDir string) (*chartMetadata, error) {
 func (g RealHelmChartProcessor) writeRepoConfig(ctx context.Context, helmDeps ports.HelmDeps, deps []chartDependency, scratchDir string) (string, string, func(), error) {
 	seen := make(map[string]struct{})
 	var entries []helmRepoEntry
-	for i, dep := range deps {
+	entryCount := 0
+	for _, dep := range deps {
 		if dep.Repository == "" || strings.HasPrefix(dep.Repository, "file://") {
 			continue
 		}
@@ -417,11 +419,12 @@ func (g RealHelmChartProcessor) writeRepoConfig(ctx context.Context, helmDeps po
 
 		creds := resolveCredentials(ctx, g.Log, helmDeps.CredentialProviders, dep.Repository)
 		entries = append(entries, helmRepoEntry{
-			Name:     fmt.Sprintf("argo-compare-dep-%d", i),
+			Name:     fmt.Sprintf("argo-compare-dep-%d", entryCount),
 			URL:      dep.Repository,
 			Username: creds.Username,
 			Password: creds.Password,
 		})
+		entryCount++
 	}
 
 	repoCfgFile, err := os.CreateTemp(scratchDir, "argo-compare-helm-repos-*.yaml")
