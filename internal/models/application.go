@@ -7,6 +7,9 @@ import (
 	"fmt"
 )
 
+// KindApplication is the manifest kind argo-compare operates on.
+const KindApplication = "Application"
+
 var (
 	// ErrNotApplication signals that the provided manifest is not an ArgoCD Application.
 	ErrNotApplication = errors.New("file is not an Application")
@@ -111,13 +114,13 @@ func validateSourceShape(source *Source) error {
 
 // Validate performs validation checks on the Application struct.
 // It checks for the following:
-// - If the Application struct is empty, returns ErrEmptyFile.
-// - If both the 'source' and 'sources' fields are set at the same time, returns an error.
-// - If the kind of the application is not "Application", returns ErrNotApplication.
-// - For each source, ensures it declares exactly one of 'chart' (Helm-registry)
-//   or 'path' (Git path); both empty or both set yields ErrUnsupportedAppConfiguration.
-// - Sets the 'MultiSource' field to true if sources are specified.
-// - Returns nil if all validation checks pass.
+//   - If the Application struct is empty, returns ErrEmptyFile.
+//   - If both the 'source' and 'sources' fields are set at the same time, returns an error.
+//   - If the kind of the application is not "Application", returns ErrNotApplication.
+//   - For each source, ensures it declares exactly one of 'chart' (Helm-registry)
+//     or 'path' (Git path); both empty or both set yields ErrUnsupportedAppConfiguration.
+//   - Sets the 'MultiSource' field to true if sources are specified.
+//   - Returns nil if all validation checks pass.
 func (app *Application) Validate() error {
 	if app == nil {
 		return ErrEmptyFile
@@ -132,7 +135,7 @@ func (app *Application) Validate() error {
 		return fmt.Errorf("both 'source' and 'sources' fields cannot be set at the same time")
 	}
 
-	if app.Kind != "Application" {
+	if app.Kind != KindApplication {
 		return ErrNotApplication
 	}
 

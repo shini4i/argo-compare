@@ -47,10 +47,11 @@ linters:
       min-complexity: 15
     govet:
       disable:
+        # shadow flags the idiomatic `if err := f(); err != nil` pattern; the
+        # noise outweighs the value, same rationale as fieldalignment.
         - fieldalignment
+        - shadow
       enable-all: true
-    misspell:
-      locale: US
     nolintlint:
       require-explanation: true
       require-specific: true
@@ -90,9 +91,15 @@ linters:
       - legacy
       - std-error-handling
     rules:
+      # Test files are held to a looser standard for throwaway test data.
+      # goconst is excluded deliberately: fixtures legitimately repeat literals
+      # (chart paths, tiny YAML snippets like "name: foo\n"), and turning those
+      # into named constants hurts readability far more than the duplication
+      # does. dupl/gocognit/gosec/errcheck are excluded for the same reason.
       - linters:
           - dupl
           - errcheck
+          - goconst
           - gocognit
           - gosec
         path: _test\.go

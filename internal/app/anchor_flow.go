@@ -79,7 +79,7 @@ func (a *App) processAnchorGroup(ctx context.Context, repo *GitRepo, group Ancho
 		return false, fmt.Errorf("%w: %s", ErrAnchorNotPathBased, anchorRefDisplay(group.Anchor.Application))
 	}
 	if mismatchErr := assertSameRepo(app.Spec.Source, app.Spec.Sources, originURL); mismatchErr != nil {
-		return false, fmt.Errorf("%w: %s", ErrAnchorRepoMismatch, mismatchErr)
+		return false, fmt.Errorf("%w: %w", ErrAnchorRepoMismatch, mismatchErr)
 	}
 
 	tmpDir, err := afero.TempDir(a.fs, a.cfg.TempDirBase, "argo-compare-anchor-")

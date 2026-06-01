@@ -24,6 +24,10 @@ import (
 
 const repoCredsPrefix = "REPO_CREDS_" // #nosec G101
 
+// defaultKubeconformBinary is the executable name used when no explicit
+// KubeconformPath is configured; resolved from PATH.
+const defaultKubeconformBinary = "kubeconform"
+
 // ErrManifestValidationFailed indicates that at least one rendered manifest failed schema
 // validation (or the validator itself failed to run when validation was enabled).
 // The comparison still ran to completion; this error is returned at the end of Run so
@@ -119,7 +123,7 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 	} else if cfg.ValidateManifests {
 		kubeconformPath := cfg.KubeconformPath
 		if kubeconformPath == "" {
-			kubeconformPath = "kubeconform"
+			kubeconformPath = defaultKubeconformBinary
 		}
 		validator = &KubeconformValidator{
 			CmdRunner:       deps.CmdRunner,
@@ -631,9 +635,6 @@ func defaultCommentPosterFactory(cfg Config) (comment.Poster, error) {
 	if cfg.Comment == nil {
 		return nil, fmt.Errorf("comment factory requested with nil comment configuration")
 	}
-	if cfg.Comment.Provider == CommentProviderNone {
-		return nil, fmt.Errorf("comment factory requested with comment provider %q", CommentProviderNone)
-	}
 
 	switch cfg.Comment.Provider {
 	case CommentProviderGitLab:
@@ -643,6 +644,8 @@ func defaultCommentPosterFactory(cfg Config) (comment.Poster, error) {
 			ProjectID:       cfg.Comment.GitLab.ProjectID,
 			MergeRequestIID: cfg.Comment.GitLab.MergeRequestIID,
 		})
+	case CommentProviderNone:
+		return nil, fmt.Errorf("comment factory requested with comment provider %q", CommentProviderNone)
 	default:
 		return nil, fmt.Errorf("unsupported comment provider %q", cfg.Comment.Provider)
 	}
