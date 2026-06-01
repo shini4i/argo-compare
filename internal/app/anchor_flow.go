@@ -130,21 +130,8 @@ func (a *App) renderAnchorLeg(ctx context.Context, app models.Application, tmpDi
 		App:                 app,
 	}
 
-	switch leg {
-	case TargetTypeSource:
-		if err := target.MaterializeChartFromWorkingTree(ctx, a.fs, repoRoot); err != nil {
-			return err
-		}
-	case TargetTypeDestination:
-		mergeBaseTree, err := repo.MergeBaseTreeFor(a.cfg.TargetBranch)
-		if err != nil {
-			return err
-		}
-		if err := target.MaterializeChartFromTree(ctx, a.fs, mergeBaseTree); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("unknown render leg %q", leg)
+	if err := a.materializeChartForLeg(ctx, &target, leg, repo, repoRoot); err != nil {
+		return err
 	}
 
 	if err := target.BuildChartDependencies(ctx); err != nil {
@@ -172,6 +159,24 @@ func (a *App) renderAnchorLeg(ctx context.Context, app models.Application, tmpDi
 		}
 	}
 	return nil
+}
+
+// materializeChartForLeg checks out the chart sources for one comparison leg
+// into target's TmpDir: the working tree for the source leg, and the merge-base
+// tree against the target branch for the destination leg.
+func (a *App) materializeChartForLeg(ctx context.Context, target *Target, leg string, repo *GitRepo, repoRoot string) error {
+	switch leg {
+	case TargetTypeSource:
+		return target.MaterializeChartFromWorkingTree(ctx, a.fs, repoRoot)
+	case TargetTypeDestination:
+		mergeBaseTree, err := repo.MergeBaseTreeFor(a.cfg.TargetBranch)
+		if err != nil {
+			return err
+		}
+		return target.MaterializeChartFromTree(ctx, a.fs, mergeBaseTree)
+	default:
+		return fmt.Errorf("unknown render leg %q", leg)
+	}
 }
 
 // applicationFetcher returns the configured fetcher or builds a default real

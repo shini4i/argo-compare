@@ -311,6 +311,14 @@ type helmRepoEntry struct {
 	Password string `yaml:"password,omitempty"`
 }
 
+// noopCleanup is the cleanup func returned by writeRepoConfig on its early
+// error paths. Those paths fail before any temp file or directory is created
+// (or after cleaning up inline), so the caller's deferred cleanup must be safe
+// to call yet has nothing to remove.
+func noopCleanup() {
+	// Intentionally empty: no resources were acquired on this path.
+}
+
 // BuildChartDependencies runs `helm dependency build` against chartDir so that
 // subcharts listed in Chart.yaml are fetched into chartDir/charts/. It is a
 // no-op when the chart has no Chart.yaml or no dependencies.
@@ -429,7 +437,7 @@ func (g RealHelmChartProcessor) writeRepoConfig(ctx context.Context, helmDeps po
 
 	repoCfgFile, err := os.CreateTemp(scratchDir, "argo-compare-helm-repos-*.yaml")
 	if err != nil {
-		return "", "", func() {}, fmt.Errorf("create repositories.yaml tempfile: %w", err)
+		return "", "", noopCleanup, fmt.Errorf("create repositories.yaml tempfile: %w", err)
 	}
 	repoCfgPath := repoCfgFile.Name()
 
@@ -441,22 +449,22 @@ func (g RealHelmChartProcessor) writeRepoConfig(ctx context.Context, helmDeps po
 	if err != nil {
 		_ = repoCfgFile.Close()
 		cleanup()
-		return "", "", func() {}, fmt.Errorf("marshal repositories.yaml: %w", err)
+		return "", "", noopCleanup, fmt.Errorf("marshal repositories.yaml: %w", err)
 	}
 	if _, err := repoCfgFile.Write(encoded); err != nil {
 		_ = repoCfgFile.Close()
 		cleanup()
-		return "", "", func() {}, fmt.Errorf("write repositories.yaml: %w", err)
+		return "", "", noopCleanup, fmt.Errorf("write repositories.yaml: %w", err)
 	}
 	if err := repoCfgFile.Close(); err != nil {
 		cleanup()
-		return "", "", func() {}, fmt.Errorf("close repositories.yaml: %w", err)
+		return "", "", noopCleanup, fmt.Errorf("close repositories.yaml: %w", err)
 	}
 
 	repoCachePath, err := os.MkdirTemp(scratchDir, "argo-compare-helm-cache-")
 	if err != nil {
 		cleanup()
-		return "", "", func() {}, fmt.Errorf("create repository cache tempdir: %w", err)
+		return "", "", noopCleanup, fmt.Errorf("create repository cache tempdir: %w", err)
 	}
 
 	combinedCleanup := func() {
