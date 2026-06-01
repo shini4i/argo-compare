@@ -231,8 +231,11 @@ func assertSameRepo(single *models.Source, sources []*models.Source, originURL s
 }
 
 // normalizeRepoIdentity collapses common Git URL spellings (https, ssh,
-// scp-style, oci-prefixed, file://) into a host[:port]/path key that is
-// stable across formats. .git suffix and trailing slashes are stripped.
+// scp-style, oci-prefixed, file://) into a host/path key that is stable across
+// formats. The port is deliberately dropped: ArgoCD Applications commonly use
+// an explicit SSH port (e.g. ssh://git@host:1022/group/repo.git) while the
+// local CI clone uses the portless HTTPS origin for the same repository, and
+// these must compare equal. .git suffix and trailing slashes are stripped.
 // file:// is stripped so that a bare local-path origin (e.g. /srv/git/foo.git)
 // matches its file:///srv/git/foo.git equivalent.
 func normalizeRepoIdentity(repoURL string) string {
@@ -251,8 +254,10 @@ func normalizeRepoIdentity(repoURL string) string {
 		}
 	}
 
-	if parsed, err := url.Parse(s); err == nil && parsed.Host != "" {
-		return strings.ToLower(parsed.Host) + stripTrailingPathNoise(parsed.Path)
+	// parsed.Hostname() strips any :port (and IPv6 brackets), so URLs that
+	// differ only by port normalize to the same identity.
+	if parsed, err := url.Parse(s); err == nil && parsed.Hostname() != "" {
+		return strings.ToLower(parsed.Hostname()) + stripTrailingPathNoise(parsed.Path)
 	}
 
 	return stripTrailingPathNoise(s)
