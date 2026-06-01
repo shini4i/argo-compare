@@ -94,6 +94,11 @@ type ChartExtractRequest struct {
 // ValueFiles lists paths (relative to the chart directory) supplied via
 // Application.spec.source.helm.valueFiles. They are applied in order, before
 // inline values from Application.spec.source.helm.values / valuesObject.
+//
+// Parameters carries the fully-resolved spec.source.helm.parameters (merged
+// with any .argocd-source override files). They render as helm `--set` /
+// `--set-string` flags, which take precedence over all value files per ArgoCD's
+// ordering (parameters > valuesObject > values > valueFiles).
 type ChartRenderRequest struct {
 	ReleaseName  string
 	ChartName    string
@@ -102,6 +107,7 @@ type ChartRenderRequest struct {
 	TargetType   string
 	Namespace    string
 	ValueFiles   []string
+	Parameters   []models.HelmParameter
 }
 
 // HelmChartsProcessor coordinates the Helm chart lifecycle required for comparisons.

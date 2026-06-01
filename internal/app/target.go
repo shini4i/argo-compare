@@ -199,6 +199,10 @@ func (t *Target) renderAppSources(ctx context.Context) error {
 			if source.Helm.ReleaseName != "" {
 				releaseName = source.Helm.ReleaseName
 			}
+			parameters, err := t.resolveSourceParameters(source)
+			if err != nil {
+				return err
+			}
 			req := ports.ChartRenderRequest{
 				ReleaseName:  releaseName,
 				ChartName:    effectiveChartName(source),
@@ -207,6 +211,7 @@ func (t *Target) renderAppSources(ctx context.Context) error {
 				TargetType:   t.Type,
 				Namespace:    t.App.Spec.Destination.Namespace,
 				ValueFiles:   source.Helm.ValueFiles,
+				Parameters:   parameters,
 			}
 			if err := t.HelmProcessor.RenderAppSource(ctx, t.CmdRunner, req); err != nil {
 				return err
@@ -219,6 +224,10 @@ func (t *Target) renderAppSources(ctx context.Context) error {
 	if t.App.Spec.Source.Helm.ReleaseName != "" {
 		releaseName = t.App.Spec.Source.Helm.ReleaseName
 	}
+	parameters, err := t.resolveSourceParameters(t.App.Spec.Source)
+	if err != nil {
+		return err
+	}
 	req := ports.ChartRenderRequest{
 		ReleaseName:  releaseName,
 		ChartName:    effectiveChartName(t.App.Spec.Source),
@@ -227,6 +236,17 @@ func (t *Target) renderAppSources(ctx context.Context) error {
 		TargetType:   t.Type,
 		Namespace:    t.App.Spec.Destination.Namespace,
 		ValueFiles:   t.App.Spec.Source.Helm.ValueFiles,
+		Parameters:   parameters,
 	}
 	return t.HelmProcessor.RenderAppSource(ctx, t.CmdRunner, req)
+}
+
+// resolveSourceParameters merges a source's inline helm.parameters with any
+// .argocd-source override files materialized alongside its chart, so image
+// bumps written by argo-watcher / Argo CD Image Updater are reflected in the
+// rendered diff. The chart directory mirrors the layout produced by chart
+// materialization and extraction (TmpDir/charts/<Type>/<ChartName>).
+func (t *Target) resolveSourceParameters(source *models.Source) ([]models.HelmParameter, error) {
+	chartDir := filepath.Join(t.TmpDir, "charts", t.Type, effectiveChartName(source))
+	return resolveHelmParameters(t.FileReader, source, chartDir, t.App.Metadata.Name)
 }

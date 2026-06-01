@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -43,6 +44,40 @@ func validateValueFile(vf string) error {
 		return fmt.Errorf("%w: path traversal is not allowed: %q", ErrInvalidValueFile, vf)
 	}
 	return nil
+}
+
+// helmParamNameRe is the allowlist for helm parameter names forwarded to
+// --set / --set-string. Dots and brackets have legitimate meaning
+// (path separators and array indices in Helm's strvals grammar). Characters
+// outside this set — particularly '=', ',', '{', '}', and '\' — either
+// corrupt the key=value format or inject new assignments when the argv element
+// is re-parsed by helm's strvals library.
+var helmParamNameRe = regexp.MustCompile(`^[A-Za-z0-9_.[\]-]+$`)
+
+// validateHelmParamName rejects a parameter name that contains strvals
+// metacharacters which would silently overwrite unrelated chart values.
+// Dots and brackets are intentional and therefore allowed.
+func validateHelmParamName(name string) error {
+	if !helmParamNameRe.MatchString(name) {
+		return fmt.Errorf("helm parameter name contains characters invalid for --set: %q", name)
+	}
+	return nil
+}
+
+// escapeHelmSetValue escapes special characters in a helm `--set` /
+// `--set-string` value so helm's strvals parser treats them literally:
+//   - '\' is an escape character in strvals; escape it first
+//   - ',' separates assignments; escape to keep the value atomic
+//   - '{...}' is interpreted as a list literal; escape braces
+//
+// The parameter name is validated separately by validateHelmParamName; dots in
+// names are intentional path separators and must not be escaped.
+func escapeHelmSetValue(v string) string {
+	v = strings.ReplaceAll(v, `\`, `\\`)
+	v = strings.ReplaceAll(v, ",", `\,`)
+	v = strings.ReplaceAll(v, "{", `\{`)
+	v = strings.ReplaceAll(v, "}", `\}`)
+	return v
 }
 
 // isOCIRegistry returns true if the repo URL refers to an OCI registry (no http/https scheme).
@@ -482,9 +517,12 @@ func (g RealHelmChartProcessor) ExtractHelmChart(ctx context.Context, deps ports
 // Argument ordering mirrors ArgoCD's helm renderer: the chart's own values.yaml
 // is auto-loaded by `helm template`, then explicit valueFiles from the
 // Application's spec.source.helm.valueFiles are applied in order, then any
-// inline values from spec.source.helm.values / valuesObject as the final
-// override. The inline file is only added when it exists on disk so that
-// Applications without inline values do not crash on a missing path.
+// inline values from spec.source.helm.values / valuesObject, and finally
+// spec.source.helm.parameters as `--set` / `--set-string`. Helm always applies
+// `--set` on top of `--values`, which matches ArgoCD's documented precedence
+// (parameters > valuesObject > values > valueFiles). The inline values file is
+// only added when it exists on disk so that Applications without inline values
+// do not crash on a missing path.
 //
 // The context can be used to cancel the rendering or set a timeout.
 func (g RealHelmChartProcessor) RenderAppSource(ctx context.Context, cmdRunner ports.CmdRunner, req ports.ChartRenderRequest) error {
@@ -515,6 +553,17 @@ func (g RealHelmChartProcessor) RenderAppSource(ctx context.Context, cmdRunner p
 			return fmt.Errorf("check inline values file %q: %w", inlineValuesPath, err)
 		}
 		args = append(args, "--values", inlineValuesPath)
+	}
+
+	for _, p := range req.Parameters {
+		if err := validateHelmParamName(p.Name); err != nil {
+			return err
+		}
+		flag := "--set"
+		if p.ForceString {
+			flag = "--set-string"
+		}
+		args = append(args, flag, fmt.Sprintf("%s=%s", p.Name, escapeHelmSetValue(p.Value)))
 	}
 
 	args = append(args, "--namespace", req.Namespace)

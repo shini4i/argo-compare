@@ -39,16 +39,35 @@ type Destination struct {
 
 // Source holds the chart or path information for a single Application source.
 type Source struct {
-	RepoURL        string `yaml:"repoURL"`
-	Chart          string `yaml:"chart,omitempty"`
-	TargetRevision string `yaml:"targetRevision"`
-	Path           string `yaml:"path,omitempty"`
-	Helm           struct {
-		ReleaseName  string                 `yaml:"releaseName,omitempty"`
-		Values       string                 `yaml:"values,omitempty"`
-		ValueFiles   []string               `yaml:"valueFiles,omitempty"`
-		ValuesObject map[string]interface{} `yaml:"valuesObject,omitempty"`
-	} `yaml:"helm"`
+	RepoURL        string     `yaml:"repoURL"`
+	Chart          string     `yaml:"chart,omitempty"`
+	TargetRevision string     `yaml:"targetRevision"`
+	Path           string     `yaml:"path,omitempty"`
+	Helm           HelmSource `yaml:"helm"`
+}
+
+// HelmSource mirrors the subset of ArgoCD's spec.source.helm we render with.
+//
+// Parameters carry spec.source.helm.parameters (the `--set` / `--set-string`
+// equivalents). ArgoCD also lets these be overridden by .argocd-source[-<app>].yaml
+// files committed next to the chart, which is how argo-watcher / Argo CD Image
+// Updater record image bumps; see source_overrides.go for that merge.
+type HelmSource struct {
+	ReleaseName  string                 `yaml:"releaseName,omitempty"`
+	Values       string                 `yaml:"values,omitempty"`
+	ValueFiles   []string               `yaml:"valueFiles,omitempty"`
+	ValuesObject map[string]interface{} `yaml:"valuesObject,omitempty"`
+	Parameters   []HelmParameter        `yaml:"parameters,omitempty"`
+}
+
+// HelmParameter is a single spec.source.helm.parameters entry. ForceString
+// selects `helm template --set-string` over `--set`, matching ArgoCD: it
+// preserves ambiguously-typed values (e.g. a numeric image tag) as strings.
+// ForceString defaults to false when omitted.
+type HelmParameter struct {
+	Name        string `yaml:"name"`
+	Value       string `yaml:"value"`
+	ForceString bool   `yaml:"forceString,omitempty"`
 }
 
 // validateHelmSources checks that every source declares exactly one chart kind:
