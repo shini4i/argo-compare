@@ -147,6 +147,10 @@ func (a *App) renderAnchorLeg(ctx context.Context, app models.Application, tmpDi
 		return fmt.Errorf("unknown render leg %q", leg)
 	}
 
+	if err := target.BuildChartDependencies(ctx); err != nil {
+		return err
+	}
+
 	if err := target.generateValuesFiles(); err != nil {
 		return err
 	}

@@ -381,7 +381,9 @@ func (a *App) resolveTargetApplication(repo *GitRepo, file string) (models.Appli
 // prepareChartFromPath materializes a path-based source's chart directory into
 // the layout the renderer expects. The source leg copies from the local
 // working tree; the destination leg extracts from the merge-base tree of the
-// configured target branch.
+// configured target branch. After materialization, subchart dependencies
+// declared in Chart.yaml are resolved into chart/charts/ via
+// `helm dependency build`.
 func (a *App) prepareChartFromPath(ctx context.Context, repo *GitRepo, target *Target, fileType string) error {
 	switch fileType {
 	case TargetTypeSource:
@@ -389,16 +391,21 @@ func (a *App) prepareChartFromPath(ctx context.Context, repo *GitRepo, target *T
 		if err != nil {
 			return fmt.Errorf("resolve repo root for path-based source: %w", err)
 		}
-		return target.MaterializeChartFromWorkingTree(ctx, a.fs, repoRoot)
+		if err := target.MaterializeChartFromWorkingTree(ctx, a.fs, repoRoot); err != nil {
+			return err
+		}
 	case TargetTypeDestination:
 		tree, err := repo.MergeBaseTreeFor(a.cfg.TargetBranch)
 		if err != nil {
 			return err
 		}
-		return target.MaterializeChartFromTree(ctx, a.fs, tree)
+		if err := target.MaterializeChartFromTree(ctx, a.fs, tree); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unknown render leg %q", fileType)
 	}
+	return target.BuildChartDependencies(ctx)
 }
 
 // decideDestinationAction maps the outcome of GetChangedFileContent to a destinationAction.

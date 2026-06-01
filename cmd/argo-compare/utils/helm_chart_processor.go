@@ -246,6 +246,188 @@ func (g RealHelmChartProcessor) logOutput(stdout, stderr string) {
 	}
 }
 
+// chartMetadata is the slice of Chart.yaml we need to detect subchart
+// dependencies. Helm charts can declare many more fields; we deliberately
+// ignore them.
+type chartMetadata struct {
+	Dependencies []chartDependency `yaml:"dependencies"`
+}
+
+// chartDependency mirrors the on-disk shape of a Chart.yaml dependency entry.
+type chartDependency struct {
+	Name       string `yaml:"name"`
+	Version    string `yaml:"version"`
+	Repository string `yaml:"repository"`
+}
+
+// helmRepoFile mirrors helm's repositories.yaml schema as written by
+// `helm repo add`. We generate one per-render so each subchart-bearing chart
+// gets an isolated repo config and the host environment is left untouched.
+type helmRepoFile struct {
+	APIVersion   string          `yaml:"apiVersion"`
+	Repositories []helmRepoEntry `yaml:"repositories"`
+}
+
+type helmRepoEntry struct {
+	Name     string `yaml:"name"`
+	URL      string `yaml:"url"`
+	Username string `yaml:"username,omitempty"`
+	Password string `yaml:"password,omitempty"`
+}
+
+// BuildChartDependencies runs `helm dependency build` against chartDir so that
+// subcharts listed in Chart.yaml are fetched into chartDir/charts/. It is a
+// no-op when the chart has no Chart.yaml or no dependencies.
+//
+// Credentials for each unique HTTP(S) dependency repository URL are resolved
+// via the credential provider chain and written into a temporary
+// repositories.yaml passed to helm via --repository-config. The repository
+// cache is also redirected to a temp dir so concurrent runs and the host's
+// helm config never interfere.
+//
+// scratchDir bounds the lifetime of the generated credentials file and helm
+// repo cache to the caller's cleanup boundary (typically the per-run tmpDir
+// under cfg.TempDirBase). This keeps credentials inside the directory the
+// orchestrator will RemoveAll, instead of leaking under /tmp on hard
+// termination outside our deferred cleanup.
+//
+// OCI subchart dependencies (`repository: oci://...`) are not yet supported:
+// helm's OCI auth uses a separate registry config, and the few private OCI
+// helm registries we ship against today are referenced as top-level
+// `spec.source.chart` entries rather than as subcharts. Charts with OCI deps
+// will surface helm's own error message verbatim — easier to diagnose than a
+// silent skip.
+func (g RealHelmChartProcessor) BuildChartDependencies(ctx context.Context, deps ports.HelmDeps, chartDir, scratchDir string) error {
+	meta, err := readChartMetadata(chartDir)
+	if err != nil {
+		return err
+	}
+	if meta == nil || len(meta.Dependencies) == 0 {
+		return nil
+	}
+
+	repoCfgPath, repoCachePath, cleanup, err := g.writeRepoConfig(ctx, deps, meta.Dependencies, scratchDir)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	g.Log.Debugf("Building subchart dependencies for chart at [%s]", ui.Cyan(chartDir))
+
+	stdout, stderr, err := deps.CmdRunner.Run(ctx, "helm",
+		"dependency", "build",
+		"--repository-config", repoCfgPath,
+		"--repository-cache", repoCachePath,
+		chartDir,
+	)
+	g.logOutput(stdout, stderr)
+	if err != nil {
+		return fmt.Errorf("helm dependency build for %q: %w", chartDir, err)
+	}
+	return nil
+}
+
+// readChartMetadata reads chartDir/Chart.yaml and returns its parsed metadata.
+// A missing Chart.yaml is not an error — non-Helm path sources legitimately
+// have none, and BuildChartDependencies must remain a no-op for them.
+func readChartMetadata(chartDir string) (*chartMetadata, error) {
+	raw, err := os.ReadFile(filepath.Join(chartDir, "Chart.yaml")) // #nosec G304 -- chartDir is owned by argo-compare under TmpDir
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read Chart.yaml in %q: %w", chartDir, err)
+	}
+	var meta chartMetadata
+	if err := yaml.Unmarshal(raw, &meta); err != nil {
+		return nil, fmt.Errorf("parse Chart.yaml in %q: %w", chartDir, err)
+	}
+	return &meta, nil
+}
+
+// writeRepoConfig writes a fresh repositories.yaml describing each unique
+// HTTP(S) dependency repository in deps, with credentials supplied from the
+// provider chain when available. It returns the config file path, a separate
+// repository-cache directory, and a cleanup func that removes both. The
+// caller MUST invoke cleanup once helm dependency build returns.
+//
+// scratchDir bounds both files to the run's cleanup boundary so that on hard
+// termination (panic / SIGKILL) the credentials file does not leak into the
+// system /tmp outside the orchestrator's deferred RemoveAll.
+func (g RealHelmChartProcessor) writeRepoConfig(ctx context.Context, helmDeps ports.HelmDeps, deps []chartDependency, scratchDir string) (string, string, func(), error) {
+	seen := make(map[string]struct{})
+	var entries []helmRepoEntry
+	for i, dep := range deps {
+		if dep.Repository == "" || strings.HasPrefix(dep.Repository, "file://") {
+			continue
+		}
+		if strings.HasPrefix(dep.Repository, "oci://") {
+			// helm handles OCI auth via registry config, not repositories.yaml.
+			// Skip silently so helm surfaces its own error if creds are needed.
+			continue
+		}
+		if strings.HasPrefix(dep.Repository, "@") {
+			// Alias-prefixed repos refer to entries the user has previously
+			// registered with `helm repo add`. We run with an isolated repo
+			// config so the alias is not resolvable here; let helm surface
+			// its own clearer error rather than silently writing a bogus
+			// `url: "@alias"` entry into our config.
+			g.Log.Debugf("Skipping alias-based dependency %q; argo-compare uses an isolated repo config", dep.Repository)
+			continue
+		}
+		if _, ok := seen[dep.Repository]; ok {
+			continue
+		}
+		seen[dep.Repository] = struct{}{}
+
+		creds := resolveCredentials(ctx, g.Log, helmDeps.CredentialProviders, dep.Repository)
+		entries = append(entries, helmRepoEntry{
+			Name:     fmt.Sprintf("argo-compare-dep-%d", i),
+			URL:      dep.Repository,
+			Username: creds.Username,
+			Password: creds.Password,
+		})
+	}
+
+	repoCfgFile, err := os.CreateTemp(scratchDir, "argo-compare-helm-repos-*.yaml")
+	if err != nil {
+		return "", "", func() {}, fmt.Errorf("create repositories.yaml tempfile: %w", err)
+	}
+	repoCfgPath := repoCfgFile.Name()
+
+	cleanup := func() {
+		_ = os.Remove(repoCfgPath)
+	}
+
+	encoded, err := yaml.Marshal(helmRepoFile{APIVersion: "v1", Repositories: entries})
+	if err != nil {
+		_ = repoCfgFile.Close()
+		cleanup()
+		return "", "", func() {}, fmt.Errorf("marshal repositories.yaml: %w", err)
+	}
+	if _, err := repoCfgFile.Write(encoded); err != nil {
+		_ = repoCfgFile.Close()
+		cleanup()
+		return "", "", func() {}, fmt.Errorf("write repositories.yaml: %w", err)
+	}
+	if err := repoCfgFile.Close(); err != nil {
+		cleanup()
+		return "", "", func() {}, fmt.Errorf("close repositories.yaml: %w", err)
+	}
+
+	repoCachePath, err := os.MkdirTemp(scratchDir, "argo-compare-helm-cache-")
+	if err != nil {
+		cleanup()
+		return "", "", func() {}, fmt.Errorf("create repository cache tempdir: %w", err)
+	}
+
+	combinedCleanup := func() {
+		cleanup()
+		_ = os.RemoveAll(repoCachePath)
+	}
+	return repoCfgPath, repoCachePath, combinedCleanup, nil
+}
+
 // ExtractHelmChart extracts a specific version of a Helm chart from a cache directory
 // and stores it in a temporary directory. The function uses the provided CmdRunner to
 // execute the tar command and Globber to match the chart file in the cache.

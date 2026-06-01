@@ -111,6 +111,18 @@ type HelmChartsProcessor interface {
 	DownloadHelmChart(ctx context.Context, deps HelmDeps, req ChartDownloadRequest) error
 	ExtractHelmChart(ctx context.Context, deps HelmDeps, req ChartExtractRequest) error
 	RenderAppSource(ctx context.Context, cmdRunner CmdRunner, req ChartRenderRequest) error
+	// BuildChartDependencies materialises subchart dependencies declared in
+	// Chart.yaml into the chart's charts/ directory by running
+	// `helm dependency build` with an isolated repositories.yaml derived from
+	// the credential provider chain. It is a no-op when the chart has no
+	// dependencies. Required only for path-based sources; registry-extracted
+	// chart tarballs already include their dependencies.
+	//
+	// scratchDir must be a directory the caller will clean up — the generated
+	// credentials-bearing repositories.yaml and the helm repository cache are
+	// written here so they share the run's cleanup boundary instead of
+	// leaking into the system /tmp on hard termination.
+	BuildChartDependencies(ctx context.Context, deps HelmDeps, chartDir, scratchDir string) error
 }
 
 // ValidationError represents a single validation error for a Kubernetes manifest.
