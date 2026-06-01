@@ -44,6 +44,10 @@ func (r *recordingHelmProcessor) RenderAppSource(_ context.Context, _ ports.CmdR
 	return nil
 }
 
+func (r *recordingHelmProcessor) BuildChartDependencies(_ context.Context, _ ports.HelmDeps, _, _ string) error {
+	return nil
+}
+
 func TestTargetParseReturnsErrorFromFileReader(t *testing.T) {
 	sentinel := errors.New("permission denied")
 

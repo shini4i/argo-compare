@@ -250,6 +250,11 @@ data:
 	return os.WriteFile(filepath.Join(dir, "manifest.yaml"), []byte(manifest), 0o644)
 }
 
+func (s *stubHelmProcessor) BuildChartDependencies(_ context.Context, _ ports.HelmDeps, chartDir, _ string) error {
+	s.record("BuildChartDependencies", chartDir)
+	return nil
+}
+
 // stubValidator returns the configured result on every call, regardless of inputs.
 // Used to drive Run() through the success / failure paths in integration tests.
 type stubValidator struct {
