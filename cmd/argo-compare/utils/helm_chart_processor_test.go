@@ -482,6 +482,123 @@ func TestRenderAppSource(t *testing.T) {
 		assert.NoError(t, helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req))
 	})
 
+	t.Run("parameters render as --set / --set-string after values", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+		helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+
+		tmpDir := t.TempDir()
+		req := ports.ChartRenderRequest{
+			ReleaseName:  "my-release",
+			ChartName:    "my-chart",
+			ChartVersion: "1.2.3",
+			TmpDir:       tmpDir,
+			TargetType:   "src",
+			Namespace:    "my-namespace",
+			Parameters: []models.HelmParameter{
+				{Name: "image.repository", Value: "registry.example.com/app", ForceString: false},
+				{Name: "image.tag", Value: "2.0.0", ForceString: true},
+			},
+		}
+
+		chartDir := fmt.Sprintf("%s/charts/src/my-chart", tmpDir)
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"template",
+			"--release-name", "my-release",
+			chartDir,
+			"--output-dir", fmt.Sprintf("%s/templates/src", tmpDir),
+			"--set", "image.repository=registry.example.com/app",
+			"--set-string", "image.tag=2.0.0",
+			"--namespace", "my-namespace").Return("", "", nil)
+
+		assert.NoError(t, helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req))
+	})
+
+	t.Run("commas in parameter values are escaped", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+		helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+
+		tmpDir := t.TempDir()
+		req := ports.ChartRenderRequest{
+			ReleaseName:  "my-release",
+			ChartName:    "my-chart",
+			ChartVersion: "1.2.3",
+			TmpDir:       tmpDir,
+			TargetType:   "src",
+			Namespace:    "my-namespace",
+			Parameters: []models.HelmParameter{
+				{Name: "nodeSelector", Value: "a=b,c=d"},
+			},
+		}
+
+		chartDir := fmt.Sprintf("%s/charts/src/my-chart", tmpDir)
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"template",
+			"--release-name", "my-release",
+			chartDir,
+			"--output-dir", fmt.Sprintf("%s/templates/src", tmpDir),
+			"--set", `nodeSelector=a=b\,c=d`,
+			"--namespace", "my-namespace").Return("", "", nil)
+
+		assert.NoError(t, helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req))
+	})
+
+	t.Run("backslash and braces in values are escaped", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+		helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+
+		tmpDir := t.TempDir()
+		req := ports.ChartRenderRequest{
+			ReleaseName:  "my-release",
+			ChartName:    "my-chart",
+			ChartVersion: "1.2.3",
+			TmpDir:       tmpDir,
+			TargetType:   "src",
+			Namespace:    "my-namespace",
+			Parameters: []models.HelmParameter{
+				{Name: "annotations.note", Value: `a\b{x,y}`},
+			},
+		}
+
+		chartDir := fmt.Sprintf("%s/charts/src/my-chart", tmpDir)
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"template",
+			"--release-name", "my-release",
+			chartDir,
+			"--output-dir", fmt.Sprintf("%s/templates/src", tmpDir),
+			"--set", `annotations.note=a\\b\{x\,y\}`,
+			"--namespace", "my-namespace").Return("", "", nil)
+
+		assert.NoError(t, helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req))
+	})
+
+	t.Run("parameter name with injection characters is rejected", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+		// No Run() call expected — error must surface before helm is invoked.
+		helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+
+		tmpDir := t.TempDir()
+		for _, badName := range []string{"a=b", "x,y", "k{v}", `a\b`} {
+			req := ports.ChartRenderRequest{
+				ReleaseName: "my-release",
+				ChartName:   "my-chart",
+				TmpDir:      tmpDir,
+				TargetType:  "src",
+				Namespace:   "ns",
+				Parameters:  []models.HelmParameter{{Name: badName, Value: "v"}},
+			}
+			err := helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req)
+			assert.Error(t, err, "name %q must be rejected", badName)
+		}
+	})
+
 	t.Run("failed render surfaces error", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
