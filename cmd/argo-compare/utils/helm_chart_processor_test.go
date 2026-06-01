@@ -361,55 +361,204 @@ func TestExtractHelmChart(t *testing.T) {
 }
 
 func TestRenderAppSource(t *testing.T) {
+	t.Run("inline values file present, no valueFiles", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+		helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+
+		tmpDir := t.TempDir()
+		inlinePath := filepath.Join(tmpDir, "my-chart-values-src.yaml")
+		assert.NoError(t, os.WriteFile(inlinePath, []byte("key: value"), 0o644))
+
+		req := ports.ChartRenderRequest{
+			ReleaseName:  "my-release",
+			ChartName:    "my-chart",
+			ChartVersion: "1.2.3",
+			TmpDir:       tmpDir,
+			TargetType:   "src",
+			Namespace:    "my-namespace",
+		}
+
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"template",
+			"--release-name", "my-release",
+			fmt.Sprintf("%s/charts/src/my-chart", tmpDir),
+			"--output-dir", fmt.Sprintf("%s/templates/src", tmpDir),
+			"--values", inlinePath,
+			"--namespace", "my-namespace").Return("", "", nil)
+
+		assert.NoError(t, helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req))
+	})
+
+	t.Run("no inline values, no valueFiles - relies on chart's auto-loaded values.yaml", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+		helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+
+		tmpDir := t.TempDir()
+		req := ports.ChartRenderRequest{
+			ReleaseName:  "my-release",
+			ChartName:    "my-chart",
+			ChartVersion: "1.2.3",
+			TmpDir:       tmpDir,
+			TargetType:   "src",
+			Namespace:    "my-namespace",
+		}
+
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"template",
+			"--release-name", "my-release",
+			fmt.Sprintf("%s/charts/src/my-chart", tmpDir),
+			"--output-dir", fmt.Sprintf("%s/templates/src", tmpDir),
+			"--namespace", "my-namespace").Return("", "", nil)
+
+		assert.NoError(t, helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req))
+	})
+
+	t.Run("valueFiles applied in order before inline values", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+		helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+
+		tmpDir := t.TempDir()
+		inlinePath := filepath.Join(tmpDir, "my-chart-values-src.yaml")
+		assert.NoError(t, os.WriteFile(inlinePath, []byte("override: true"), 0o644))
+
+		req := ports.ChartRenderRequest{
+			ReleaseName:  "my-release",
+			ChartName:    "my-chart",
+			ChartVersion: "1.2.3",
+			TmpDir:       tmpDir,
+			TargetType:   "src",
+			Namespace:    "my-namespace",
+			ValueFiles:   []string{"values.yaml", "environment.yaml", "worker.yaml"},
+		}
+
+		chartDir := fmt.Sprintf("%s/charts/src/my-chart", tmpDir)
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"template",
+			"--release-name", "my-release",
+			chartDir,
+			"--output-dir", fmt.Sprintf("%s/templates/src", tmpDir),
+			"--values", fmt.Sprintf("%s/values.yaml", chartDir),
+			"--values", fmt.Sprintf("%s/environment.yaml", chartDir),
+			"--values", fmt.Sprintf("%s/worker.yaml", chartDir),
+			"--values", inlinePath,
+			"--namespace", "my-namespace").Return("", "", nil)
+
+		assert.NoError(t, helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req))
+	})
+
+	t.Run("valueFiles without inline values", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+		helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+
+		tmpDir := t.TempDir()
+		req := ports.ChartRenderRequest{
+			ReleaseName:  "my-release",
+			ChartName:    "my-chart",
+			ChartVersion: "1.2.3",
+			TmpDir:       tmpDir,
+			TargetType:   "src",
+			Namespace:    "my-namespace",
+			ValueFiles:   []string{"production.yaml"},
+		}
+
+		chartDir := fmt.Sprintf("%s/charts/src/my-chart", tmpDir)
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"template",
+			"--release-name", "my-release",
+			chartDir,
+			"--output-dir", fmt.Sprintf("%s/templates/src", tmpDir),
+			"--values", fmt.Sprintf("%s/production.yaml", chartDir),
+			"--namespace", "my-namespace").Return("", "", nil)
+
+		assert.NoError(t, helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req))
+	})
+
+	t.Run("failed render surfaces error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+		helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+
+		tmpDir := t.TempDir()
+		req := ports.ChartRenderRequest{
+			ReleaseName:  "my-release",
+			ChartName:    "my-chart",
+			ChartVersion: "1.2.3",
+			TmpDir:       tmpDir,
+			TargetType:   "src",
+			Namespace:    "my-namespace",
+		}
+
+		osErr := &exec.ExitError{ProcessState: &os.ProcessState{}}
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"template",
+			"--release-name", "my-release",
+			fmt.Sprintf("%s/charts/src/my-chart", tmpDir),
+			"--output-dir", fmt.Sprintf("%s/templates/src", tmpDir),
+			"--namespace", "my-namespace").Return("", "", osErr)
+
+		assert.Error(t, helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req))
+	})
+}
+
+func TestValidateValueFile(t *testing.T) {
+	t.Run("valid relative paths pass", func(t *testing.T) {
+		assert.NoError(t, validateValueFile("values.yaml"))
+		assert.NoError(t, validateValueFile("environment.yaml"))
+		assert.NoError(t, validateValueFile("config/override.yaml"))
+	})
+
+	t.Run("empty path is rejected", func(t *testing.T) {
+		err := validateValueFile("")
+		assert.ErrorIs(t, err, ErrInvalidValueFile)
+	})
+
+	t.Run("absolute path is rejected", func(t *testing.T) {
+		err := validateValueFile("/etc/passwd")
+		assert.ErrorIs(t, err, ErrInvalidValueFile)
+	})
+
+	t.Run("parent traversal is rejected", func(t *testing.T) {
+		for _, p := range []string{"../escape.yaml", "../../etc/passwd", "../values.yaml"} {
+			err := validateValueFile(p)
+			assert.ErrorIs(t, err, ErrInvalidValueFile, "expected ErrInvalidValueFile for %q", p)
+		}
+	})
+
+	t.Run("traversal inside a subpath is rejected", func(t *testing.T) {
+		err := validateValueFile("safe/../../../etc/passwd")
+		assert.ErrorIs(t, err, ErrInvalidValueFile)
+	})
+}
+
+func TestRenderAppSource_ValueFileValidation(t *testing.T) {
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
-
-	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
-
-	// Create an instance of the mock CmdRunner
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
 
 	tmpDir := t.TempDir()
 
-	req := ports.ChartRenderRequest{
-		ReleaseName:  "my-release",
-		ChartName:    "my-chart",
-		ChartVersion: "1.2.3",
-		TmpDir:       tmpDir,
-		TargetType:   "src",
-		Namespace:    "my-namespace",
+	for _, vf := range []string{"../escape.yaml", "/etc/passwd", ""} {
+		req := ports.ChartRenderRequest{
+			ReleaseName: "my-release",
+			ChartName:   "my-chart",
+			TmpDir:      tmpDir,
+			TargetType:  "src",
+			Namespace:   "my-namespace",
+			ValueFiles:  []string{vf},
+		}
+		err := helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req)
+		assert.ErrorIs(t, err, ErrInvalidValueFile, "expected rejection of valueFile %q", vf)
 	}
-
-	// Test case 1: Successful render
-	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
-		"template",
-		"--release-name", gomock.Any(),
-		gomock.Any(),
-		"--output-dir", gomock.Any(),
-		"--values", gomock.Any(),
-		"--values", gomock.Any(),
-		"--namespace", gomock.Any()).Return("", "", nil)
-
-	// Call the function under test
-	err := helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req)
-	assert.NoError(t, err, "expected no error, got %v", err)
-
-	// Test case 2: Failed render
-	osErr := &exec.ExitError{
-		ProcessState: &os.ProcessState{},
-	}
-	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
-		"template",
-		"--release-name", gomock.Any(),
-		gomock.Any(),
-		"--output-dir", gomock.Any(),
-		"--values", gomock.Any(),
-		"--values", gomock.Any(),
-		"--namespace", gomock.Any()).Return("", "", osErr)
-
-	err = helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req)
-	assert.Error(t, err, "expected error, got nil")
-	assert.Errorf(t, err, "expected error, got %v", err)
 }
 
 func TestResolveCredentials(t *testing.T) {

@@ -28,6 +28,7 @@ A worked example lives under [`examples/anchor/`](../examples/anchor).
 ## Limits in this version
 
 - Only Helm sources are supported (`spec.source.chart` or `spec.source.path`). Kustomize / plain-YAML sources are not handled.
+- For path-based sources, `spec.source.helm.valueFiles`, `spec.source.helm.values`, and `spec.source.helm.valuesObject` are all honoured and applied in the same order ArgoCD uses (valueFiles first, inline values on top). A chart without a `values.yaml` and an Application without inline values are both valid.
 - For path-based Applications, `spec.source.repoURL` must identify the local repository — chart sources living in a _third_ repo are out of scope.
 - A multi-source Application must use one kind consistently; mixing `chart` and `path` entries is rejected.
 - The anchored Application is read at the configured branch tip; commit-pinning is not supported.
