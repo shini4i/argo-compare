@@ -95,12 +95,15 @@ linters:
       # goconst is excluded deliberately: fixtures legitimately repeat literals
       # (chart paths, tiny YAML snippets like "name: foo\n"), and turning those
       # into named constants hurts readability far more than the duplication
-      # does. dupl/gocognit/gosec/errcheck are excluded for the same reason.
+      # does. Complexity limits (gocognit, gocyclo) are excluded because
+      # table-driven tests naturally branch a lot; dupl/gosec/errcheck likewise
+      # do not earn their keep on throwaway test data.
       - linters:
           - dupl
           - errcheck
           - goconst
           - gocognit
+          - gocyclo
           - gosec
         path: _test\.go
       - linters:
