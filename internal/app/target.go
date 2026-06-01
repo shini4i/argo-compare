@@ -75,13 +75,25 @@ func (t *Target) parse() error {
 // The chart name used for the values file derives from effectiveChartName so
 // registry-based (chart) and Git-path-based (path) sources both produce
 // stably-named values files for the downstream render step to find.
+//
+// Sources that declare no inline values (no helm.values and no helm.valuesObject)
+// skip the generation entirely — the renderer detects the missing file and
+// omits the corresponding --values flag. This supports Applications that rely
+// solely on helm.valueFiles or on the chart's own defaults.
 func (t *Target) generateValuesFiles() error {
 	if t.App.Spec.MultiSource {
 		for _, source := range t.App.Spec.Sources {
+			if !hasInlineValues(source) {
+				continue
+			}
 			if err := t.HelmProcessor.GenerateValuesFile(effectiveChartName(source), t.TmpDir, t.Type, source.Helm.Values, source.Helm.ValuesObject); err != nil {
 				return err
 			}
 		}
+		return nil
+	}
+
+	if !hasInlineValues(t.App.Spec.Source) {
 		return nil
 	}
 
@@ -92,6 +104,21 @@ func (t *Target) generateValuesFiles() error {
 		t.App.Spec.Source.Helm.Values,
 		t.App.Spec.Source.Helm.ValuesObject,
 	)
+}
+
+// hasInlineValues reports whether the source carries inline values that must
+// be rendered into a temporary file (helm.values raw YAML, or helm.valuesObject
+// structured form). helm.valueFiles are handled separately as paths into the
+// chart directory and do not count as inline.
+//
+// The nil check on ValuesObject mirrors GenerateValuesFile's guard; both treat
+// a non-nil but empty map as "has values" to produce consistent behaviour with
+// the existing YAML marshalling path.
+func hasInlineValues(source *models.Source) bool {
+	if source == nil {
+		return false
+	}
+	return source.Helm.Values != "" || source.Helm.ValuesObject != nil
 }
 
 // ensureHelmCharts downloads required Helm charts into the configured cache.
@@ -161,6 +188,9 @@ func (t *Target) extractCharts(ctx context.Context) error {
 }
 
 // renderAppSources runs Helm template rendering for each application source.
+// Application.spec.source.helm.valueFiles flow through to the renderer so that
+// charts relying on extra values files (not just inline helm.values) render
+// correctly.
 // The context can be used to cancel rendering or set a timeout.
 func (t *Target) renderAppSources(ctx context.Context) error {
 	if t.App.Spec.MultiSource {
@@ -176,6 +206,7 @@ func (t *Target) renderAppSources(ctx context.Context) error {
 				TmpDir:       t.TmpDir,
 				TargetType:   t.Type,
 				Namespace:    t.App.Spec.Destination.Namespace,
+				ValueFiles:   source.Helm.ValueFiles,
 			}
 			if err := t.HelmProcessor.RenderAppSource(ctx, t.CmdRunner, req); err != nil {
 				return err
@@ -195,6 +226,7 @@ func (t *Target) renderAppSources(ctx context.Context) error {
 		TmpDir:       t.TmpDir,
 		TargetType:   t.Type,
 		Namespace:    t.App.Spec.Destination.Namespace,
+		ValueFiles:   t.App.Spec.Source.Helm.ValueFiles,
 	}
 	return t.HelmProcessor.RenderAppSource(ctx, t.CmdRunner, req)
 }
