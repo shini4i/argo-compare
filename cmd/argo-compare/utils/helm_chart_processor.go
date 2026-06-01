@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -17,6 +19,31 @@ import (
 
 // ErrFailedToDownloadChart indicates Helm failed to pull the requested chart.
 var ErrFailedToDownloadChart = errors.New("failed to download chart")
+
+// ErrInvalidValueFile is returned when a helm.valueFiles entry is rejected for
+// security reasons (empty, absolute path, or parent-directory traversal).
+var ErrInvalidValueFile = errors.New("invalid valueFile path")
+
+// validateValueFile rejects valueFiles entries that could read files outside
+// the chart directory. It enforces three rules that together prevent the
+// Application YAML (an untrusted, PR-author-controlled input) from exfiltrating
+// host secrets through the rendered diff posted to MR comments:
+//   - non-empty (empty paths have no valid use and are a sign of misconfiguration)
+//   - not absolute (absolute paths bypass the chart-dir prefix entirely on POSIX)
+//   - no parent traversal (filepath.Clean("../foo") would escape the chart dir)
+func validateValueFile(vf string) error {
+	if vf == "" {
+		return fmt.Errorf("%w: path must not be empty", ErrInvalidValueFile)
+	}
+	if filepath.IsAbs(vf) {
+		return fmt.Errorf("%w: absolute paths are not allowed: %q", ErrInvalidValueFile, vf)
+	}
+	cleaned := filepath.Clean(vf)
+	if strings.HasPrefix(cleaned, "..") {
+		return fmt.Errorf("%w: path traversal is not allowed: %q", ErrInvalidValueFile, vf)
+	}
+	return nil
+}
 
 // isOCIRegistry returns true if the repo URL refers to an OCI registry (no http/https scheme).
 func isOCIRegistry(repoURL string) bool {
@@ -269,6 +296,14 @@ func (g RealHelmChartProcessor) ExtractHelmChart(ctx context.Context, deps ports
 // RenderAppSource uses the Helm CLI to render the templates of a given chart.
 // It takes a cmdRunner to run the Helm command and a request containing the chart
 // information needed for rendering.
+//
+// Argument ordering mirrors ArgoCD's helm renderer: the chart's own values.yaml
+// is auto-loaded by `helm template`, then explicit valueFiles from the
+// Application's spec.source.helm.valueFiles are applied in order, then any
+// inline values from spec.source.helm.values / valuesObject as the final
+// override. The inline file is only added when it exists on disk so that
+// Applications without inline values do not crash on a missing path.
+//
 // The context can be used to cancel the rendering or set a timeout.
 func (g RealHelmChartProcessor) RenderAppSource(ctx context.Context, cmdRunner ports.CmdRunner, req ports.ChartRenderRequest) error {
 	g.Log.Debugf("Rendering [%s] chart's version [%s] templates using release name [%s]",
@@ -276,16 +311,33 @@ func (g RealHelmChartProcessor) RenderAppSource(ctx context.Context, cmdRunner p
 		ui.Cyan(req.ChartVersion),
 		ui.Cyan(req.ReleaseName))
 
-	_, stderr, err := cmdRunner.Run(ctx,
-		"helm",
+	chartDir := fmt.Sprintf("%s/charts/%s/%s", req.TmpDir, req.TargetType, req.ChartName)
+
+	args := []string{
 		"template",
 		"--release-name", req.ReleaseName,
-		fmt.Sprintf("%s/charts/%s/%s", req.TmpDir, req.TargetType, req.ChartName),
+		chartDir,
 		"--output-dir", fmt.Sprintf("%s/templates/%s", req.TmpDir, req.TargetType),
-		"--values", fmt.Sprintf("%s/charts/%s/%s/values.yaml", req.TmpDir, req.TargetType, req.ChartName),
-		"--values", fmt.Sprintf("%s/%s-values-%s.yaml", req.TmpDir, req.ChartName, req.TargetType),
-		"--namespace", req.Namespace,
-	)
+	}
+
+	for _, vf := range req.ValueFiles {
+		if err := validateValueFile(vf); err != nil {
+			return err
+		}
+		args = append(args, "--values", filepath.Join(chartDir, vf))
+	}
+
+	inlineValuesPath := fmt.Sprintf("%s/%s-values-%s.yaml", req.TmpDir, req.ChartName, req.TargetType)
+	if _, err := os.Stat(inlineValuesPath); err == nil || !errors.Is(err, fs.ErrNotExist) {
+		if err != nil {
+			return fmt.Errorf("check inline values file %q: %w", inlineValuesPath, err)
+		}
+		args = append(args, "--values", inlineValuesPath)
+	}
+
+	args = append(args, "--namespace", req.Namespace)
+
+	_, stderr, err := cmdRunner.Run(ctx, "helm", args...)
 
 	if len(stderr) > 0 {
 		// Helm may emit warnings via stderr even on success; log them for visibility.

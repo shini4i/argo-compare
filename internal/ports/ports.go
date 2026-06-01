@@ -91,6 +91,9 @@ type ChartExtractRequest struct {
 }
 
 // ChartRenderRequest contains the parameters for rendering a Helm chart.
+// ValueFiles lists paths (relative to the chart directory) supplied via
+// Application.spec.source.helm.valueFiles. They are applied in order, before
+// inline values from Application.spec.source.helm.values / valuesObject.
 type ChartRenderRequest struct {
 	ReleaseName  string
 	ChartName    string
@@ -98,6 +101,7 @@ type ChartRenderRequest struct {
 	TmpDir       string
 	TargetType   string
 	Namespace    string
+	ValueFiles   []string
 }
 
 // HelmChartsProcessor coordinates the Helm chart lifecycle required for comparisons.
