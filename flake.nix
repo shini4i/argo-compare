@@ -18,6 +18,7 @@
           mockgen
           goreleaser
           gosec
+          golangci-lint
           go-junit-report
           go-task
         ];

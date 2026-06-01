@@ -21,3 +21,16 @@ repos:
       - id: go-fmt
       - id: go-mod-tidy
       - id: go-imports
+  - repo: local
+    hooks:
+      # Ratchet lint: only flags issues introduced by the staged changes
+      # (--new-from-rev=HEAD), so the pre-existing backlog never blocks a
+      # commit. golangci-lint bundles gocognit and gosec, so this single hook
+      # covers complexity and security checks too. Runs from the Nix devShell
+      # (provided on PATH via direnv); not vendored by pre-commit itself.
+      - id: golangci-lint
+        name: golangci-lint (new code only)
+        entry: golangci-lint run --new-from-rev=HEAD
+        types: [go]
+        language: system
+        pass_filenames: false

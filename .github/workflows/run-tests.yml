@@ -17,12 +17,25 @@ jobs:
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # Full history so golangci-lint can resolve the merge base for
+          # --new-from-merge-base (ratchet lint of PR-introduced issues).
+          fetch-depth: 0
 
       - name: Install Nix
         uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
 
       - name: Run Gosec Security Scanner
         run: nix develop --command gosec -exclude-dir=.gomod -exclude-dir=.go ./...
+
+      - name: Lint new code (golangci-lint)
+        # Ratchet: only fail on issues this PR introduces relative to its base
+        # branch. The pre-existing backlog is paid down incrementally, not all
+        # at once. Pushes to main skip this — they already passed PR checks.
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin "${{ github.base_ref }}"
+          nix develop --command golangci-lint run --new-from-merge-base="origin/${{ github.base_ref }}"
 
       - name: Run tests
         run: nix develop --command task test-coverage
