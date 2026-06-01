@@ -28,6 +28,9 @@ jobs:
       - name: Run Gosec Security Scanner
         run: nix develop --command gosec -exclude-dir=.gomod -exclude-dir=.go ./...
 
+      - name: Run govulncheck
+        run: nix develop --command govulncheck ./...
+
       - name: Lint new code (golangci-lint)
         # Ratchet: only fail on issues this PR introduces relative to its base
         # branch. The pre-existing backlog is paid down incrementally, not all
