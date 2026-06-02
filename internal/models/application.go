@@ -7,6 +7,9 @@ import (
 	"fmt"
 )
 
+// KindApplication is the manifest kind argo-compare operates on.
+const KindApplication = "Application"
+
 var (
 	// ErrNotApplication signals that the provided manifest is not an ArgoCD Application.
 	ErrNotApplication = errors.New("file is not an Application")
@@ -39,16 +42,35 @@ type Destination struct {
 
 // Source holds the chart or path information for a single Application source.
 type Source struct {
-	RepoURL        string `yaml:"repoURL"`
-	Chart          string `yaml:"chart,omitempty"`
-	TargetRevision string `yaml:"targetRevision"`
-	Path           string `yaml:"path,omitempty"`
-	Helm           struct {
-		ReleaseName  string                 `yaml:"releaseName,omitempty"`
-		Values       string                 `yaml:"values,omitempty"`
-		ValueFiles   []string               `yaml:"valueFiles,omitempty"`
-		ValuesObject map[string]interface{} `yaml:"valuesObject,omitempty"`
-	} `yaml:"helm"`
+	RepoURL        string     `yaml:"repoURL"`
+	Chart          string     `yaml:"chart,omitempty"`
+	TargetRevision string     `yaml:"targetRevision"`
+	Path           string     `yaml:"path,omitempty"`
+	Helm           HelmSource `yaml:"helm"`
+}
+
+// HelmSource mirrors the subset of ArgoCD's spec.source.helm we render with.
+//
+// Parameters carry spec.source.helm.parameters (the `--set` / `--set-string`
+// equivalents). ArgoCD also lets these be overridden by .argocd-source[-<app>].yaml
+// files committed next to the chart, which is how argo-watcher / Argo CD Image
+// Updater record image bumps; see source_overrides.go for that merge.
+type HelmSource struct {
+	ReleaseName  string                 `yaml:"releaseName,omitempty"`
+	Values       string                 `yaml:"values,omitempty"`
+	ValueFiles   []string               `yaml:"valueFiles,omitempty"`
+	ValuesObject map[string]interface{} `yaml:"valuesObject,omitempty"`
+	Parameters   []HelmParameter        `yaml:"parameters,omitempty"`
+}
+
+// HelmParameter is a single spec.source.helm.parameters entry. ForceString
+// selects `helm template --set-string` over `--set`, matching ArgoCD: it
+// preserves ambiguously-typed values (e.g. a numeric image tag) as strings.
+// ForceString defaults to false when omitted.
+type HelmParameter struct {
+	Name        string `yaml:"name"`
+	Value       string `yaml:"value"`
+	ForceString bool   `yaml:"forceString,omitempty"`
 }
 
 // validateHelmSources checks that every source declares exactly one chart kind:
@@ -92,13 +114,13 @@ func validateSourceShape(source *Source) error {
 
 // Validate performs validation checks on the Application struct.
 // It checks for the following:
-// - If the Application struct is empty, returns ErrEmptyFile.
-// - If both the 'source' and 'sources' fields are set at the same time, returns an error.
-// - If the kind of the application is not "Application", returns ErrNotApplication.
-// - For each source, ensures it declares exactly one of 'chart' (Helm-registry)
-//   or 'path' (Git path); both empty or both set yields ErrUnsupportedAppConfiguration.
-// - Sets the 'MultiSource' field to true if sources are specified.
-// - Returns nil if all validation checks pass.
+//   - If the Application struct is empty, returns ErrEmptyFile.
+//   - If both the 'source' and 'sources' fields are set at the same time, returns an error.
+//   - If the kind of the application is not "Application", returns ErrNotApplication.
+//   - For each source, ensures it declares exactly one of 'chart' (Helm-registry)
+//     or 'path' (Git path); both empty or both set yields ErrUnsupportedAppConfiguration.
+//   - Sets the 'MultiSource' field to true if sources are specified.
+//   - Returns nil if all validation checks pass.
 func (app *Application) Validate() error {
 	if app == nil {
 		return ErrEmptyFile
@@ -113,7 +135,7 @@ func (app *Application) Validate() error {
 		return fmt.Errorf("both 'source' and 'sources' fields cannot be set at the same time")
 	}
 
-	if app.Kind != "Application" {
+	if app.Kind != KindApplication {
 		return ErrNotApplication
 	}
 

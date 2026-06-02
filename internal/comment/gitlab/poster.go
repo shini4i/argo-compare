@@ -136,10 +136,11 @@ func (p *Poster) doRequest(ctx context.Context, endpoint string, payload []byte)
 
 	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
 		// Success - drain response body for connection reuse
-		_, _ = io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, resp.Body) //nolint:errcheck // best-effort drain for keep-alive; a failure here is harmless
 		return nil
 	}
 
+	//nolint:errcheck // best-effort read of the error body; a partial or empty read still yields a usable message
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorResponseBytes))
 	apiErr := fmt.Errorf("gitlab: unexpected status %s: %s", resp.Status, strings.TrimSpace(string(respBody)))
 

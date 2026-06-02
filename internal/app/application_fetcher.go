@@ -19,6 +19,10 @@ import (
 	"github.com/spf13/afero"
 )
 
+// defaultGitUsername is the placeholder username paired with a token when no
+// explicit GitUsername is set — accepted by GitHub PATs, GitLab PATs, and Gitea.
+const defaultGitUsername = "x-access-token"
+
 // RealApplicationFetcher implements ports.ApplicationFetcher.
 //
 // Same-repo fetches read the file directly from localRepoRoot using the
@@ -154,7 +158,7 @@ func (f *RealApplicationFetcher) buildCloneOptions(ref anchor.ApplicationRef) *g
 	if f.GitToken != "" {
 		username := f.GitUsername
 		if username == "" {
-			username = "x-access-token"
+			username = defaultGitUsername
 		}
 		opts.Auth = &githttp.BasicAuth{Username: username, Password: f.GitToken}
 	}

@@ -18,6 +18,8 @@
           mockgen
           goreleaser
           gosec
+          golangci-lint
+          govulncheck
           go-junit-report
           go-task
         ];
@@ -36,6 +38,9 @@
             export GOMODCACHE="$PWD/.gomod"
             mkdir -p "$GOPATH" "$GOMODCACHE"
             export GO111MODULE=on
+            # Install the pre-commit git hook so checks run on every commit.
+            # Idempotent; hook environments are built lazily on first commit.
+            pre-commit install >/dev/null
           '';
         };
       }

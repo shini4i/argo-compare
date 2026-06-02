@@ -26,6 +26,8 @@ export REPO_CREDS_EXAMPLE='{"url":"https://charts.example.com","username":"usern
 
 `argo-compare` scans every `REPO_CREDS_*` variable and applies the entry whose `url` matches the `repoURL` of the Application being rendered.
 
+The same credential matching also applies to HTTP(S) dependency repositories listed in `Chart.yaml` when `helm dependency build` runs for path-based sources — set a `REPO_CREDS_*` entry per private subchart repository.
+
 ## OCI registries
 
 `argo-compare` supports charts hosted in OCI registries. Following the ArgoCD convention for Helm charts, the `repoURL` field contains the bare registry hostname without the `oci://` scheme prefix:

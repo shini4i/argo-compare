@@ -44,9 +44,9 @@ func commitTreeWith(t *testing.T, files map[string]string) *object.Tree {
 
 func TestMaterializeTreeDir_FlatChart(t *testing.T) {
 	tree := commitTreeWith(t, map[string]string{
-		"charts/foo/Chart.yaml":  "name: foo\n",
-		"charts/foo/values.yaml": "replicaCount: 1\n",
-		"unrelated/other.yaml":   "ignored\n",
+		fooChartYAML:           "name: foo\n",
+		fooValuesYAML:          "replicaCount: 1\n",
+		"unrelated/other.yaml": "ignored\n",
 	})
 
 	dest := t.TempDir()
@@ -66,11 +66,11 @@ func TestMaterializeTreeDir_FlatChart(t *testing.T) {
 
 func TestMaterializeTreeDir_NestedDirectories(t *testing.T) {
 	tree := commitTreeWith(t, map[string]string{
-		"charts/foo/Chart.yaml":          "name: foo\n",
-		"charts/foo/values.yaml":         "replicaCount: 1\n",
-		"charts/foo/templates/dep.yaml":  "kind: Deployment\n",
-		"charts/foo/templates/svc.yaml":  "kind: Service\n",
-		"charts/foo/charts/sub/x.yaml":   "sub-chart-file\n",
+		fooChartYAML:                    "name: foo\n",
+		fooValuesYAML:                   "replicaCount: 1\n",
+		"charts/foo/templates/dep.yaml": "kind: Deployment\n",
+		"charts/foo/templates/svc.yaml": "kind: Service\n",
+		"charts/foo/charts/sub/x.yaml":  "sub-chart-file\n",
 	})
 
 	dest := t.TempDir()
@@ -84,7 +84,7 @@ func TestMaterializeTreeDir_NestedDirectories(t *testing.T) {
 
 func TestMaterializeTreeDir_SubpathMissing(t *testing.T) {
 	tree := commitTreeWith(t, map[string]string{
-		"charts/foo/Chart.yaml": "name: foo\n",
+		fooChartYAML: "name: foo\n",
 	})
 
 	dest := t.TempDir()
@@ -94,11 +94,11 @@ func TestMaterializeTreeDir_SubpathMissing(t *testing.T) {
 
 func TestMaterializeTreeDir_SubpathIsFile(t *testing.T) {
 	tree := commitTreeWith(t, map[string]string{
-		"charts/foo/Chart.yaml": "name: foo\n",
+		fooChartYAML: "name: foo\n",
 	})
 
 	dest := t.TempDir()
-	err := MaterializeTreeDir(context.Background(), afero.NewOsFs(), tree, "charts/foo/Chart.yaml", dest)
+	err := MaterializeTreeDir(context.Background(), afero.NewOsFs(), tree, fooChartYAML, dest)
 	require.Error(t, err, "subpath must be a directory inside the tree")
 }
 
@@ -118,7 +118,7 @@ func TestMaterializeTreeDir_RootSubpath(t *testing.T) {
 
 func TestMaterializeTreeDir_ContextCancelled(t *testing.T) {
 	tree := commitTreeWith(t, map[string]string{
-		"charts/foo/Chart.yaml": "name: foo\n",
+		fooChartYAML: "name: foo\n",
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())

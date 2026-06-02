@@ -176,45 +176,63 @@ type branchFlags struct {
 // loadBranchDefaults gathers branch flag defaults from the environment.
 func loadBranchDefaults() branchFlags {
 	defaults := branchFlags{}
+	loadCommentDefaults(&defaults)
+	loadValidationDefaults(&defaults)
 
+	defaults.anchorFileName = helpers.GetEnv("ARGO_COMPARE_ANCHOR_FILE", app.DefaultAnchorFileName)
+	defaults.gitUsername = helpers.GetEnv("ARGO_COMPARE_GIT_USERNAME", "")
+	defaults.gitToken = helpers.GetEnv("ARGO_COMPARE_GIT_TOKEN", "")
+
+	return defaults
+}
+
+// envWithFallback returns the primary env var's value, or the secondary's when
+// the primary is unset/empty. Used to honor explicit ARGO_COMPARE_* overrides
+// while falling back to GitLab CI's predefined variables.
+func envWithFallback(primary, secondary string) string {
+	if v := helpers.GetEnv(primary, ""); v != "" {
+		return v
+	}
+	return helpers.GetEnv(secondary, "")
+}
+
+// splitCSV splits a comma-separated value into trimmed, non-empty items.
+func splitCSV(s string) []string {
+	var out []string
+	for _, item := range strings.Split(s, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// loadCommentDefaults populates the GitLab comment-related defaults from the
+// environment, preferring explicit ARGO_COMPARE_* vars over GitLab CI's.
+func loadCommentDefaults(d *branchFlags) {
 	provider := helpers.GetEnv("ARGO_COMPARE_COMMENT_PROVIDER", "")
 	if provider == "" && helpers.GetEnv("GITLAB_CI", "") != "" && helpers.GetEnv("CI_MERGE_REQUEST_IID", "") != "" {
 		provider = string(app.CommentProviderGitLab)
 	}
-	defaults.commentProvider = provider
+	d.commentProvider = provider
 
-	url := helpers.GetEnv("ARGO_COMPARE_GITLAB_URL", "")
-	if url == "" {
-		url = helpers.GetEnv("CI_SERVER_URL", "")
-	}
-	defaults.gitlabURL = url
+	d.gitlabURL = envWithFallback("ARGO_COMPARE_GITLAB_URL", "CI_SERVER_URL")
+	d.gitlabToken = envWithFallback("ARGO_COMPARE_GITLAB_TOKEN", "CI_JOB_TOKEN")
+	d.gitlabProjectID = envWithFallback("ARGO_COMPARE_GITLAB_PROJECT_ID", "CI_PROJECT_ID")
 
-	token := helpers.GetEnv("ARGO_COMPARE_GITLAB_TOKEN", "")
-	if token == "" {
-		token = helpers.GetEnv("CI_JOB_TOKEN", "")
-	}
-	defaults.gitlabToken = token
-
-	projectID := helpers.GetEnv("ARGO_COMPARE_GITLAB_PROJECT_ID", "")
-	if projectID == "" {
-		projectID = helpers.GetEnv("CI_PROJECT_ID", "")
-	}
-	defaults.gitlabProjectID = projectID
-
-	mergeIID := helpers.GetEnv("ARGO_COMPARE_GITLAB_MR_IID", "")
-	if mergeIID == "" {
-		mergeIID = helpers.GetEnv("CI_MERGE_REQUEST_IID", "")
-	}
-	if mergeIID != "" {
+	if mergeIID := envWithFallback("ARGO_COMPARE_GITLAB_MR_IID", "CI_MERGE_REQUEST_IID"); mergeIID != "" {
 		if parsed, err := strconv.Atoi(mergeIID); err == nil {
-			defaults.gitlabMergeIID = parsed
+			d.gitlabMergeIID = parsed
 		}
 	}
+}
 
-	validateStr := helpers.GetEnv("ARGO_COMPARE_VALIDATE_MANIFESTS", "")
-	if validateStr != "" {
+// loadValidationDefaults populates the manifest-validation defaults from the
+// environment.
+func loadValidationDefaults(d *branchFlags) {
+	if validateStr := helpers.GetEnv("ARGO_COMPARE_VALIDATE_MANIFESTS", ""); validateStr != "" {
 		if parsed, err := strconv.ParseBool(validateStr); err == nil {
-			defaults.validateManifests = parsed
+			d.validateManifests = parsed
 		} else {
 			fmt.Fprintf(os.Stderr,
 				"warning: ARGO_COMPARE_VALIDATE_MANIFESTS=%q is not a valid boolean; validation disabled (use 1/true/0/false)\n",
@@ -222,28 +240,9 @@ func loadBranchDefaults() branchFlags {
 		}
 	}
 
-	defaults.kubeconformPath = helpers.GetEnv("ARGO_COMPARE_KUBECONFORM_PATH", "")
-
-	skipKindsStr := helpers.GetEnv("ARGO_COMPARE_SKIP_VALIDATION_KINDS", "")
-	for _, kind := range strings.Split(skipKindsStr, ",") {
-		if kind = strings.TrimSpace(kind); kind != "" {
-			defaults.validateSkipKinds = append(defaults.validateSkipKinds, kind)
-		}
-	}
-
-	schemaLocationsStr := helpers.GetEnv("ARGO_COMPARE_KUBECONFORM_SCHEMA_LOCATIONS", "")
-	for _, loc := range strings.Split(schemaLocationsStr, ",") {
-		if loc = strings.TrimSpace(loc); loc != "" {
-			defaults.validateSchemaLocations = append(defaults.validateSchemaLocations, loc)
-		}
-	}
-
-	defaults.anchorFileName = helpers.GetEnv("ARGO_COMPARE_ANCHOR_FILE", app.DefaultAnchorFileName)
-
-	defaults.gitUsername = helpers.GetEnv("ARGO_COMPARE_GIT_USERNAME", "")
-	defaults.gitToken = helpers.GetEnv("ARGO_COMPARE_GIT_TOKEN", "")
-
-	return defaults
+	d.kubeconformPath = helpers.GetEnv("ARGO_COMPARE_KUBECONFORM_PATH", "")
+	d.validateSkipKinds = splitCSV(helpers.GetEnv("ARGO_COMPARE_SKIP_VALIDATION_KINDS", ""))
+	d.validateSchemaLocations = splitCSV(helpers.GetEnv("ARGO_COMPARE_KUBECONFORM_SCHEMA_LOCATIONS", ""))
 }
 
 // applyFullOutput toggles added/removed flags when full output is requested.

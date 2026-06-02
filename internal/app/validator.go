@@ -18,6 +18,10 @@ const (
 	kubeconformStatusError   = "statusError"
 )
 
+// kubeconformDefaultSchemaLocation is kubeconform's built-in schema registry,
+// always passed first so user-supplied locations are tried afterwards.
+const kubeconformDefaultSchemaLocation = "default"
+
 // KubeconformValidator validates rendered manifests by shelling out to the
 // kubeconform CLI. It implements ports.ManifestValidator.
 type KubeconformValidator struct {
@@ -70,28 +74,10 @@ func (v *KubeconformValidator) Validate(ctx context.Context, target, manifestDir
 		return ports.ValidationResult{}, err
 	}
 
-	args := []string{
-		"-output", "json",
-		"-strict",
-		"-summary",
-		"-schema-location", "default",
+	args, err := v.buildValidateArgs(manifestDir)
+	if err != nil {
+		return ports.ValidationResult{}, err
 	}
-	for _, loc := range v.SchemaLocations {
-		if strings.TrimSpace(loc) == "" {
-			return ports.ValidationResult{}, fmt.Errorf("empty schema location in SchemaLocations")
-		}
-		args = append(args, "-schema-location", loc)
-	}
-	if len(v.SkipKinds) > 0 {
-		for _, kind := range v.SkipKinds {
-			if !isValidKindName(kind) {
-				return ports.ValidationResult{}, fmt.Errorf("invalid kind name in SkipKinds: %q", kind)
-			}
-		}
-		args = append(args, "-skip", strings.Join(v.SkipKinds, ","))
-	}
-	// "--" terminates options so manifestDir cannot be interpreted as a flag.
-	args = append(args, "--", manifestDir)
 
 	stdout, stderr, err := v.CmdRunner.Run(ctx, v.Path, args...)
 
@@ -115,6 +101,34 @@ func (v *KubeconformValidator) Validate(ctx context.Context, target, manifestDir
 	}
 
 	return buildValidationResult(target, manifestDir, parsed), nil
+}
+
+// buildValidateArgs assembles the kubeconform argument list, validating the
+// configured SchemaLocations and SkipKinds along the way. The trailing "--"
+// terminates options so manifestDir can never be interpreted as a flag.
+func (v *KubeconformValidator) buildValidateArgs(manifestDir string) ([]string, error) {
+	args := []string{
+		"-output", "json",
+		"-strict",
+		"-summary",
+		"-schema-location", kubeconformDefaultSchemaLocation,
+	}
+	for _, loc := range v.SchemaLocations {
+		if strings.TrimSpace(loc) == "" {
+			return nil, fmt.Errorf("empty schema location in SchemaLocations")
+		}
+		args = append(args, "-schema-location", loc)
+	}
+	if len(v.SkipKinds) > 0 {
+		for _, kind := range v.SkipKinds {
+			if !isValidKindName(kind) {
+				return nil, fmt.Errorf("invalid kind name in SkipKinds: %q", kind)
+			}
+		}
+		args = append(args, "-skip", strings.Join(v.SkipKinds, ","))
+	}
+	args = append(args, "--", manifestDir)
+	return args, nil
 }
 
 // isValidKindName reports whether s is a valid Kubernetes resource kind identifier.

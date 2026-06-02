@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
@@ -481,6 +482,123 @@ func TestRenderAppSource(t *testing.T) {
 		assert.NoError(t, helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req))
 	})
 
+	t.Run("parameters render as --set / --set-string after values", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+		helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+
+		tmpDir := t.TempDir()
+		req := ports.ChartRenderRequest{
+			ReleaseName:  "my-release",
+			ChartName:    "my-chart",
+			ChartVersion: "1.2.3",
+			TmpDir:       tmpDir,
+			TargetType:   "src",
+			Namespace:    "my-namespace",
+			Parameters: []models.HelmParameter{
+				{Name: "image.repository", Value: "registry.example.com/app", ForceString: false},
+				{Name: "image.tag", Value: "2.0.0", ForceString: true},
+			},
+		}
+
+		chartDir := fmt.Sprintf("%s/charts/src/my-chart", tmpDir)
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"template",
+			"--release-name", "my-release",
+			chartDir,
+			"--output-dir", fmt.Sprintf("%s/templates/src", tmpDir),
+			"--set", "image.repository=registry.example.com/app",
+			"--set-string", "image.tag=2.0.0",
+			"--namespace", "my-namespace").Return("", "", nil)
+
+		assert.NoError(t, helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req))
+	})
+
+	t.Run("commas in parameter values are escaped", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+		helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+
+		tmpDir := t.TempDir()
+		req := ports.ChartRenderRequest{
+			ReleaseName:  "my-release",
+			ChartName:    "my-chart",
+			ChartVersion: "1.2.3",
+			TmpDir:       tmpDir,
+			TargetType:   "src",
+			Namespace:    "my-namespace",
+			Parameters: []models.HelmParameter{
+				{Name: "nodeSelector", Value: "a=b,c=d"},
+			},
+		}
+
+		chartDir := fmt.Sprintf("%s/charts/src/my-chart", tmpDir)
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"template",
+			"--release-name", "my-release",
+			chartDir,
+			"--output-dir", fmt.Sprintf("%s/templates/src", tmpDir),
+			"--set", `nodeSelector=a=b\,c=d`,
+			"--namespace", "my-namespace").Return("", "", nil)
+
+		assert.NoError(t, helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req))
+	})
+
+	t.Run("backslash and braces in values are escaped", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+		helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+
+		tmpDir := t.TempDir()
+		req := ports.ChartRenderRequest{
+			ReleaseName:  "my-release",
+			ChartName:    "my-chart",
+			ChartVersion: "1.2.3",
+			TmpDir:       tmpDir,
+			TargetType:   "src",
+			Namespace:    "my-namespace",
+			Parameters: []models.HelmParameter{
+				{Name: "annotations.note", Value: `a\b{x,y}`},
+			},
+		}
+
+		chartDir := fmt.Sprintf("%s/charts/src/my-chart", tmpDir)
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"template",
+			"--release-name", "my-release",
+			chartDir,
+			"--output-dir", fmt.Sprintf("%s/templates/src", tmpDir),
+			"--set", `annotations.note=a\\b\{x\,y\}`,
+			"--namespace", "my-namespace").Return("", "", nil)
+
+		assert.NoError(t, helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req))
+	})
+
+	t.Run("parameter name with injection characters is rejected", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+		// No Run() call expected — error must surface before helm is invoked.
+		helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+
+		tmpDir := t.TempDir()
+		for _, badName := range []string{"a=b", "x,y", "k{v}", `a\b`} {
+			req := ports.ChartRenderRequest{
+				ReleaseName: "my-release",
+				ChartName:   "my-chart",
+				TmpDir:      tmpDir,
+				TargetType:  "src",
+				Namespace:   "ns",
+				Parameters:  []models.HelmParameter{{Name: badName, Value: "v"}},
+			}
+			err := helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req)
+			assert.Error(t, err, "name %q must be rejected", badName)
+		}
+	})
+
 	t.Run("failed render surfaces error", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
@@ -559,6 +677,256 @@ func TestRenderAppSource_ValueFileValidation(t *testing.T) {
 		err := helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req)
 		assert.ErrorIs(t, err, ErrInvalidValueFile, "expected rejection of valueFile %q", vf)
 	}
+}
+
+func TestBuildChartDependencies(t *testing.T) {
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+
+	t.Run("no Chart.yaml is a no-op", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+		// no Run() expected
+		chartDir := t.TempDir()
+
+		err := helmChartProcessor.BuildChartDependencies(context.Background(), ports.HelmDeps{CmdRunner: mockCmdRunner}, chartDir, t.TempDir())
+		assert.NoError(t, err)
+	})
+
+	t.Run("Chart.yaml without dependencies is a no-op", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+		chartDir := t.TempDir()
+		assert.NoError(t, os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("apiVersion: v2\nname: my-chart\nversion: 1.0.0\n"), 0o644))
+
+		err := helmChartProcessor.BuildChartDependencies(context.Background(), ports.HelmDeps{CmdRunner: mockCmdRunner}, chartDir, t.TempDir())
+		assert.NoError(t, err)
+	})
+
+	t.Run("dependencies trigger helm dependency build with credentials", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+
+		staticProvider := NewStaticCredentialProvider([]models.RepoCredentials{
+			{Url: "https://helm.example.com", Username: "ci", Password: "secret"},
+		})
+		deps := ports.HelmDeps{
+			CmdRunner:           mockCmdRunner,
+			CredentialProviders: []ports.CredentialProvider{staticProvider},
+		}
+
+		chartDir := t.TempDir()
+		chartYaml := `apiVersion: v2
+name: parent-chart
+version: 0.1.0
+dependencies:
+  - name: child
+    version: 1.2.3
+    repository: https://helm.example.com
+`
+		assert.NoError(t, os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte(chartYaml), 0o644))
+
+		var capturedConfig string
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"dependency", "build",
+			"--repository-config", gomock.Any(),
+			"--repository-cache", gomock.Any(),
+			chartDir,
+		).DoAndReturn(func(_ context.Context, _ string, args ...string) (string, string, error) {
+			// Read the repo config WHILE helm is "running" — cleanup runs afterwards.
+			for i, a := range args {
+				if a == "--repository-config" && i+1 < len(args) {
+					b, readErr := os.ReadFile(args[i+1])
+					if readErr != nil {
+						return "", "", readErr
+					}
+					capturedConfig = string(b)
+				}
+			}
+			return "", "", nil
+		})
+
+		err := helmChartProcessor.BuildChartDependencies(context.Background(), deps, chartDir, t.TempDir())
+		assert.NoError(t, err)
+		assert.Contains(t, capturedConfig, "https://helm.example.com")
+		assert.Contains(t, capturedConfig, "username: ci")
+		assert.Contains(t, capturedConfig, "password: secret")
+	})
+
+	t.Run("file:// and oci:// dependencies are skipped from repo config", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+
+		chartDir := t.TempDir()
+		chartYaml := `apiVersion: v2
+name: parent-chart
+version: 0.1.0
+dependencies:
+  - name: local-dep
+    version: 1.0.0
+    repository: file://./charts/local
+  - name: oci-dep
+    version: 1.0.0
+    repository: oci://my-registry.example/charts
+`
+		assert.NoError(t, os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte(chartYaml), 0o644))
+
+		var capturedConfig string
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"dependency", "build",
+			"--repository-config", gomock.Any(),
+			"--repository-cache", gomock.Any(),
+			chartDir,
+		).DoAndReturn(func(_ context.Context, _ string, args ...string) (string, string, error) {
+			for i, a := range args {
+				if a == "--repository-config" && i+1 < len(args) {
+					b, readErr := os.ReadFile(args[i+1])
+					if readErr != nil {
+						return "", "", readErr
+					}
+					capturedConfig = string(b)
+				}
+			}
+			return "", "", nil
+		})
+
+		err := helmChartProcessor.BuildChartDependencies(context.Background(), ports.HelmDeps{CmdRunner: mockCmdRunner}, chartDir, t.TempDir())
+		assert.NoError(t, err)
+		// Neither URL should appear: file:// and oci:// are skipped entirely.
+		assert.NotContains(t, capturedConfig, "file://")
+		assert.NotContains(t, capturedConfig, "oci://")
+	})
+
+	t.Run("temp files are written under scratchDir, not the system tmpdir", func(t *testing.T) {
+		// Regression guard: credentials-bearing repositories.yaml and the helm
+		// repo cache must live inside scratchDir so they share the caller's
+		// cleanup boundary instead of leaking into /tmp on hard termination.
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+
+		chartDir := t.TempDir()
+		scratchDir := t.TempDir()
+		chartYaml := `apiVersion: v2
+name: parent
+version: 0.1.0
+dependencies:
+  - name: child
+    version: 1.0.0
+    repository: https://helm.example.com
+`
+		assert.NoError(t, os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte(chartYaml), 0o644))
+
+		var capturedRepoCfg, capturedRepoCache string
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"dependency", "build",
+			"--repository-config", gomock.Any(),
+			"--repository-cache", gomock.Any(),
+			chartDir,
+		).DoAndReturn(func(_ context.Context, _ string, args ...string) (string, string, error) {
+			for i, a := range args {
+				switch a {
+				case "--repository-config":
+					if i+1 < len(args) {
+						capturedRepoCfg = args[i+1]
+					}
+				case "--repository-cache":
+					if i+1 < len(args) {
+						capturedRepoCache = args[i+1]
+					}
+				}
+			}
+			return "", "", nil
+		})
+
+		err := helmChartProcessor.BuildChartDependencies(context.Background(), ports.HelmDeps{CmdRunner: mockCmdRunner}, chartDir, scratchDir)
+		assert.NoError(t, err)
+		assert.True(t, strings.HasPrefix(capturedRepoCfg, scratchDir), "repositories.yaml must live under scratchDir (got %q, want prefix %q)", capturedRepoCfg, scratchDir)
+		assert.True(t, strings.HasPrefix(capturedRepoCache, scratchDir), "repo cache must live under scratchDir (got %q, want prefix %q)", capturedRepoCache, scratchDir)
+	})
+
+	t.Run("alias-prefixed dependencies are skipped from repo config", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+
+		chartDir := t.TempDir()
+		chartYaml := `apiVersion: v2
+name: parent-chart
+version: 0.1.0
+dependencies:
+  - name: aliased
+    version: 1.0.0
+    repository: "@my-helm-repo"
+`
+		assert.NoError(t, os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte(chartYaml), 0o644))
+
+		var capturedConfig string
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"dependency", "build",
+			"--repository-config", gomock.Any(),
+			"--repository-cache", gomock.Any(),
+			chartDir,
+		).DoAndReturn(func(_ context.Context, _ string, args ...string) (string, string, error) {
+			for i, a := range args {
+				if a == "--repository-config" && i+1 < len(args) {
+					b, readErr := os.ReadFile(args[i+1])
+					if readErr != nil {
+						return "", "", readErr
+					}
+					capturedConfig = string(b)
+				}
+			}
+			return "", "", nil
+		})
+
+		err := helmChartProcessor.BuildChartDependencies(context.Background(), ports.HelmDeps{CmdRunner: mockCmdRunner}, chartDir, t.TempDir())
+		assert.NoError(t, err)
+		assert.NotContains(t, capturedConfig, "@my-helm-repo", "alias deps must not be written to repositories.yaml")
+	})
+
+	t.Run("malformed Chart.yaml surfaces an error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+
+		chartDir := t.TempDir()
+		assert.NoError(t, os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("not: : : valid"), 0o644))
+
+		err := helmChartProcessor.BuildChartDependencies(context.Background(), ports.HelmDeps{CmdRunner: mockCmdRunner}, chartDir, t.TempDir())
+		assert.Error(t, err)
+	})
+
+	t.Run("helm CLI failure is wrapped", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+
+		chartDir := t.TempDir()
+		chartYaml := `apiVersion: v2
+name: parent
+version: 0.1.0
+dependencies:
+  - name: child
+    version: 1.0.0
+    repository: https://helm.example.com
+`
+		assert.NoError(t, os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte(chartYaml), 0o644))
+
+		osErr := &exec.ExitError{ProcessState: &os.ProcessState{}}
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"dependency", "build",
+			"--repository-config", gomock.Any(),
+			"--repository-cache", gomock.Any(),
+			chartDir,
+		).Return("", "boom", osErr)
+
+		err := helmChartProcessor.BuildChartDependencies(context.Background(), ports.HelmDeps{CmdRunner: mockCmdRunner}, chartDir, t.TempDir())
+		assert.Error(t, err)
+	})
 }
 
 func TestResolveCredentials(t *testing.T) {

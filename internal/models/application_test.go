@@ -4,7 +4,45 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
+
+// TestSourceHelmParametersUnmarshal verifies that spec.source.helm.parameters
+// parse into the typed slice, including the forceString flag (default false
+// when omitted). This is the shape argo-watcher / Argo CD Image Updater write.
+func TestSourceHelmParametersUnmarshal(t *testing.T) {
+	manifest := []byte(`
+kind: Application
+metadata:
+  name: demo
+spec:
+  source:
+    repoURL: ssh://git@example.com/repo.git
+    path: charts/demo
+    helm:
+      parameters:
+        - name: image.repository
+          value: registry.example.com/demo
+          forceString: false
+        - name: image.tag
+          value: "2.0.0"
+          forceString: true
+        - name: replicaCount
+          value: "3"
+`)
+
+	var app Application
+	require.NoError(t, yaml.Unmarshal(manifest, &app))
+	require.NoError(t, app.Validate())
+
+	params := app.Spec.Source.Helm.Parameters
+	require.Len(t, params, 3)
+	assert.Equal(t, HelmParameter{Name: "image.repository", Value: "registry.example.com/demo", ForceString: false}, params[0])
+	assert.Equal(t, HelmParameter{Name: "image.tag", Value: "2.0.0", ForceString: true}, params[1])
+	assert.Equal(t, HelmParameter{Name: "replicaCount", Value: "3", ForceString: false}, params[2],
+		"forceString must default to false when omitted")
+}
 
 func TestApplication_Validate(t *testing.T) {
 	// Test case 1: Empty application

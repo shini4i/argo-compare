@@ -132,11 +132,11 @@ func IsPermanent(err error) bool {
 // It respects context cancellation and returns early if the context is cancelled.
 // If the function returns a PermanentError, retry is skipped and the error is returned immediately.
 // WithRetry executes fn repeatedly according to cfg, applying exponential backoff and respecting context cancellation.
-// 
+//
 // WithRetry normalizes cfg (ensuring at least one attempt and a multiplier of at least 1), then calls fn up to
 // cfg.MaxAttempts times. It waits with an initial delay of cfg.InitialDelay and multiplies the delay by cfg.Multiplier
 // between attempts, capping at cfg.MaxDelay. It returns immediately if ctx is cancelled or if fn returns a PermanentError.
-// 
+//
 // On success, it returns nil. If the context is cancelled before or during attempts, it returns ctx.Err(). If all
 // attempts fail (or a permanent error is returned by fn), it returns the last error produced by fn.
 func WithRetry(ctx context.Context, cfg RetryConfig, fn func() error) error {

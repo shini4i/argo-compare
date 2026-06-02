@@ -23,8 +23,8 @@ func TestDiscoverAnchors_SingleAnchor(t *testing.T) {
 	writeAnchor(t, fs, "/repo/charts/foo", "cluster-state/foo.yaml")
 
 	groups, err := DiscoverAnchors("/repo", []string{
-		"charts/foo/values.yaml",
-		"charts/foo/Chart.yaml",
+		fooValuesYAML,
+		fooChartYAML,
 	}, fs, anchorFileName)
 	require.NoError(t, err)
 	require.Len(t, groups, 1)
@@ -32,7 +32,7 @@ func TestDiscoverAnchors_SingleAnchor(t *testing.T) {
 	assert.Equal(t, "/repo/charts/foo", groups[0].Dir)
 	assert.Equal(t, "cluster-state/foo.yaml", groups[0].Anchor.Application.Path)
 	sort.Strings(groups[0].ChangedFiles)
-	assert.Equal(t, []string{"charts/foo/Chart.yaml", "charts/foo/values.yaml"}, groups[0].ChangedFiles)
+	assert.Equal(t, []string{fooChartYAML, fooValuesYAML}, groups[0].ChangedFiles)
 }
 
 func TestDiscoverAnchors_MultipleAnchors(t *testing.T) {
@@ -41,7 +41,7 @@ func TestDiscoverAnchors_MultipleAnchors(t *testing.T) {
 	writeAnchor(t, fs, "/repo/charts/bar", "apps/bar.yaml")
 
 	groups, err := DiscoverAnchors("/repo", []string{
-		"charts/foo/values.yaml",
+		fooValuesYAML,
 		"charts/bar/values.yaml",
 		"charts/bar/templates/x.yaml",
 	}, fs, anchorFileName)
@@ -55,7 +55,7 @@ func TestDiscoverAnchors_MultipleAnchors(t *testing.T) {
 
 	foo := byDir["/repo/charts/foo"]
 	assert.Equal(t, "apps/foo.yaml", foo.Anchor.Application.Path)
-	assert.Equal(t, []string{"charts/foo/values.yaml"}, foo.ChangedFiles)
+	assert.Equal(t, []string{fooValuesYAML}, foo.ChangedFiles)
 
 	bar := byDir["/repo/charts/bar"]
 	sort.Strings(bar.ChangedFiles)
@@ -69,7 +69,7 @@ func TestDiscoverAnchors_NestedAnchorsPickNearest(t *testing.T) {
 	writeAnchor(t, fs, "/repo/charts/foo", "apps/foo.yaml")
 
 	groups, err := DiscoverAnchors("/repo", []string{
-		"charts/foo/values.yaml",
+		fooValuesYAML,
 	}, fs, anchorFileName)
 	require.NoError(t, err)
 	require.Len(t, groups, 1)
@@ -92,12 +92,12 @@ func TestDiscoverAnchors_MixedAnchoredAndUnanchored(t *testing.T) {
 	writeAnchor(t, fs, "/repo/charts/foo", "apps/foo.yaml")
 
 	groups, err := DiscoverAnchors("/repo", []string{
-		"charts/foo/values.yaml",
+		fooValuesYAML,
 		"apps/some-app.yaml", // not under any anchor
 	}, fs, anchorFileName)
 	require.NoError(t, err)
 	require.Len(t, groups, 1)
-	assert.Equal(t, []string{"charts/foo/values.yaml"}, groups[0].ChangedFiles)
+	assert.Equal(t, []string{fooValuesYAML}, groups[0].ChangedFiles)
 }
 
 func TestDiscoverAnchors_AnchorFileItselfChanged(t *testing.T) {
@@ -131,7 +131,7 @@ func TestDiscoverAnchors_InvalidAnchorFile(t *testing.T) {
 	require.NoError(t, afero.WriteFile(fs, "/repo/charts/foo/.argo-compare.yml", []byte("not-yaml: : :"), 0o644))
 
 	_, err := DiscoverAnchors("/repo", []string{
-		"charts/foo/values.yaml",
+		fooValuesYAML,
 	}, fs, anchorFileName)
 	require.Error(t, err, "malformed .argo-compare.yml must be a hard error")
 	assert.ErrorIs(t, err, anchor.ErrInvalidAnchor)

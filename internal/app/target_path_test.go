@@ -287,9 +287,9 @@ func TestMaterializeChartFromWorkingTree_RejectsSymlinkedChartDir(t *testing.T) 
 
 func TestMaterializeChartFromTree(t *testing.T) {
 	tree := commitTreeWith(t, map[string]string{
-		"charts/foo/Chart.yaml":          "name: foo\n",
-		"charts/foo/values.yaml":         "replicaCount: 9\n",
-		"charts/foo/templates/dep.yaml":  "kind: Deployment\n",
+		fooChartYAML:                    "name: foo\n",
+		fooValuesYAML:                   "replicaCount: 9\n",
+		"charts/foo/templates/dep.yaml": "kind: Deployment\n",
 	})
 
 	tmpDir := t.TempDir()
@@ -311,4 +311,3 @@ func TestMaterializeChartFromTree(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "replicaCount: 9\n", string(values))
 }
-

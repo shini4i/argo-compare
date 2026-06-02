@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v6.0.0
     hooks:
       - id: end-of-file-fixer
       - id: trailing-whitespace
@@ -10,14 +10,25 @@ repos:
         args:
           - --branch=main
   - repo: https://github.com/hadolint/hadolint
-    rev: v2.12.0
+    rev: v2.14.0
     hooks:
       - id: hadolint
         args:
           - --ignore=DL3018
-  - repo: https://github.com/dnephin/pre-commit-golang
-    rev: v0.5.1
+  # TekWizely/pre-commit-golang is the maintained successor to the archived
+  # dnephin/pre-commit-golang. It has no stable tag yet; v1.0.0-rc.4 is the
+  # newest published rev. All hooks require their tool on PATH (provided by the
+  # Nix devShell), which is consistent with how CI runs everything.
+  - repo: https://github.com/TekWizely/pre-commit-golang
+    rev: v1.0.0-rc.4
     hooks:
       - id: go-fmt
-      - id: go-mod-tidy
       - id: go-imports
+      - id: go-mod-tidy
+      # Ratchet: --new-from-rev=HEAD reports only issues introduced by the
+      # staged changes, so the pre-existing backlog never blocks a commit.
+      # golangci-lint bundles gocognit and gosec, covering complexity and
+      # security on new code. The -mod variant runs `golangci-lint run ./...`
+      # at the module root (needed for --new-from-rev to see the whole package).
+      - id: golangci-lint-mod
+        args: [--new-from-rev=HEAD]

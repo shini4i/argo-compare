@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
@@ -41,6 +42,10 @@ func (r *recordingHelmProcessor) ExtractHelmChart(_ context.Context, _ ports.Hel
 func (r *recordingHelmProcessor) RenderAppSource(_ context.Context, _ ports.CmdRunner, req ports.ChartRenderRequest) error {
 	r.renderCalls++
 	r.renderRequests = append(r.renderRequests, req)
+	return nil
+}
+
+func (r *recordingHelmProcessor) BuildChartDependencies(_ context.Context, _ ports.HelmDeps, _, _ string) error {
 	return nil
 }
 
@@ -86,12 +91,7 @@ func TestTargetMultiSourceInvokesHelmPerSource(t *testing.T) {
 						RepoURL:        "repoA",
 						Chart:          "chartA",
 						TargetRevision: "1.0.0",
-						Helm: struct {
-							ReleaseName  string                 `yaml:"releaseName,omitempty"`
-							Values       string                 `yaml:"values,omitempty"`
-							ValueFiles   []string               `yaml:"valueFiles,omitempty"`
-							ValuesObject map[string]interface{} `yaml:"valuesObject,omitempty"`
-						}{
+						Helm: models.HelmSource{
 							ReleaseName: "releaseA",
 							Values:      "replicaCount: 1",
 						},
@@ -100,12 +100,7 @@ func TestTargetMultiSourceInvokesHelmPerSource(t *testing.T) {
 						RepoURL:        "repoB",
 						Chart:          "chartB",
 						TargetRevision: "2.0.0",
-						Helm: struct {
-							ReleaseName  string                 `yaml:"releaseName,omitempty"`
-							Values       string                 `yaml:"values,omitempty"`
-							ValueFiles   []string               `yaml:"valueFiles,omitempty"`
-							ValuesObject map[string]interface{} `yaml:"valuesObject,omitempty"`
-						}{
+						Helm: models.HelmSource{
 							ValuesObject: map[string]interface{}{"replicaCount": 3},
 						},
 					},
@@ -148,13 +143,8 @@ func TestTargetSkipsValuesGenerationWhenInlineEmpty(t *testing.T) {
 			}{
 				Source: &models.Source{
 					RepoURL: "ssh://git@example.com/repo.git",
-					Path:    "cms-2/staging",
-					Helm: struct {
-						ReleaseName  string                 `yaml:"releaseName,omitempty"`
-						Values       string                 `yaml:"values,omitempty"`
-						ValueFiles   []string               `yaml:"valueFiles,omitempty"`
-						ValuesObject map[string]interface{} `yaml:"valuesObject,omitempty"`
-					}{
+					Path:    "charts/app",
+					Helm: models.HelmSource{
 						ValueFiles: []string{"values.yaml", "environment.yaml"},
 					},
 				},
@@ -175,6 +165,7 @@ func TestTargetPropagatesValueFiles(t *testing.T) {
 
 	target := Target{
 		CmdRunner:     portstest.NoopCmdRunner{},
+		FileReader:    portstest.NoopFileReader{},
 		HelmProcessor: processor,
 		Log:           logger.New("target-test"),
 		Type:          TargetTypeSource,
@@ -187,13 +178,8 @@ func TestTargetPropagatesValueFiles(t *testing.T) {
 			}{
 				Source: &models.Source{
 					RepoURL: "ssh://git@example.com/repo.git",
-					Path:    "cms-2/staging",
-					Helm: struct {
-						ReleaseName  string                 `yaml:"releaseName,omitempty"`
-						Values       string                 `yaml:"values,omitempty"`
-						ValueFiles   []string               `yaml:"valueFiles,omitempty"`
-						ValuesObject map[string]interface{} `yaml:"valuesObject,omitempty"`
-					}{
+					Path:    "charts/app",
+					Helm: models.HelmSource{
 						ValueFiles: []string{"values.yaml", "environment.yaml", "worker.yaml"},
 					},
 				},
@@ -205,6 +191,144 @@ func TestTargetPropagatesValueFiles(t *testing.T) {
 	require.NoError(t, target.renderAppSources(context.Background()))
 	require.Len(t, processor.renderRequests, 1)
 	assert.Equal(t, []string{"values.yaml", "environment.yaml", "worker.yaml"}, processor.renderRequests[0].ValueFiles)
+}
+
+// TestTargetPropagatesParameters verifies that a source's inline helm
+// parameters merge with an .argocd-source override file materialized beside the
+// chart, and the merged result reaches ChartRenderRequest.Parameters. This is
+// the end-to-end path for an argo-watcher image bump recorded in the override
+// file.
+func TestTargetPropagatesParameters(t *testing.T) {
+	processor := &recordingHelmProcessor{}
+
+	const chartDir = "tmp/charts/src/app"
+	reader := mapFileReader{files: map[string][]byte{
+		filepath.Join(chartDir, ".argocd-source-demo.yaml"): []byte(`
+helm:
+  parameters:
+    - name: image.tag
+      value: "2.0.0"
+      forceString: true
+`),
+	}}
+
+	target := Target{
+		CmdRunner:     portstest.NoopCmdRunner{},
+		FileReader:    reader,
+		HelmProcessor: processor,
+		Log:           logger.New("target-test"),
+		TmpDir:        "tmp",
+		Type:          TargetTypeSource,
+		App: models.Application{
+			Metadata: struct {
+				Name      string `yaml:"name"`
+				Namespace string `yaml:"namespace"`
+			}{Name: "demo"},
+			Spec: struct {
+				Source      *models.Source      `yaml:"source"`
+				Sources     []*models.Source    `yaml:"sources"`
+				MultiSource bool                `yaml:"-"`
+				Destination *models.Destination `yaml:"destination"`
+			}{
+				Source: &models.Source{
+					RepoURL: "ssh://git@example.com/repo.git",
+					Path:    "charts/app",
+					Helm: models.HelmSource{
+						Parameters: []models.HelmParameter{
+							{Name: "image.tag", Value: "1.0.0", ForceString: true},
+							{Name: "image.repository", Value: "registry.example.com/app"},
+						},
+					},
+				},
+				Destination: &models.Destination{Namespace: "demo"},
+			},
+		},
+	}
+
+	require.NoError(t, target.renderAppSources(context.Background()))
+	require.Len(t, processor.renderRequests, 1)
+	params := processor.renderRequests[0].Parameters
+	require.Len(t, params, 2)
+	assert.Equal(t, "image.tag", params[0].Name)
+	assert.Equal(t, "2.0.0", params[0].Value, "override file must win over inline tag")
+	assert.Equal(t, "image.repository", params[1].Name)
+	assert.Equal(t, "registry.example.com/app", params[1].Value)
+}
+
+// TestTargetMultiSourcePropagatesParameters verifies that in a multi-source
+// Application each source's parameters (inline + override file) resolve
+// independently. Parameters must not bleed across sources, and each source's
+// override file is looked up under its own chart directory.
+func TestTargetMultiSourcePropagatesParameters(t *testing.T) {
+	processor := &recordingHelmProcessor{}
+
+	// Two distinct chart directories for the two path sources.
+	reader := mapFileReader{files: map[string][]byte{
+		filepath.Join("tmp", "charts", "src", "chart-a", ".argocd-source-demo.yaml"): []byte(`
+helm:
+  parameters:
+    - name: image.tag
+      value: "a-override"
+      forceString: true
+`),
+		filepath.Join("tmp", "charts", "src", "chart-b", ".argocd-source-demo.yaml"): []byte(`
+helm:
+  parameters:
+    - name: image.tag
+      value: "b-override"
+      forceString: true
+`),
+	}}
+
+	target := Target{
+		CmdRunner:     portstest.NoopCmdRunner{},
+		FileReader:    reader,
+		HelmProcessor: processor,
+		Log:           logger.New("target-test"),
+		TmpDir:        "tmp",
+		Type:          TargetTypeSource,
+		App: models.Application{
+			Metadata: struct {
+				Name      string `yaml:"name"`
+				Namespace string `yaml:"namespace"`
+			}{Name: "demo"},
+			Spec: struct {
+				Source      *models.Source      `yaml:"source"`
+				Sources     []*models.Source    `yaml:"sources"`
+				MultiSource bool                `yaml:"-"`
+				Destination *models.Destination `yaml:"destination"`
+			}{
+				Sources: []*models.Source{
+					{
+						Chart: "chart-a",
+						Helm: models.HelmSource{
+							Parameters: []models.HelmParameter{
+								{Name: "image.tag", Value: "a-inline"},
+							},
+						},
+					},
+					{
+						Chart: "chart-b",
+						Helm: models.HelmSource{
+							Parameters: []models.HelmParameter{
+								{Name: "image.tag", Value: "b-inline"},
+							},
+						},
+					},
+				},
+				MultiSource: true,
+				Destination: &models.Destination{Namespace: "demo"},
+			},
+		},
+	}
+
+	require.NoError(t, target.renderAppSources(context.Background()))
+	require.Len(t, processor.renderRequests, 2)
+
+	assert.Equal(t, "a-override", processor.renderRequests[0].Parameters[0].Value,
+		"chart-a override must not bleed into chart-b")
+	assert.Equal(t, "b-override", processor.renderRequests[1].Parameters[0].Value,
+		"chart-b override must not bleed into chart-a")
 }
 
 // TestTargetMultiSourceSkipsValuesGenerationForEmptySources verifies that in a
@@ -228,23 +352,13 @@ func TestTargetMultiSourceSkipsValuesGenerationForEmptySources(t *testing.T) {
 				Sources: []*models.Source{
 					{
 						Chart: "chartA",
-						Helm: struct {
-							ReleaseName  string                 `yaml:"releaseName,omitempty"`
-							Values       string                 `yaml:"values,omitempty"`
-							ValueFiles   []string               `yaml:"valueFiles,omitempty"`
-							ValuesObject map[string]interface{} `yaml:"valuesObject,omitempty"`
-						}{
+						Helm: models.HelmSource{
 							Values: "replicaCount: 2",
 						},
 					},
 					{
 						Chart: "chartB",
-						Helm: struct {
-							ReleaseName  string                 `yaml:"releaseName,omitempty"`
-							Values       string                 `yaml:"values,omitempty"`
-							ValueFiles   []string               `yaml:"valueFiles,omitempty"`
-							ValuesObject map[string]interface{} `yaml:"valuesObject,omitempty"`
-						}{
+						Helm: models.HelmSource{
 							ValueFiles: []string{"extra.yaml"},
 						},
 					},
@@ -266,6 +380,7 @@ func TestTargetMultiSourcePropagatesValueFiles(t *testing.T) {
 
 	target := Target{
 		CmdRunner:     portstest.NoopCmdRunner{},
+		FileReader:    portstest.NoopFileReader{},
 		HelmProcessor: processor,
 		Log:           logger.New("target-test"),
 		Type:          TargetTypeSource,
@@ -279,23 +394,13 @@ func TestTargetMultiSourcePropagatesValueFiles(t *testing.T) {
 				Sources: []*models.Source{
 					{
 						Chart: "chartA",
-						Helm: struct {
-							ReleaseName  string                 `yaml:"releaseName,omitempty"`
-							Values       string                 `yaml:"values,omitempty"`
-							ValueFiles   []string               `yaml:"valueFiles,omitempty"`
-							ValuesObject map[string]interface{} `yaml:"valuesObject,omitempty"`
-						}{
+						Helm: models.HelmSource{
 							ValueFiles: []string{"a-values.yaml"},
 						},
 					},
 					{
 						Chart: "chartB",
-						Helm: struct {
-							ReleaseName  string                 `yaml:"releaseName,omitempty"`
-							Values       string                 `yaml:"values,omitempty"`
-							ValueFiles   []string               `yaml:"valueFiles,omitempty"`
-							ValuesObject map[string]interface{} `yaml:"valuesObject,omitempty"`
-						}{
+						Helm: models.HelmSource{
 							ValueFiles: []string{"b-values.yaml", "b-env.yaml"},
 						},
 					},

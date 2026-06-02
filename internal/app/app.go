@@ -24,6 +24,10 @@ import (
 
 const repoCredsPrefix = "REPO_CREDS_" // #nosec G101
 
+// defaultKubeconformBinary is the executable name used when no explicit
+// KubeconformPath is configured; resolved from PATH.
+const defaultKubeconformBinary = "kubeconform"
+
 // ErrManifestValidationFailed indicates that at least one rendered manifest failed schema
 // validation (or the validator itself failed to run when validation was enabled).
 // The comparison still ran to completion; this error is returned at the end of Run so
@@ -119,7 +123,7 @@ func New(cfg Config, deps Dependencies) (*App, error) {
 	} else if cfg.ValidateManifests {
 		kubeconformPath := cfg.KubeconformPath
 		if kubeconformPath == "" {
-			kubeconformPath = "kubeconform"
+			kubeconformPath = defaultKubeconformBinary
 		}
 		validator = &KubeconformValidator{
 			CmdRunner:       deps.CmdRunner,
@@ -381,7 +385,9 @@ func (a *App) resolveTargetApplication(repo *GitRepo, file string) (models.Appli
 // prepareChartFromPath materializes a path-based source's chart directory into
 // the layout the renderer expects. The source leg copies from the local
 // working tree; the destination leg extracts from the merge-base tree of the
-// configured target branch.
+// configured target branch. After materialization, subchart dependencies
+// declared in Chart.yaml are resolved into chart/charts/ via
+// `helm dependency build`.
 func (a *App) prepareChartFromPath(ctx context.Context, repo *GitRepo, target *Target, fileType string) error {
 	switch fileType {
 	case TargetTypeSource:
@@ -389,16 +395,21 @@ func (a *App) prepareChartFromPath(ctx context.Context, repo *GitRepo, target *T
 		if err != nil {
 			return fmt.Errorf("resolve repo root for path-based source: %w", err)
 		}
-		return target.MaterializeChartFromWorkingTree(ctx, a.fs, repoRoot)
+		if err := target.MaterializeChartFromWorkingTree(ctx, a.fs, repoRoot); err != nil {
+			return err
+		}
 	case TargetTypeDestination:
 		tree, err := repo.MergeBaseTreeFor(a.cfg.TargetBranch)
 		if err != nil {
 			return err
 		}
-		return target.MaterializeChartFromTree(ctx, a.fs, tree)
+		if err := target.MaterializeChartFromTree(ctx, a.fs, tree); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unknown render leg %q", fileType)
 	}
+	return target.BuildChartDependencies(ctx)
 }
 
 // decideDestinationAction maps the outcome of GetChangedFileContent to a destinationAction.
@@ -624,9 +635,6 @@ func defaultCommentPosterFactory(cfg Config) (comment.Poster, error) {
 	if cfg.Comment == nil {
 		return nil, fmt.Errorf("comment factory requested with nil comment configuration")
 	}
-	if cfg.Comment.Provider == CommentProviderNone {
-		return nil, fmt.Errorf("comment factory requested with comment provider %q", CommentProviderNone)
-	}
 
 	switch cfg.Comment.Provider {
 	case CommentProviderGitLab:
@@ -636,6 +644,8 @@ func defaultCommentPosterFactory(cfg Config) (comment.Poster, error) {
 			ProjectID:       cfg.Comment.GitLab.ProjectID,
 			MergeRequestIID: cfg.Comment.GitLab.MergeRequestIID,
 		})
+	case CommentProviderNone:
+		return nil, fmt.Errorf("comment factory requested with comment provider %q", CommentProviderNone)
 	default:
 		return nil, fmt.Errorf("unsupported comment provider %q", cfg.Comment.Provider)
 	}

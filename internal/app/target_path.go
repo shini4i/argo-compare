@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/shini4i/argo-compare/internal/models"
+	"github.com/shini4i/argo-compare/internal/ports"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/spf13/afero"
@@ -142,6 +143,31 @@ func (t *Target) MaterializeChartFromTree(ctx context.Context, fs afero.Fs, tree
 		dest := filepath.Join(t.TmpDir, "charts", t.Type, effectiveChartName(src))
 		if err := MaterializeTreeDir(ctx, fs, tree, src.Path, dest); err != nil {
 			return fmt.Errorf("materialize chart %q from tree: %w", src.Path, err)
+		}
+	}
+	return nil
+}
+
+// BuildChartDependencies runs `helm dependency build` against each path-based
+// source's chart directory so subcharts declared in Chart.yaml are available
+// to `helm template`. Charts without dependencies (or without a Chart.yaml at
+// all) are skipped silently inside the processor.
+//
+// This step has no counterpart for registry-based sources: chart tarballs
+// pulled from a registry already ship their dependencies in charts/.
+func (t *Target) BuildChartDependencies(ctx context.Context) error {
+	deps := ports.HelmDeps{
+		CmdRunner:           t.CmdRunner,
+		Globber:             t.Globber,
+		CredentialProviders: t.CredentialProviders,
+	}
+	for _, src := range t.pathSources() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		chartDir := filepath.Join(t.TmpDir, "charts", t.Type, effectiveChartName(src))
+		if err := t.HelmProcessor.BuildChartDependencies(ctx, deps, chartDir, t.TmpDir); err != nil {
+			return fmt.Errorf("build dependencies for chart %q: %w", src.Path, err)
 		}
 	}
 	return nil

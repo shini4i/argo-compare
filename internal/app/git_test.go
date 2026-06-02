@@ -389,7 +389,7 @@ func TestGitRepoGetChangedFilesPopulatesAnchorGroups(t *testing.T) {
 
 	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("feature"), Create: true}))
 	require.NoError(t, os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte("replicaCount: 2\n"), 0o644))
-	_, err = worktree.Add("charts/foo/values.yaml")
+	_, err = worktree.Add(fooValuesYAML)
 	require.NoError(t, err)
 	_, err = worktree.Commit("bump replicas", &git.CommitOptions{Author: defaultSignature()})
 	require.NoError(t, err)
@@ -413,7 +413,7 @@ func TestGitRepoGetChangedFilesPopulatesAnchorGroups(t *testing.T) {
 	g := result.AnchorGroups[0]
 	require.True(t, filepath.IsAbs(g.Dir))
 	require.Equal(t, "apps/foo.yaml", g.Anchor.Application.Path)
-	require.Equal(t, []string{"charts/foo/values.yaml"}, g.ChangedFiles)
+	require.Equal(t, []string{fooValuesYAML}, g.ChangedFiles)
 }
 
 func TestGitRepoGetChangedFilesNoAnchorDiscoveryWhenDisabled(t *testing.T) {
@@ -447,7 +447,7 @@ func TestGitRepoGetChangedFilesNoAnchorDiscoveryWhenDisabled(t *testing.T) {
 
 	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("feature"), Create: true}))
 	require.NoError(t, os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte("replicaCount: 2\n"), 0o644))
-	_, err = worktree.Add("charts/foo/values.yaml")
+	_, err = worktree.Add(fooValuesYAML)
 	require.NoError(t, err)
 	_, err = worktree.Commit("bump", &git.CommitOptions{Author: defaultSignature()})
 	require.NoError(t, err)

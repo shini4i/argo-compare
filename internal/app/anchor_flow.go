@@ -79,7 +79,7 @@ func (a *App) processAnchorGroup(ctx context.Context, repo *GitRepo, group Ancho
 		return false, fmt.Errorf("%w: %s", ErrAnchorNotPathBased, anchorRefDisplay(group.Anchor.Application))
 	}
 	if mismatchErr := assertSameRepo(app.Spec.Source, app.Spec.Sources, originURL); mismatchErr != nil {
-		return false, fmt.Errorf("%w: %s", ErrAnchorRepoMismatch, mismatchErr)
+		return false, fmt.Errorf("%w: %w", ErrAnchorRepoMismatch, mismatchErr)
 	}
 
 	tmpDir, err := afero.TempDir(a.fs, a.cfg.TempDirBase, "argo-compare-anchor-")
@@ -130,21 +130,12 @@ func (a *App) renderAnchorLeg(ctx context.Context, app models.Application, tmpDi
 		App:                 app,
 	}
 
-	switch leg {
-	case TargetTypeSource:
-		if err := target.MaterializeChartFromWorkingTree(ctx, a.fs, repoRoot); err != nil {
-			return err
-		}
-	case TargetTypeDestination:
-		mergeBaseTree, err := repo.MergeBaseTreeFor(a.cfg.TargetBranch)
-		if err != nil {
-			return err
-		}
-		if err := target.MaterializeChartFromTree(ctx, a.fs, mergeBaseTree); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("unknown render leg %q", leg)
+	if err := a.materializeChartForLeg(ctx, &target, leg, repo, repoRoot); err != nil {
+		return err
+	}
+
+	if err := target.BuildChartDependencies(ctx); err != nil {
+		return err
 	}
 
 	if err := target.generateValuesFiles(); err != nil {
@@ -168,6 +159,24 @@ func (a *App) renderAnchorLeg(ctx context.Context, app models.Application, tmpDi
 		}
 	}
 	return nil
+}
+
+// materializeChartForLeg checks out the chart sources for one comparison leg
+// into target's TmpDir: the working tree for the source leg, and the merge-base
+// tree against the target branch for the destination leg.
+func (a *App) materializeChartForLeg(ctx context.Context, target *Target, leg string, repo *GitRepo, repoRoot string) error {
+	switch leg {
+	case TargetTypeSource:
+		return target.MaterializeChartFromWorkingTree(ctx, a.fs, repoRoot)
+	case TargetTypeDestination:
+		mergeBaseTree, err := repo.MergeBaseTreeFor(a.cfg.TargetBranch)
+		if err != nil {
+			return err
+		}
+		return target.MaterializeChartFromTree(ctx, a.fs, mergeBaseTree)
+	default:
+		return fmt.Errorf("unknown render leg %q", leg)
+	}
 }
 
 // applicationFetcher returns the configured fetcher or builds a default real
@@ -227,8 +236,11 @@ func assertSameRepo(single *models.Source, sources []*models.Source, originURL s
 }
 
 // normalizeRepoIdentity collapses common Git URL spellings (https, ssh,
-// scp-style, oci-prefixed, file://) into a host[:port]/path key that is
-// stable across formats. .git suffix and trailing slashes are stripped.
+// scp-style, oci-prefixed, file://) into a host/path key that is stable across
+// formats. The port is deliberately dropped: ArgoCD Applications commonly use
+// an explicit SSH port (e.g. ssh://git@host:1022/group/repo.git) while the
+// local CI clone uses the portless HTTPS origin for the same repository, and
+// these must compare equal. .git suffix and trailing slashes are stripped.
 // file:// is stripped so that a bare local-path origin (e.g. /srv/git/foo.git)
 // matches its file:///srv/git/foo.git equivalent.
 func normalizeRepoIdentity(repoURL string) string {
@@ -247,8 +259,10 @@ func normalizeRepoIdentity(repoURL string) string {
 		}
 	}
 
-	if parsed, err := url.Parse(s); err == nil && parsed.Host != "" {
-		return strings.ToLower(parsed.Host) + stripTrailingPathNoise(parsed.Path)
+	// parsed.Hostname() strips any :port (and IPv6 brackets), so URLs that
+	// differ only by port normalize to the same identity.
+	if parsed, err := url.Parse(s); err == nil && parsed.Hostname() != "" {
+		return strings.ToLower(parsed.Hostname()) + stripTrailingPathNoise(parsed.Path)
 	}
 
 	return stripTrailingPathNoise(s)
