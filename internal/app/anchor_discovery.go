@@ -29,8 +29,10 @@ type AnchorGroup struct {
 //
 // Files with no enclosing anchor inside repoRoot are silently dropped:
 // they belong to the existing changed-Application flow, not the anchor
-// flow. A malformed anchor file is a hard error so the caller can fail
-// loudly; partial results would silently hide a broken configuration.
+// flow. Changes to the anchor file itself are skipped: it is a marker,
+// not application content, so a marker-only change seeds no group. A
+// malformed anchor file is a hard error so the caller can fail loudly;
+// partial results would silently hide a broken configuration.
 //
 // The returned slice is sorted by Dir for deterministic downstream logs
 // and comments.
@@ -41,6 +43,13 @@ func DiscoverAnchors(repoRoot string, changedFiles []string, fs afero.Fs, anchor
 	files := map[string][]string{}
 
 	for _, rel := range changedFiles {
+		// The anchor file is a marker, not application content. A change to the
+		// marker itself must never seed or extend a group: onboarding hundreds
+		// of `.argo-compare.yml` files would otherwise trigger comparisons with
+		// no real changes. Real content alongside the marker still forms a group.
+		if filepath.Base(rel) == filepath.Base(anchorFileName) {
+			continue
+		}
 		dir, err := findAnchorDir(fs, repoRoot, filepath.Dir(filepath.Join(repoRoot, rel)), anchorFileName)
 		if err != nil {
 			return nil, err
