@@ -104,13 +104,77 @@ func TestDiscoverAnchors_AnchorFileItselfChanged(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	writeAnchor(t, fs, "/repo/charts/foo", "apps/foo.yaml")
 
+	// The anchor file is a marker, not application content. Adding or editing
+	// it on its own must not seed a group, otherwise bulk-onboarding hundreds
+	// of `.argo-compare.yml` files would trigger comparisons with no real
+	// changes.
 	groups, err := DiscoverAnchors("/repo", []string{
 		"charts/foo/.argo-compare.yml",
 	}, fs, anchorFileName)
 	require.NoError(t, err)
+	assert.Empty(t, groups, "a marker-only change must not seed an anchor group")
+}
+
+func TestDiscoverAnchors_AnchorFileChangedAlongsideRealFile(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	writeAnchor(t, fs, "/repo/charts/foo", "apps/foo.yaml")
+
+	// When real content changes alongside the marker, the group still forms
+	// from the real files and the marker is excluded from ChangedFiles.
+	groups, err := DiscoverAnchors("/repo", []string{
+		"charts/foo/.argo-compare.yml",
+		fooValuesYAML,
+	}, fs, anchorFileName)
+	require.NoError(t, err)
 	require.Len(t, groups, 1)
 	assert.Equal(t, "/repo/charts/foo", groups[0].Dir)
-	assert.Equal(t, []string{"charts/foo/.argo-compare.yml"}, groups[0].ChangedFiles)
+	assert.Equal(t, []string{fooValuesYAML}, groups[0].ChangedFiles)
+}
+
+func TestDiscoverAnchors_RepoRootMarkerOnlyChanged(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	writeAnchor(t, fs, "/repo", "apps/root.yaml")
+
+	// The repo root is the structural boundary where findAnchorDir stops
+	// walking. The marker-skip guard must fire even here, so a marker-only
+	// change at the root seeds no group.
+	groups, err := DiscoverAnchors("/repo", []string{
+		".argo-compare.yml",
+	}, fs, anchorFileName)
+	require.NoError(t, err)
+	assert.Empty(t, groups, "a marker-only change at the repo root must not seed a group")
+}
+
+func TestDiscoverAnchors_NestedMarkersOnlyChanged(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	writeAnchor(t, fs, "/repo/charts", "apps/outer.yaml")
+	writeAnchor(t, fs, "/repo/charts/foo", "apps/foo.yaml")
+
+	// Both the outer and inner markers changed with no real content. Neither
+	// may seed a group, regardless of the nearest-anchor walk.
+	groups, err := DiscoverAnchors("/repo", []string{
+		"charts/.argo-compare.yml",
+		"charts/foo/.argo-compare.yml",
+	}, fs, anchorFileName)
+	require.NoError(t, err)
+	assert.Empty(t, groups, "marker-only changes in a nested layout must not seed groups")
+}
+
+func TestDiscoverAnchors_MultipleAnchorsOneMarkerOnly(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	writeAnchor(t, fs, "/repo/charts/foo", "apps/foo.yaml")
+	writeAnchor(t, fs, "/repo/charts/bar", "apps/bar.yaml")
+
+	// foo's marker changed on its own (skipped); bar has real content. Only
+	// bar forms a group — skipping the marker must not suppress unrelated ones.
+	groups, err := DiscoverAnchors("/repo", []string{
+		"charts/foo/.argo-compare.yml",
+		"charts/bar/values.yaml",
+	}, fs, anchorFileName)
+	require.NoError(t, err)
+	require.Len(t, groups, 1)
+	assert.Equal(t, "/repo/charts/bar", groups[0].Dir)
+	assert.Equal(t, []string{"charts/bar/values.yaml"}, groups[0].ChangedFiles)
 }
 
 func TestDiscoverAnchors_RepoRootAnchor(t *testing.T) {

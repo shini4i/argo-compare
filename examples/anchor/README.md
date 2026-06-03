@@ -40,8 +40,10 @@ repo just hosts the chart content the Application consumes. See
 
 ## How the anchor flow uses these files
 
-When a PR touches a file under `charts/myapp/`, argo-compare walks up
-to the nearest `.argo-compare.yml`, fetches the named Application
+When a PR touches a non-anchor file under `charts/myapp/`
+(changes to `.argo-compare.yml` itself are skipped — the marker is not
+chart content), argo-compare walks up to the nearest
+`.argo-compare.yml`, fetches the named Application
 (reading from the local working tree for same-repo, or via an
 in-memory clone for cross-repo), and renders the chart twice — once
 against the working tree (post-PR state) and once against the

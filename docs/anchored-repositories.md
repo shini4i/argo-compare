@@ -2,7 +2,7 @@
 
 The default flow assumes the modified file in a PR _is_ the Application YAML. Some repositories split things up: the ArgoCD Application points at a chart directory inside the same repo (`spec.source.path`), or lives in a different repo that consumes a chart from this one. In both cases a PR typically touches chart values rather than the Application itself, so there is no `kind: Application` in the diff and the default flow finds nothing to compare.
 
-To bridge that gap, drop a `.argo-compare.yml` file into any directory where chart content is changed. Argo Compare walks up from each changed file, picks the nearest enclosing anchor, and uses it to find the Application affected by the change:
+To bridge that gap, drop a `.argo-compare.yml` file into any directory that holds chart content. Argo Compare walks up from each changed file (excluding the anchor file itself), picks the nearest enclosing anchor, and uses it to find the Application affected by the change:
 
 ```yaml
 # .argo-compare.yml — universal schema
@@ -15,6 +15,8 @@ application:
   # Optional. Defaults to the remote's default branch.
   branch: main
 ```
+
+Changes that only touch `.argo-compare.yml` — adding the marker during onboarding or editing it later — do not trigger a comparison on their own. A comparison runs only when the same PR also changes real chart content in the anchored directory.
 
 ## Supported layouts
 
