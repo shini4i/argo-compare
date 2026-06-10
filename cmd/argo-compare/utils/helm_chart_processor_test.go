@@ -94,14 +94,34 @@ func TestDownloadHelmChart_HTTPWithCredentials(t *testing.T) {
 	}
 
 	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{}, nil)
+
+	// Credentials must never appear in argv (visible via /proc/<pid>/cmdline);
+	// they are written to a temporary repositories.yaml instead, and the chart
+	// is pulled through the named repo entry.
+	updateCall := mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+		"repo", "update", pullRepoName,
+		"--repository-config", gomock.Any(),
+		"--repository-cache", gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ string, args ...string) (string, string, error) {
+			cfg, err := os.ReadFile(args[4])
+			assert.NoError(t, err)
+			assert.Contains(t, string(cfg), "username: user")
+			assert.Contains(t, string(cfg), "password: pass")
+			assert.Contains(t, string(cfg), "url: https://chart.example.com")
+			return "", "", nil
+		})
 	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
-		"pull",
-		"--repo", "https://chart.example.com",
-		"ingress-nginx",
+		"pull", pullRepoName+"/ingress-nginx",
 		"--version", "3.34.0",
 		"--destination", gomock.Any(),
-		"--username", "user",
-		"--password", "pass").Return("", "", nil)
+		"--repository-config", gomock.Any(),
+		"--repository-cache", gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ string, args ...string) (string, string, error) {
+			for _, a := range args {
+				assert.NotContains(t, a, "pass", "credentials must not leak into helm pull argv")
+			}
+			return "", "", nil
+		}).After(updateCall)
 
 	req := ports.ChartDownloadRequest{
 		CacheDir:       filepath.Join(cacheDir, "cache"),
@@ -141,6 +161,81 @@ func TestDownloadHelmChart_HTTPWithoutCredentials(t *testing.T) {
 	}
 	err := helmChartProcessor.DownloadHelmChart(context.Background(), deps, req)
 	assert.NoError(t, err)
+}
+
+func TestDownloadHelmChart_HTTPRepoUpdateFailure(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+	cacheDir := t.TempDir()
+
+	mockGlobber := mocks.NewMockGlobber(ctrl)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+
+	staticProvider := NewStaticCredentialProvider([]models.RepoCredentials{
+		{Url: "https://chart.example.com", Username: "user", Password: "pass"},
+	})
+	deps := ports.HelmDeps{
+		CmdRunner:           mockCmdRunner,
+		Globber:             mockGlobber,
+		CredentialProviders: []ports.CredentialProvider{staticProvider},
+	}
+
+	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{}, nil)
+	// helm repo update fails on every retry attempt; helm pull must never run
+	// (no expectation is registered for it, so an invocation would fail the test).
+	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+		"repo", "update", pullRepoName,
+		"--repository-config", gomock.Any(),
+		"--repository-cache", gomock.Any()).
+		Return("", "index fetch failed", errors.New("index fetch failed")).Times(3)
+
+	req := ports.ChartDownloadRequest{
+		CacheDir:       filepath.Join(cacheDir, "cache"),
+		RepoURL:        "https://chart.example.com",
+		ChartName:      "ingress-nginx",
+		TargetRevision: "3.34.0",
+	}
+	err := helmChartProcessor.DownloadHelmChart(context.Background(), deps, req)
+	assert.ErrorIs(t, err, ErrFailedToDownloadChart)
+	assert.Contains(t, err.Error(), "update repo index for")
+}
+
+func TestWriteRepoEntriesConfig(t *testing.T) {
+	entry := helmRepoEntry{
+		Name:     "test-repo",
+		URL:      "https://chart.example.com",
+		Username: "user",
+		Password: "pass",
+	}
+
+	cfgPath, cachePath, cleanup, err := writeRepoEntriesConfig("", []helmRepoEntry{entry})
+	assert.NoError(t, err)
+
+	// The config file's owner-only permissions are the access control for the
+	// credentials it carries; anything broader is a regression.
+	info, err := os.Stat(cfgPath)
+	assert.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+
+	content, err := os.ReadFile(cfgPath)
+	assert.NoError(t, err)
+	assert.Contains(t, string(content), "apiVersion: v1")
+	assert.Contains(t, string(content), "name: test-repo")
+	assert.Contains(t, string(content), "url: https://chart.example.com")
+	assert.Contains(t, string(content), "username: user")
+	assert.Contains(t, string(content), "password: pass")
+
+	cacheInfo, err := os.Stat(cachePath)
+	assert.NoError(t, err)
+	assert.True(t, cacheInfo.IsDir())
+
+	cleanup()
+	_, err = os.Stat(cfgPath)
+	assert.True(t, os.IsNotExist(err), "cleanup must remove the credentials file")
+	_, err = os.Stat(cachePath)
+	assert.True(t, os.IsNotExist(err), "cleanup must remove the cache directory")
 }
 
 func TestDownloadHelmChart_HTTPFailedDownload(t *testing.T) {
@@ -194,12 +289,13 @@ func TestDownloadHelmChart_OCIWithCredentials(t *testing.T) {
 
 	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{}, nil)
 
-	// Expect helm registry login first.
-	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+	// Expect helm registry login first, with the password piped via stdin so it
+	// never appears in argv (visible via /proc/<pid>/cmdline).
+	mockCmdRunner.EXPECT().RunWithStdin(gomock.Any(), "ecr-token", "helm",
 		"registry", "login",
 		"123456789012.dkr.ecr.us-east-1.amazonaws.com",
 		"--username", "AWS",
-		"--password", "ecr-token").Return("", "", nil)
+		"--password-stdin").Return("", "", nil)
 
 	// Then expect helm pull without --repo, --username, --password.
 	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
@@ -1024,11 +1120,11 @@ func TestDownloadHelmChart_OCILoginFailure(t *testing.T) {
 	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{}, nil)
 
 	// helm registry login fails.
-	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+	mockCmdRunner.EXPECT().RunWithStdin(gomock.Any(), "ecr-token", "helm",
 		"registry", "login",
 		"123456789012.dkr.ecr.us-east-1.amazonaws.com",
 		"--username", "AWS",
-		"--password", "ecr-token").Return("", "login failed", errors.New("login error"))
+		"--password-stdin").Return("", "login failed", errors.New("login error"))
 
 	// helm pull should NOT be called.
 

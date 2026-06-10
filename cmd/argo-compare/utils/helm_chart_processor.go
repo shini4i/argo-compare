@@ -201,17 +201,20 @@ func resolveCredentials(ctx context.Context, log *logger.Logger, providers []por
 }
 
 // pullOCIChart downloads a chart from an OCI registry.
-// If credentials are available, it first runs "helm registry login" before pulling.
+// If credentials are available, it first runs "helm registry login" before
+// pulling. The password is piped to helm via stdin (--password-stdin) so it
+// never appears in argv, where it would be readable by any local user through
+// /proc/<pid>/cmdline.
 func (g RealHelmChartProcessor) pullOCIChart(ctx context.Context, cmdRunner ports.CmdRunner, req ports.ChartDownloadRequest, creds ports.RegistryCredentials, chartLocation string) error {
 	// Authenticate with the OCI registry if credentials are available.
 	if creds.Username != "" && creds.Password != "" {
 		g.Log.Debugf("Logging into OCI registry [%s]...", ui.Cyan(req.RepoURL))
 
-		stdout, stderr, err := cmdRunner.Run(ctx, "helm",
+		stdout, stderr, err := cmdRunner.RunWithStdin(ctx, creds.Password, "helm",
 			"registry", "login",
 			req.RepoURL,
 			"--username", creds.Username,
-			"--password", creds.Password)
+			"--password-stdin")
 
 		g.logOutput(stdout, stderr)
 
@@ -241,24 +244,56 @@ func (g RealHelmChartProcessor) pullOCIChart(ctx context.Context, cmdRunner port
 	return nil
 }
 
+// pullRepoName is the repository entry name used in the temporary
+// repositories.yaml generated for authenticated HTTP chart pulls.
+const pullRepoName = "argo-compare-repo"
+
 // pullHTTPChart downloads a chart from an HTTP/HTTPS Helm repository.
-// Username and password flags are only appended when credentials are non-empty.
+//
+// Without credentials the chart is pulled directly via --repo. With
+// credentials, `helm pull` offers no --password-stdin equivalent and passing
+// --password in argv would expose the secret to any local user through
+// /proc/<pid>/cmdline. Instead, credentials are written to a temporary
+// repositories.yaml and the chart is pulled through that named repo entry
+// (helm resolves repo-entry credentials only for name-based pulls, not for
+// --repo URLs). `helm repo update` is required first because name-based pulls
+// read the repo index from the local cache.
+//
+// The generated repositories.yaml lives in the OS temp directory with
+// owner-only (0600) permissions and is removed by the deferred cleanup.
 func (g RealHelmChartProcessor) pullHTTPChart(ctx context.Context, cmdRunner ports.CmdRunner, req ports.ChartDownloadRequest, creds ports.RegistryCredentials, chartLocation string) error {
+	hasCreds := creds.Username != "" && creds.Password != ""
+
+	var repoCfgPath, repoCachePath string
+	if hasCreds {
+		entry := helmRepoEntry{
+			Name:     pullRepoName,
+			URL:      req.RepoURL,
+			Username: creds.Username,
+			Password: creds.Password,
+		}
+		var cleanup func()
+		var err error
+		repoCfgPath, repoCachePath, cleanup, err = writeRepoEntriesConfig("", []helmRepoEntry{entry})
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+	}
+
 	retryCfg := helpers.DefaultRetryConfig()
 	err := helpers.WithRetry(ctx, retryCfg, func() error {
-		args := []string{
+		if hasCreds {
+			return g.pullThroughRepoConfig(ctx, cmdRunner, req, chartLocation, repoCfgPath, repoCachePath)
+		}
+
+		stdout, stderr, runErr := cmdRunner.Run(ctx, "helm",
 			"pull",
 			"--repo", req.RepoURL,
 			req.ChartName,
 			"--version", req.TargetRevision,
 			"--destination", chartLocation,
-		}
-
-		if creds.Username != "" && creds.Password != "" {
-			args = append(args, "--username", creds.Username, "--password", creds.Password)
-		}
-
-		stdout, stderr, runErr := cmdRunner.Run(ctx, "helm", args...)
+		)
 
 		g.logOutput(stdout, stderr)
 		return runErr
@@ -269,6 +304,32 @@ func (g RealHelmChartProcessor) pullHTTPChart(ctx context.Context, cmdRunner por
 	}
 
 	return nil
+}
+
+// pullThroughRepoConfig refreshes the index cache for the temporary repo entry
+// and pulls the requested chart through it. Both helm invocations reference the
+// isolated repository config and cache so the host helm configuration is never
+// touched and credentials stay inside the generated repositories.yaml.
+func (g RealHelmChartProcessor) pullThroughRepoConfig(ctx context.Context, cmdRunner ports.CmdRunner, req ports.ChartDownloadRequest, chartLocation, repoCfgPath, repoCachePath string) error {
+	stdout, stderr, err := cmdRunner.Run(ctx, "helm",
+		"repo", "update", pullRepoName,
+		"--repository-config", repoCfgPath,
+		"--repository-cache", repoCachePath,
+	)
+	g.logOutput(stdout, stderr)
+	if err != nil {
+		return fmt.Errorf("update repo index for %q: %w", req.RepoURL, err)
+	}
+
+	stdout, stderr, err = cmdRunner.Run(ctx, "helm",
+		"pull", fmt.Sprintf("%s/%s", pullRepoName, req.ChartName),
+		"--version", req.TargetRevision,
+		"--destination", chartLocation,
+		"--repository-config", repoCfgPath,
+		"--repository-cache", repoCachePath,
+	)
+	g.logOutput(stdout, stderr)
+	return err
 }
 
 // logOutput logs stdout and stderr from command execution if non-empty.
@@ -435,6 +496,18 @@ func (g RealHelmChartProcessor) writeRepoConfig(ctx context.Context, helmDeps po
 		entryCount++
 	}
 
+	return writeRepoEntriesConfig(scratchDir, entries)
+}
+
+// writeRepoEntriesConfig writes the given repository entries to a fresh
+// repositories.yaml under scratchDir (the OS default temp directory when
+// empty) and creates a matching repository-cache directory. The file is
+// created by os.CreateTemp with owner-only (0600) permissions, which is the
+// access control for the credentials it may contain. It returns the config
+// file path, the cache directory path, and a cleanup func that removes both.
+// The caller MUST invoke cleanup once the helm invocation that consumes the
+// config returns.
+func writeRepoEntriesConfig(scratchDir string, entries []helmRepoEntry) (string, string, func(), error) {
 	repoCfgFile, err := os.CreateTemp(scratchDir, "argo-compare-helm-repos-*.yaml")
 	if err != nil {
 		return "", "", noopCleanup, fmt.Errorf("create repositories.yaml tempfile: %w", err)
