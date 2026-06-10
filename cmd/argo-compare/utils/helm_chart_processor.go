@@ -230,8 +230,8 @@ func (g RealHelmChartProcessor) pullOCIChart(ctx context.Context, cmdRunner port
 	err := helpers.WithRetry(ctx, retryCfg, func() error {
 		stdout, stderr, runErr := cmdRunner.Run(ctx, "helm",
 			"pull", pullRef,
-			"--destination", chartLocation,
-			"--version", req.TargetRevision)
+			flagDestination, chartLocation,
+			flagVersion, req.TargetRevision)
 
 		g.logOutput(stdout, stderr)
 		return runErr
@@ -247,6 +247,14 @@ func (g RealHelmChartProcessor) pullOCIChart(ctx context.Context, cmdRunner port
 // pullRepoName is the repository entry name used in the temporary
 // repositories.yaml generated for authenticated HTTP chart pulls.
 const pullRepoName = "argo-compare-repo"
+
+// Helm CLI flag names shared by multiple helm invocations in this file.
+const (
+	flagDestination      = "--destination"
+	flagVersion          = "--version"
+	flagRepositoryConfig = "--repository-config"
+	flagRepositoryCache  = "--repository-cache"
+)
 
 // pullHTTPChart downloads a chart from an HTTP/HTTPS Helm repository.
 //
@@ -291,8 +299,8 @@ func (g RealHelmChartProcessor) pullHTTPChart(ctx context.Context, cmdRunner por
 			"pull",
 			"--repo", req.RepoURL,
 			req.ChartName,
-			"--version", req.TargetRevision,
-			"--destination", chartLocation,
+			flagVersion, req.TargetRevision,
+			flagDestination, chartLocation,
 		)
 
 		g.logOutput(stdout, stderr)
@@ -313,8 +321,8 @@ func (g RealHelmChartProcessor) pullHTTPChart(ctx context.Context, cmdRunner por
 func (g RealHelmChartProcessor) pullThroughRepoConfig(ctx context.Context, cmdRunner ports.CmdRunner, req ports.ChartDownloadRequest, chartLocation, repoCfgPath, repoCachePath string) error {
 	stdout, stderr, err := cmdRunner.Run(ctx, "helm",
 		"repo", "update", pullRepoName,
-		"--repository-config", repoCfgPath,
-		"--repository-cache", repoCachePath,
+		flagRepositoryConfig, repoCfgPath,
+		flagRepositoryCache, repoCachePath,
 	)
 	g.logOutput(stdout, stderr)
 	if err != nil {
@@ -323,10 +331,10 @@ func (g RealHelmChartProcessor) pullThroughRepoConfig(ctx context.Context, cmdRu
 
 	stdout, stderr, err = cmdRunner.Run(ctx, "helm",
 		"pull", fmt.Sprintf("%s/%s", pullRepoName, req.ChartName),
-		"--version", req.TargetRevision,
-		"--destination", chartLocation,
-		"--repository-config", repoCfgPath,
-		"--repository-cache", repoCachePath,
+		flagVersion, req.TargetRevision,
+		flagDestination, chartLocation,
+		flagRepositoryConfig, repoCfgPath,
+		flagRepositoryCache, repoCachePath,
 	)
 	g.logOutput(stdout, stderr)
 	return err
@@ -421,8 +429,8 @@ func (g RealHelmChartProcessor) BuildChartDependencies(ctx context.Context, deps
 
 	stdout, stderr, err := deps.CmdRunner.Run(ctx, "helm",
 		"dependency", "build",
-		"--repository-config", repoCfgPath,
-		"--repository-cache", repoCachePath,
+		flagRepositoryConfig, repoCfgPath,
+		flagRepositoryCache, repoCachePath,
 		chartDir,
 	)
 	g.logOutput(stdout, stderr)
