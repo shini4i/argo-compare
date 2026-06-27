@@ -6,13 +6,12 @@ on:
       - 'v*.*.*'        # stable release, e.g. v1.2.3
       - 'v*.*.*-pre.*'  # pre-release, e.g. v1.2.3-pre.20260601
 
-permissions:
-  contents: write # needed to write releases
-  packages: write # needed to write packages
-
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # needed to write releases
+      packages: write # needed to push container images to GHCR
     steps:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4.1.0
@@ -20,9 +19,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0 # this is important, otherwise it won't checkout the full tree (i.e. no previous tags)
+          # goreleaser authenticates via the GITHUB_TOKEN env var, not the
+          # checkout-persisted git credential, so we drop the on-disk token.
+          persist-credentials: false
 
       - name: Login to GHCR
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
@@ -52,7 +54,7 @@ jobs:
 
       - name: Update nixpkgs
         if: ${{ success() && !contains(github.ref, '-pre.') }}
-        uses: shini4i/nixpkgs-updater@v1
+        uses: shini4i/nixpkgs-updater@v1 # zizmor: ignore[unpinned-uses] first-party shini4i action; policy permits semver tags
         with:
           package-name: argo-compare
           version: ${{ github.ref_name }}

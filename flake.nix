@@ -29,10 +29,18 @@
           hadolint
           git
         ];
+
+        # Security scanners, mirroring the CI security workflow so they can be
+        # run locally. gosec and govulncheck are part of goToolchain already.
+        securityTools = with pkgs; [
+          zizmor
+          trivy
+          trufflehog
+        ];
       in
       {
         devShells.default = pkgs.mkShell {
-          packages = goToolchain ++ preCommitTools;
+          packages = goToolchain ++ preCommitTools ++ securityTools;
           shellHook = ''
             export GOPATH="$PWD/.go"
             export GOMODCACHE="$PWD/.gomod"

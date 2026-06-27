@@ -61,3 +61,10 @@ See [Installation](docs/installation.md) and [Usage](docs/usage.md) for the full
 ## Contributing
 
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+
+### Development setup
+
+The pre-commit hooks include a [TruffleHog](https://github.com/trufflesecurity/trufflehog) secret scan that needs the `trufflehog` binary on `$PATH`.
+
+- **With Nix (recommended):** `nix develop` provides `trufflehog` and the other scanners (`gosec`, `govulncheck`, `trivy`, `zizmor`) and installs all pre-commit hooks automatically.
+- **Without Nix:** install `trufflehog` (and the other scanners) manually, then run `pre-commit install`.
