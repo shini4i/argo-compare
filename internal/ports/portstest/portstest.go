@@ -21,6 +21,11 @@ func (NoopCmdRunner) Run(_ context.Context, _ string, _ ...string) (string, stri
 	return "", "", nil
 }
 
+// RunWithStdin returns ("", "", nil) regardless of arguments.
+func (NoopCmdRunner) RunWithStdin(_ context.Context, _, _ string, _ ...string) (string, string, error) {
+	return "", "", nil
+}
+
 // NoopFileReader satisfies ports.FileReader by returning (nil, nil), which the
 // port contract treats as "file absent" (see ports.FileReader docstring).
 type NoopFileReader struct{}

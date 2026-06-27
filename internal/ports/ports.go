@@ -14,6 +14,10 @@ import (
 // The context can be used for cancellation and timeout control.
 type CmdRunner interface {
 	Run(ctx context.Context, cmd string, args ...string) (stdout string, stderr string, err error)
+	// RunWithStdin behaves like Run but feeds stdin to the command. It exists so
+	// secrets (e.g. registry passwords) can be piped to commands instead of being
+	// passed as argv elements, which are world-readable via /proc/<pid>/cmdline.
+	RunWithStdin(ctx context.Context, stdin, cmd string, args ...string) (stdout string, stderr string, err error)
 }
 
 // OsFs abstracts temporary file creation and removal.
