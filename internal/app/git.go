@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 
@@ -136,15 +137,19 @@ func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string, a
 
 	g.printChangeFile(foundFiles, removedFiles)
 
-	applications, invalid := g.sortChangedFiles(foundFiles)
+	repoRoot, err := GetGitRepoRoot()
+	if err != nil {
+		return ChangedFilesResult{}, fmt.Errorf("resolve repo root: %w", err)
+	}
+
+	applications, invalid, err := g.sortChangedFiles(foundFiles, repoRoot)
+	if err != nil {
+		return ChangedFilesResult{}, err
+	}
 	filtered := filterIgnored(applications, filesToIgnore)
 
 	var anchorGroups []AnchorGroup
 	if anchorFileName != "" {
-		repoRoot, rootErr := GetGitRepoRoot()
-		if rootErr != nil {
-			return ChangedFilesResult{}, fmt.Errorf("resolve repo root for anchor discovery: %w", rootErr)
-		}
 		anchorChanged := filterIgnored(foundFiles, filesToIgnore)
 		anchorGroups, err = DiscoverAnchors(repoRoot, anchorChanged, g.fs, anchorFileName)
 		if err != nil {
@@ -339,10 +344,23 @@ func (g *GitRepo) printChangeFile(addedFiles, removed []string) {
 	}
 }
 
-// sortChangedFiles filters diff results to include only valid Application manifests.
-func (g *GitRepo) sortChangedFiles(files []string) (applications []string, invalid []string) {
+// sortChangedFiles filters diff results to include only valid Application
+// manifests. Helm chart templates are excluded up front: a file under a
+// chart's `templates/` directory is a template by Helm's own definition, and
+// its `{{ }}` actions are not valid YAML — parsing it as an Application would
+// misreport it as an invalid manifest and fail the run (issue #153).
+func (g *GitRepo) sortChangedFiles(files []string, repoRoot string) (applications []string, invalid []string, err error) {
 	for _, file := range files {
 		if filepath.Ext(file) != ".yaml" {
+			continue
+		}
+
+		isTemplate, tmplErr := isHelmTemplate(g.fs, repoRoot, file)
+		if tmplErr != nil {
+			return nil, nil, fmt.Errorf("check whether %q is a Helm template: %w", file, tmplErr)
+		}
+		if isTemplate {
+			g.log.Debugf("Skipping Helm chart template [%s]", file)
 			continue
 		}
 
@@ -368,7 +386,35 @@ func (g *GitRepo) sortChangedFiles(files []string) (applications []string, inval
 		}
 	}
 
-	return applications, invalid
+	return applications, invalid, nil
+}
+
+// isHelmTemplate reports whether relFile is a Helm chart template — a file that
+// lives under a chart's `templates/` directory, where a chart is any directory
+// containing Chart.yaml. This mirrors Helm's own definition: everything under
+// `templates/` is handed to the rendering engine, and detection is purely by
+// location, never by content. Such files are never standalone ArgoCD
+// Application manifests, so callers exclude them from Application discovery
+// rather than parsing their (invalid-as-YAML) templating syntax.
+//
+// relFile is a repo-relative, slash-separated path as emitted by the Git diff;
+// repoRoot anchors the Chart.yaml lookup to the local worktree.
+func isHelmTemplate(fs afero.Fs, repoRoot, relFile string) (bool, error) {
+	parts := strings.Split(filepath.ToSlash(filepath.Dir(relFile)), "/")
+	for i, part := range parts {
+		if part != "templates" {
+			continue
+		}
+		chartRoot := filepath.Join(append([]string{repoRoot}, parts[:i]...)...)
+		exists, err := afero.Exists(fs, filepath.Join(chartRoot, "Chart.yaml"))
+		if err != nil {
+			return false, fmt.Errorf("check Chart.yaml at %q: %w", chartRoot, err)
+		}
+		if exists {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // checkIfApp determines whether the provided path points to a valid Application manifest.

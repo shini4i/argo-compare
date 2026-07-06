@@ -1,6 +1,6 @@
 # How it works
 
-1. `argo-compare` checks which Application files the source branch has modified since it diverged from the target branch (the merge-base is the baseline, so commits made only on the target branch after divergence are ignored).
+1. `argo-compare` checks which Application files the source branch has modified since it diverged from the target branch (the merge-base is the baseline, so commits made only on the target branch after divergence are ignored). Files under a Helm chart's `templates/` directory (any directory containing `Chart.yaml`) are recognized as chart templates and skipped from this Application discovery — their `{{ }}` syntax is not valid YAML, so they are never parsed as manifests. This matters when charts live alongside cluster config in the same repo.
 2. It fetches the content of the changed Application files from the target branch.
 3. For path-based sources, if `Chart.yaml` declares subchart dependencies, `helm dependency build` runs to populate `charts/` before rendering.
 4. It renders manifests using `helm template` against both source and target branch values, applying `spec.source.helm.parameters` and any `.argocd-source[-<appName>].yaml` override files committed next to the chart (the files argo-watcher / Argo CD Image Updater write for image tag bumps).
