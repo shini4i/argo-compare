@@ -23,6 +23,15 @@ import (
 // Application use the same kind, so the renderer can pick a single code path.
 var ErrMixedMultiSource = errors.New("multi-source Application mixes chart-based and path-based sources; mixed sources are not supported")
 
+// ErrChartPathNotInTree is returned by MaterializeChartFromTree when a
+// path-based source's chart directory does not exist in the provided Git tree.
+// This happens when the chart is added for the first time on the current
+// branch: the working tree has it (source leg) but the merge-base tree does
+// not (destination leg). The anchor flow treats this as a newly added
+// Application with no baseline to diff against, mirroring errGitFileDoesNotExist
+// in the registry-chart flow.
+var ErrChartPathNotInTree = errors.New("chart path does not exist in target tree")
+
 // effectiveChartName returns a non-empty chart name suitable for naming the
 // extracted/materialized chart directory and the per-source values file.
 // Registry sources use Source.Chart directly; path-based sources fall back to
@@ -138,10 +147,18 @@ func resolveRepoPath(repoRoot, rel string) (string, error) {
 // path-based source from tree into TmpDir/charts/<TargetType>/<ChartName>.
 // It is the destination-side counterpart of MaterializeChartFromWorkingTree
 // and uses MaterializeTreeDir under the hood for the actual walk.
+//
+// A source whose path is absent from tree yields ErrChartPathNotInTree (wrapped
+// with the offending path) rather than go-git's opaque ErrDirectoryNotFound, so
+// the anchor flow can recognize a newly added chart and treat it as a new
+// Application instead of failing the run.
 func (t *Target) MaterializeChartFromTree(ctx context.Context, fs afero.Fs, tree *object.Tree) error {
 	for _, src := range t.pathSources() {
 		dest := filepath.Join(t.TmpDir, "charts", t.Type, effectiveChartName(src))
 		if err := MaterializeTreeDir(ctx, fs, tree, src.Path, dest); err != nil {
+			if errors.Is(err, object.ErrDirectoryNotFound) {
+				return fmt.Errorf("%w: %s", ErrChartPathNotInTree, src.Path)
+			}
 			return fmt.Errorf("materialize chart %q from tree: %w", src.Path, err)
 		}
 	}

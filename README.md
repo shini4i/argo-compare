@@ -8,7 +8,6 @@ A comparison tool for displaying the differences between applications in differe
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/shini4i/argo-compare)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/shini4i/argo-compare)
 [![codecov](https://codecov.io/gh/shini4i/argo-compare/branch/main/graph/badge.svg?token=48E1OZHLPY)](https://codecov.io/gh/shini4i/argo-compare)
-[![Go Report Card](https://goreportcard.com/badge/github.com/shini4i/argo-compare)](https://goreportcard.com/report/github.com/shini4i/argo-compare)
 ![GitHub](https://img.shields.io/github/license/shini4i/argo-compare)
 
 <img src="https://raw.githubusercontent.com/shini4i/assets/main/src/argo-compare/demo.png" alt="Showcase" height="441" width="620">

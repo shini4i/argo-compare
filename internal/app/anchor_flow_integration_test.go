@@ -165,6 +165,159 @@ spec:
 	return os.WriteFile(filepath.Join(chartDir, ".argo-compare.yml"), []byte("application:\n  path: apps/demo.yaml\n"), 0o644)
 }
 
+// runNewAnchorScenario sets up a same-repo anchor scenario where the anchored
+// chart directory is added for the first time on the feature branch: baseline
+// main carries only the Application manifest (so the manifest is unchanged and
+// never dedups the anchor group), while the merge-base tree lacks charts/demo.
+// The source leg materializes from the working tree fine; the destination leg
+// has no such directory in the merge-base tree. It runs App.Run with the given
+// PrintAddedManifests setting, asserts the run succeeds, and returns the helm
+// stub and captured log output for the caller to assert against.
+func runNewAnchorScenario(t *testing.T, printAdded bool) (*stubHelmProcessor, string) {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	cacheDir := filepath.Join(tempDir, "cache")
+	tmpBase := filepath.Join(tempDir, "tmp")
+	require.NoError(t, os.MkdirAll(tmpBase, 0o755))
+
+	remoteDir := filepath.Join(tempDir, "origin.git")
+	bareRepo, err := git.PlainInit(remoteDir, true)
+	require.NoError(t, err)
+	require.NoError(t, bareRepo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))))
+
+	workDir := filepath.Join(tempDir, "work")
+	repo, err := git.PlainInit(workDir, false)
+	require.NoError(t, err)
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))))
+
+	originURL := "file://" + remoteDir
+
+	require.NoError(t, os.MkdirAll(filepath.Join(workDir, "apps"), 0o755))
+	app := `apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo
+  namespace: argocd
+spec:
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo
+  source:
+    repoURL: ` + originURL + `
+    path: charts/demo
+    targetRevision: HEAD
+    helm:
+      releaseName: demo
+`
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "apps", "demo.yaml"), []byte(app), 0o644))
+
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+	_, err = worktree.Add("apps/demo.yaml")
+	require.NoError(t, err)
+	initialHash, err := worktree.Commit("initial", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	_, err = repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{originURL}})
+	require.NoError(t, err)
+	require.NoError(t, repo.Push(&git.PushOptions{
+		RemoteName: "origin",
+		RefSpecs:   []config.RefSpec{"refs/heads/main:refs/heads/main"},
+	}))
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), initialHash)))
+
+	// Feature branch adds the chart directory (and its anchor file) for the
+	// first time.
+	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{
+		Branch: plumbing.NewBranchReferenceName("feature/new-anchor"),
+		Create: true,
+	}))
+	chartDir := filepath.Join(workDir, "charts", "demo")
+	require.NoError(t, os.MkdirAll(filepath.Join(chartDir, "templates"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("apiVersion: v2\nname: demo\nversion: 0.0.1\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte("replicaCount: 1\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(chartDir, "templates", "dep.yaml"), []byte("kind: Deployment\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(chartDir, ".argo-compare.yml"), []byte("application:\n  path: apps/demo.yaml\n"), 0o644))
+	_, err = worktree.Add("charts/demo")
+	require.NoError(t, err)
+	_, err = worktree.Commit("add new anchored chart", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	oldWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(workDir))
+	t.Cleanup(func() { require.NoError(t, os.Chdir(oldWD)) })
+
+	var logBuffer bytes.Buffer
+	logger.RedirectForTest(t, &logBuffer)
+	appLogger := logger.New("app-anchor-new-test")
+
+	helmStub := newStubHelmProcessor(t)
+	cfg := Config{
+		TargetBranch:        "main",
+		CacheDir:            cacheDir,
+		TempDirBase:         tmpBase,
+		PrintAddedManifests: printAdded,
+		Version:             "test",
+		AnchorFileName:      DefaultAnchorFileName,
+	}
+	appInstance, err := New(cfg, Dependencies{
+		FS:            afero.NewOsFs(),
+		CmdRunner:     portstest.NoopCmdRunner{},
+		FileReader:    utils.OsFileReader{},
+		HelmProcessor: helmStub,
+		Globber:       utils.CustomGlobber{},
+		Logger:        appLogger,
+	})
+	require.NoError(t, err)
+
+	// A brand-new anchored chart directory (absent from the merge-base tree)
+	// must be treated as a new Application and succeed instead of failing with
+	// go-git's "directory not found".
+	require.NoError(t, appInstance.Run(context.Background()))
+
+	return helmStub, logBuffer.String()
+}
+
+// TestAppRunAnchorFlow_NewApplication_PrintAdded covers a brand-new anchored
+// chart with --print-added-manifests ON: the flow keeps the source-only render
+// and surfaces it through the comparison as all-added.
+func TestAppRunAnchorFlow_NewApplication_PrintAdded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skip integration test in short mode")
+	}
+
+	helmStub, logOutput := runNewAnchorScenario(t, true)
+
+	// Only the source leg renders — the destination is a new Application with
+	// no baseline to materialize.
+	assert.Equal(t, 1, helmStub.callCount("RenderAppSource"), "only the source leg renders for a new anchored app")
+	assert.Contains(t, logOutput, "new Application")
+	// With --print-added-manifests, the comparison runs and the source
+	// manifests surface as added.
+	assert.Contains(t, logOutput, "would be added")
+}
+
+// TestAppRunAnchorFlow_NewApplication_Default covers the default configuration
+// (--print-added-manifests OFF) — the exact scenario from the bug report. The
+// flow must short-circuit before the comparison, log the new-Application
+// warning, and never emit an added-manifests section.
+func TestAppRunAnchorFlow_NewApplication_Default(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skip integration test in short mode")
+	}
+
+	helmStub, logOutput := runNewAnchorScenario(t, false)
+
+	// Source leg renders; destination is skipped as a new Application.
+	assert.Equal(t, 1, helmStub.callCount("RenderAppSource"), "only the source leg renders for a new anchored app")
+	assert.Contains(t, logOutput, "new Application")
+	// Without --print-added-manifests the run short-circuits before diffing,
+	// so no added-manifests section is emitted.
+	assert.NotContains(t, logOutput, "would be added")
+}
+
 func TestDedupAnchorGroups(t *testing.T) {
 	groups := []AnchorGroup{
 		{Dir: "/repo/charts/foo", Anchor: dedupAnchor("apps/foo.yaml", "")},
