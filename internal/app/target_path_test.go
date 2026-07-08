@@ -144,6 +144,66 @@ func TestMaterializeChartFromWorkingTree(t *testing.T) {
 	}
 }
 
+func TestMaterializeChartFromTree_MissingPathReturnsSentinel(t *testing.T) {
+	// A newly added anchored chart: the chart directory exists in the working
+	// tree but not in the baseline (merge-base) tree. MaterializeChartFromTree
+	// must surface ErrChartPathNotInTree so the anchor flow can treat it as a
+	// new Application instead of hard-failing with go-git's "directory not
+	// found".
+	tree := commitTreeWith(t, map[string]string{
+		"README.md": "baseline only\n",
+	})
+
+	tmpDir := t.TempDir()
+	tgt := Target{
+		TmpDir: tmpDir,
+		Type:   TargetTypeDestination,
+		Log:    logger.New("target-path-missing-test"),
+		App: models.Application{Spec: struct {
+			Source      *models.Source      `yaml:"source"`
+			Sources     []*models.Source    `yaml:"sources"`
+			MultiSource bool                `yaml:"-"`
+			Destination *models.Destination `yaml:"destination"`
+		}{Source: &models.Source{Path: "charts/foo"}}},
+	}
+
+	err := tgt.MaterializeChartFromTree(context.Background(), afero.NewOsFs(), tree)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrChartPathNotInTree)
+}
+
+func TestMaterializeChartFromTree_MultiSourceMissingNonFirst(t *testing.T) {
+	// Multi-source path-based Application where the FIRST source exists in the
+	// baseline tree but a LATER one is newly added and absent. The sentinel
+	// must still fire (and name the offending path), guarding against a
+	// loop-ordering regression that only checks the first source.
+	tree := commitTreeWith(t, map[string]string{
+		fooChartYAML:  "name: foo\n",
+		fooValuesYAML: "replicaCount: 1\n",
+	})
+
+	tmpDir := t.TempDir()
+	tgt := Target{
+		TmpDir: tmpDir,
+		Type:   TargetTypeDestination,
+		Log:    logger.New("target-path-multi-missing-test"),
+		App: models.Application{Spec: struct {
+			Source      *models.Source      `yaml:"source"`
+			Sources     []*models.Source    `yaml:"sources"`
+			MultiSource bool                `yaml:"-"`
+			Destination *models.Destination `yaml:"destination"`
+		}{
+			Sources:     []*models.Source{{Path: "charts/foo"}, {Path: "charts/bar"}},
+			MultiSource: true,
+		}},
+	}
+
+	err := tgt.MaterializeChartFromTree(context.Background(), afero.NewOsFs(), tree)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrChartPathNotInTree)
+	assert.Contains(t, err.Error(), "charts/bar", "sentinel must name the offending path")
+}
+
 func TestResolveRepoPath(t *testing.T) {
 	repoRoot := "/repo/root"
 	cases := []struct {

@@ -94,11 +94,12 @@ func (a *App) processAnchorGroup(ctx context.Context, repo *GitRepo, group Ancho
 
 	validationResults := make(map[string]ports.ValidationResult)
 
-	if err = a.renderAnchorLeg(ctx, app, tmpDir, TargetTypeSource, repo, repoRoot, validationResults); err != nil {
+	proceed, err := a.renderAnchorLegs(ctx, app, group, tmpDir, repo, repoRoot, validationResults)
+	if err != nil {
 		return false, err
 	}
-	if err = a.renderAnchorLeg(ctx, app, tmpDir, TargetTypeDestination, repo, repoRoot, validationResults); err != nil {
-		return false, err
+	if !proceed {
+		return false, nil
 	}
 
 	if err = a.runComparison(ctx, tmpDir, group.Anchor.Application.Path, validationResults); err != nil {
@@ -112,6 +113,32 @@ func (a *App) processAnchorGroup(ctx context.Context, repo *GitRepo, group Ancho
 		}
 	}
 	return validationFailed, nil
+}
+
+// renderAnchorLegs renders the source and then the destination leg for an
+// anchor group. It returns proceed=false when the comparison should be
+// skipped: the anchored chart directory is absent from the merge-base tree
+// (the Application is being added on this branch) and --print-added-manifests
+// is off, so there is no baseline and nothing meaningful to show. With
+// --print-added-manifests the source-only render is kept so the diff surfaces
+// as all-added, mirroring the registry-chart flow's new-Application handling.
+func (a *App) renderAnchorLegs(ctx context.Context, app models.Application, group AnchorGroup, tmpDir string, repo *GitRepo, repoRoot string, validationResults map[string]ports.ValidationResult) (bool, error) {
+	if err := a.renderAnchorLeg(ctx, app, tmpDir, TargetTypeSource, repo, repoRoot, validationResults); err != nil {
+		return false, err
+	}
+
+	destErr := a.renderAnchorLeg(ctx, app, tmpDir, TargetTypeDestination, repo, repoRoot, validationResults)
+	switch {
+	case destErr == nil:
+		return true, nil
+	case errors.Is(destErr, ErrChartPathNotInTree):
+		a.logger.Warning(ui.Yellow(fmt.Sprintf(
+			"The anchored chart for [%s] does not exist in target branch %s, assuming it is a new Application",
+			group.Dir, a.cfg.TargetBranch)))
+		return a.cfg.PrintAddedManifests, nil
+	default:
+		return false, destErr
+	}
 }
 
 // renderAnchorLeg prepares the chart directory for one leg (src or dst) and

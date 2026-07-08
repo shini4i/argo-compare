@@ -37,7 +37,8 @@ A worked example lives under [`examples/anchor/`](../examples/anchor).
 - For path-based Applications, `spec.source.repoURL` must identify the local repository — chart sources living in a _third_ repo are out of scope.
 - A multi-source Application must use one kind consistently; mixing `chart` and `path` entries is rejected.
 - The anchored Application is read at the configured branch tip; commit-pinning is not supported.
-- Any failure to fetch, parse, or validate an anchored Application is a hard error — partial output would silently hide a broken configuration.
+- If the anchored chart directory does not exist in the target branch (it was added for the first time on the current branch), the Application is treated as new rather than failing: the comparison is skipped, or with `--print-added-manifests` the current branch's manifests render as all-added. This mirrors the standard flow's handling of a newly added Application file.
+- Any other failure to fetch, parse, or validate an anchored Application is a hard error — partial output would silently hide a broken configuration.
 
 ## Configuration
 
