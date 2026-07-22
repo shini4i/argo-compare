@@ -182,6 +182,15 @@ func TestCheckSourceValueFilesPresent(t *testing.T) {
 		assert.NoError(t, tgt.checkSourceValueFilesPresent(fs, crossRepoRef))
 	})
 
+	t.Run("ArgoCD $ref multi-source entries are not treated as local paths", func(t *testing.T) {
+		// "$values/env/prod.yaml" points into another multi-source `ref:` source,
+		// not this chart, so the preflight must skip it rather than raise a
+		// spurious ErrValueFileMissingFromSource.
+		fs := newFs(t)
+		tgt := newTarget([]string{"$values/env/prod.yaml"})
+		assert.NoError(t, tgt.checkSourceValueFilesPresent(fs, crossRepoRef))
+	})
+
 	t.Run("multi-source Application checks every source", func(t *testing.T) {
 		fs := newFs(t)
 		otherChartDir := filepath.Join(tmpDir, "charts", TargetTypeSource, "other")

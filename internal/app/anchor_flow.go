@@ -259,8 +259,14 @@ func (a *App) materializeChartForLeg(ctx context.Context, target *Target, leg st
 // is read from the anchored repo's branch tip; a mismatch there yields
 // ErrValueFileMissingFromSource with guidance rather than an opaque Helm error.
 //
-// Entries that validateValueFile would reject (empty, absolute, or "..") are
-// skipped so their specific validation error is not masked by this preflight.
+// Only entries that are literal paths into the chart directory are checked.
+// Two kinds are deliberately deferred to downstream handling:
+//   - Entries validateValueFile would reject (empty, absolute, or "..") are
+//     skipped so its specific validation error is not masked by this preflight.
+//   - ArgoCD `$ref`-prefixed entries (e.g. "$values/env/prod.yaml") reference a
+//     file in another multi-source `ref:` source, not a path in this chart, so
+//     they are not ours to resolve — statting them here would raise a spurious
+//     ErrValueFileMissingFromSource.
 func (t *Target) checkSourceValueFilesPresent(fs afero.Fs, ref anchor.ApplicationRef) error {
 	afs := afero.Afero{Fs: fs}
 	for _, src := range t.pathSources() {
@@ -269,7 +275,7 @@ func (t *Target) checkSourceValueFilesPresent(fs afero.Fs, ref anchor.Applicatio
 		}
 		chartDir := filepath.Join(t.TmpDir, "charts", t.Type, effectiveChartName(src))
 		for _, vf := range src.Helm.ValueFiles {
-			if vf == "" || filepath.IsAbs(vf) || strings.HasPrefix(filepath.Clean(vf), "..") {
+			if vf == "" || filepath.IsAbs(vf) || strings.HasPrefix(filepath.Clean(vf), "..") || strings.HasPrefix(vf, "$") {
 				continue
 			}
 			exists, err := afs.Exists(filepath.Join(chartDir, vf))
