@@ -28,6 +28,19 @@ var ErrAnchorRepoMismatch = errors.New("anchored Application spec.source.repoURL
 // changed-Application-file flow.
 var ErrAnchorNotPathBased = errors.New("anchored Application is not path-based")
 
+// ErrValueFileMissingFromSource is returned when a cross-repo anchored
+// Application references a spec.source.helm.valueFiles entry that does not
+// exist in the chart materialized from the current branch's working tree.
+//
+// This is the legible face of issue #158: the chart is read from the PR
+// working tree while the Application is read from the anchored repo's branch
+// tip, so a PR that restructures the chart's values files (e.g. splits one
+// file into several) leaves the two out of sync until the Application is
+// updated in its own repo. Without this preflight the run fails deep inside
+// `helm template` with an opaque "no such file" error that gives no hint of
+// the anchor/branch-tip mismatch.
+var ErrValueFileMissingFromSource = errors.New("anchored Application references a values file absent from the current branch")
+
 // compareAnchorGroups runs the path-based rendering pipeline for every anchor
 // group discovered in the diff. It returns true if any rendering produced a
 // non-Valid validation result; the error return is reserved for terminal
@@ -123,11 +136,11 @@ func (a *App) processAnchorGroup(ctx context.Context, repo *GitRepo, group Ancho
 // --print-added-manifests the source-only render is kept so the diff surfaces
 // as all-added, mirroring the registry-chart flow's new-Application handling.
 func (a *App) renderAnchorLegs(ctx context.Context, app models.Application, group AnchorGroup, tmpDir string, repo *GitRepo, repoRoot string, validationResults map[string]ports.ValidationResult) (bool, error) {
-	if err := a.renderAnchorLeg(ctx, app, tmpDir, TargetTypeSource, repo, repoRoot, validationResults); err != nil {
+	if err := a.renderAnchorLeg(ctx, app, group.Anchor.Application, tmpDir, TargetTypeSource, repo, repoRoot, validationResults); err != nil {
 		return false, err
 	}
 
-	destErr := a.renderAnchorLeg(ctx, app, tmpDir, TargetTypeDestination, repo, repoRoot, validationResults)
+	destErr := a.renderAnchorLeg(ctx, app, group.Anchor.Application, tmpDir, TargetTypeDestination, repo, repoRoot, validationResults)
 	switch {
 	case destErr == nil:
 		return true, nil
@@ -143,7 +156,7 @@ func (a *App) renderAnchorLegs(ctx context.Context, app models.Application, grou
 
 // renderAnchorLeg prepares the chart directory for one leg (src or dst) and
 // drives the existing Helm values / render / validate pipeline.
-func (a *App) renderAnchorLeg(ctx context.Context, app models.Application, tmpDir, leg string, repo *GitRepo, repoRoot string, validationResults map[string]ports.ValidationResult) error {
+func (a *App) renderAnchorLeg(ctx context.Context, app models.Application, ref anchor.ApplicationRef, tmpDir, leg string, repo *GitRepo, repoRoot string, validationResults map[string]ports.ValidationResult) error {
 	target := Target{
 		CmdRunner:           a.cmdRunner,
 		FileReader:          a.fileReader,
@@ -159,6 +172,17 @@ func (a *App) renderAnchorLeg(ctx context.Context, app models.Application, tmpDi
 
 	if err := a.materializeChartForLeg(ctx, &target, leg, repo, repoRoot); err != nil {
 		return err
+	}
+
+	// Cross-repo source leg: the chart comes from the PR working tree but the
+	// Application (and its valueFiles list) came from the anchored repo's branch
+	// tip. Surface a mismatch here with an actionable error instead of letting
+	// `helm template` fail opaquely on the missing file. Same-repo anchors read
+	// both from the working tree, so they cannot drift this way.
+	if leg == TargetTypeSource && ref.Repo != "" {
+		if err := target.checkSourceValueFilesPresent(a.fs, ref); err != nil {
+			return err
+		}
 	}
 
 	if err := target.BuildChartDependencies(ctx); err != nil {
@@ -204,6 +228,42 @@ func (a *App) materializeChartForLeg(ctx context.Context, target *Target, leg st
 	default:
 		return fmt.Errorf("unknown render leg %q", leg)
 	}
+}
+
+// checkSourceValueFilesPresent verifies that every values file referenced by
+// the anchored Application exists in the chart materialized for the source leg
+// (TmpDir/charts/<Type>/<ChartName>). It is meant for the cross-repo source
+// leg, where the chart is read from the PR working tree while the Application
+// is read from the anchored repo's branch tip; a mismatch there yields
+// ErrValueFileMissingFromSource with guidance rather than an opaque Helm error.
+//
+// Entries that validateValueFile would reject (empty, absolute, or "..") are
+// skipped so their specific validation error is not masked by this preflight.
+func (t *Target) checkSourceValueFilesPresent(fs afero.Fs, ref anchor.ApplicationRef) error {
+	afs := afero.Afero{Fs: fs}
+	for _, src := range t.pathSources() {
+		if src == nil {
+			continue
+		}
+		chartDir := filepath.Join(t.TmpDir, "charts", t.Type, effectiveChartName(src))
+		for _, vf := range src.Helm.ValueFiles {
+			if vf == "" || filepath.IsAbs(vf) || strings.HasPrefix(filepath.Clean(vf), "..") {
+				continue
+			}
+			exists, err := afs.Exists(filepath.Join(chartDir, vf))
+			if err != nil {
+				return fmt.Errorf("check anchored values file %q: %w", vf, err)
+			}
+			if !exists {
+				return fmt.Errorf(
+					"%w: %q (referenced by anchored Application %s) is not present in %q on the current branch. "+
+						"This usually means the pull request restructured the chart's values files, but the Application definition — read from the anchored repo's branch tip — still points at the old layout. "+
+						"Update spec.source.helm.valueFiles in that Application to match, and land it (see docs/anchored-repositories.md)",
+					ErrValueFileMissingFromSource, vf, anchorRefDisplay(ref), src.Path)
+			}
+		}
+	}
+	return nil
 }
 
 // applicationFetcher returns the configured fetcher or builds a default real
