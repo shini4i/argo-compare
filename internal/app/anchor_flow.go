@@ -107,7 +107,16 @@ func (a *App) processAnchorGroup(ctx context.Context, repo *GitRepo, group Ancho
 
 	validationResults := make(map[string]ports.ValidationResult)
 
-	proceed, err := a.renderAnchorLegs(ctx, app, group, tmpDir, repo, repoRoot, validationResults)
+	lc := &anchorLegContext{
+		app:      app,
+		ref:      group.Anchor.Application,
+		tmpDir:   tmpDir,
+		repo:     repo,
+		repoRoot: repoRoot,
+		results:  validationResults,
+	}
+
+	proceed, err := a.renderAnchorLegs(ctx, lc, group)
 	if err != nil {
 		return false, err
 	}
@@ -128,6 +137,19 @@ func (a *App) processAnchorGroup(ctx context.Context, repo *GitRepo, group Ancho
 	return validationFailed, nil
 }
 
+// anchorLegContext carries the per-group state shared by both render legs
+// (source and destination). Only the leg identifier changes between the two
+// calls, so bundling the invariant fields keeps renderAnchorLeg's signature
+// small and builds the context once per group.
+type anchorLegContext struct {
+	app      models.Application
+	ref      anchor.ApplicationRef
+	tmpDir   string
+	repo     *GitRepo
+	repoRoot string
+	results  map[string]ports.ValidationResult
+}
+
 // renderAnchorLegs renders the source and then the destination leg for an
 // anchor group. It returns proceed=false when the comparison should be
 // skipped: the anchored chart directory is absent from the merge-base tree
@@ -135,12 +157,12 @@ func (a *App) processAnchorGroup(ctx context.Context, repo *GitRepo, group Ancho
 // is off, so there is no baseline and nothing meaningful to show. With
 // --print-added-manifests the source-only render is kept so the diff surfaces
 // as all-added, mirroring the registry-chart flow's new-Application handling.
-func (a *App) renderAnchorLegs(ctx context.Context, app models.Application, group AnchorGroup, tmpDir string, repo *GitRepo, repoRoot string, validationResults map[string]ports.ValidationResult) (bool, error) {
-	if err := a.renderAnchorLeg(ctx, app, group.Anchor.Application, tmpDir, TargetTypeSource, repo, repoRoot, validationResults); err != nil {
+func (a *App) renderAnchorLegs(ctx context.Context, lc *anchorLegContext, group AnchorGroup) (bool, error) {
+	if err := a.renderAnchorLeg(ctx, lc, TargetTypeSource); err != nil {
 		return false, err
 	}
 
-	destErr := a.renderAnchorLeg(ctx, app, group.Anchor.Application, tmpDir, TargetTypeDestination, repo, repoRoot, validationResults)
+	destErr := a.renderAnchorLeg(ctx, lc, TargetTypeDestination)
 	switch {
 	case destErr == nil:
 		return true, nil
@@ -156,21 +178,21 @@ func (a *App) renderAnchorLegs(ctx context.Context, app models.Application, grou
 
 // renderAnchorLeg prepares the chart directory for one leg (src or dst) and
 // drives the existing Helm values / render / validate pipeline.
-func (a *App) renderAnchorLeg(ctx context.Context, app models.Application, ref anchor.ApplicationRef, tmpDir, leg string, repo *GitRepo, repoRoot string, validationResults map[string]ports.ValidationResult) error {
+func (a *App) renderAnchorLeg(ctx context.Context, lc *anchorLegContext, leg string) error {
 	target := Target{
 		CmdRunner:           a.cmdRunner,
 		FileReader:          a.fileReader,
 		HelmProcessor:       a.helmProcessor,
 		Globber:             a.globber,
 		CacheDir:            a.cfg.CacheDir,
-		TmpDir:              tmpDir,
+		TmpDir:              lc.tmpDir,
 		CredentialProviders: a.activeProviders,
 		Log:                 a.logger,
 		Type:                leg,
-		App:                 app,
+		App:                 lc.app,
 	}
 
-	if err := a.materializeChartForLeg(ctx, &target, leg, repo, repoRoot); err != nil {
+	if err := a.materializeChartForLeg(ctx, &target, leg, lc.repo, lc.repoRoot); err != nil {
 		return err
 	}
 
@@ -179,8 +201,8 @@ func (a *App) renderAnchorLeg(ctx context.Context, app models.Application, ref a
 	// tip. Surface a mismatch here with an actionable error instead of letting
 	// `helm template` fail opaquely on the missing file. Same-repo anchors read
 	// both from the working tree, so they cannot drift this way.
-	if leg == TargetTypeSource && ref.Repo != "" {
-		if err := target.checkSourceValueFilesPresent(a.fs, ref); err != nil {
+	if leg == TargetTypeSource && lc.ref.Repo != "" {
+		if err := target.checkSourceValueFilesPresent(a.fs, lc.ref); err != nil {
 			return err
 		}
 	}
@@ -197,14 +219,14 @@ func (a *App) renderAnchorLeg(ctx context.Context, app models.Application, ref a
 	}
 
 	if a.validator != nil && leg == TargetTypeSource {
-		manifests := filepath.Join(tmpDir, "templates", leg)
+		manifests := filepath.Join(lc.tmpDir, "templates", leg)
 		result, err := a.validator.Validate(ctx, leg, manifests)
 		if err != nil {
 			a.logger.Warningf("Manifest validation failed: %v", err)
-			validationResults[leg] = ports.ValidationResult{Target: leg, InvocationError: err.Error()}
+			lc.results[leg] = ports.ValidationResult{Target: leg, InvocationError: err.Error()}
 			return nil
 		}
-		validationResults[leg] = result
+		lc.results[leg] = result
 		if !result.Valid {
 			a.logger.Warningf("Validation errors found: %d issues", result.ErrorCount)
 		}
