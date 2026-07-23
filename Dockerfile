@@ -8,18 +8,18 @@ ENV KUBECONFORM_VERSION=0.7.0
 
 WORKDIR /tmp
 
-RUN apk add --no-cache wget git patch \
-    && wget --progress=dot:giga -O helm.tar.gz "https://get.helm.sh/helm-v${HELM_VERSION}-linux-${TARGETARCH}.tar.gz" \
+RUN apk add --no-cache git patch wget \
+    && wget --https-only --progress=dot:giga -O helm.tar.gz "https://get.helm.sh/helm-v${HELM_VERSION}-linux-${TARGETARCH}.tar.gz" \
     && tar -xf helm.tar.gz "linux-${TARGETARCH}/helm" \
     && mv "linux-${TARGETARCH}/helm" /usr/bin/helm \
     && rm -f helm.tar.gz
 
-RUN wget --progress=dot:giga -O kubeconform.tar.gz "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-${TARGETARCH}.tar.gz" \
+RUN wget --https-only --progress=dot:giga -O kubeconform.tar.gz "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-${TARGETARCH}.tar.gz" \
     && tar -xf kubeconform.tar.gz kubeconform \
     && mv kubeconform /usr/bin/kubeconform \
     && rm -f kubeconform.tar.gz
 
-RUN git clone -b v${DIFF_SO_FANCY_VERSION} https://github.com/so-fancy/diff-so-fancy /diff-so-fancy \
+RUN git clone -b "v${DIFF_SO_FANCY_VERSION}" https://github.com/so-fancy/diff-so-fancy /diff-so-fancy \
  && mv /diff-so-fancy/diff-so-fancy /usr/local/bin/diff-so-fancy \
  && mv /diff-so-fancy/lib /usr/local/bin \
  && chmod +x /usr/local/bin/diff-so-fancy
