@@ -84,6 +84,11 @@ with a different globber, and this follows it. For the same reason a dot
 directory is *not* skipped for files: name it in the pattern and its files
 generate Applications, where a `directories` pattern would never match one.
 
+A malformed pattern — `clusters/[` — is rejected when the manifest is read,
+rather than quietly matching nothing and comparing fewer Applications than you
+asked for. The same applies to an `exclude` pattern, where a silent failure
+would instead have generated Applications you meant to leave out.
+
 A matched file must parse as a mapping, or as a sequence of them. Anything else
 fails the run rather than being skipped, because a comparison that quietly
 covers fewer Applications is worse than one that stops. Keep patterns narrow

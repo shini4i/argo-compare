@@ -3,8 +3,10 @@ package models
 import (
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"gopkg.in/yaml.v3"
 )
 
@@ -203,11 +205,19 @@ func validateGitGenerator(gitGen *GitGenerator) error {
 		if dir.Path == "" {
 			return fmt.Errorf("%w: every git generator 'directories' entry requires a path", ErrUnsupportedAppConfiguration)
 		}
+		// A malformed pattern matches nothing, so without this the manifest
+		// would expand to fewer Applications with nothing reported.
+		if _, err := path.Match(dir.Path, "x"); err != nil {
+			return fmt.Errorf("%w: git generator 'directories' pattern %q is malformed: %w", ErrUnsupportedAppConfiguration, dir.Path, err)
+		}
 	}
 
 	for _, file := range gitGen.Files {
 		if file.Path == "" {
 			return fmt.Errorf("%w: every git generator 'files' entry requires a path", ErrUnsupportedAppConfiguration)
+		}
+		if !doublestar.ValidatePattern(file.Path) {
+			return fmt.Errorf("%w: git generator 'files' pattern %q is malformed", ErrUnsupportedAppConfiguration, file.Path)
 		}
 	}
 

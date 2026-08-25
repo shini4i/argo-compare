@@ -337,6 +337,7 @@ func TestMatchDirectoriesPatternShapes(t *testing.T) {
 			want:    nil,
 		},
 		{
+			// Validate rejects these up front; the matcher stays defensive.
 			name:    "malformed include matches nothing",
 			entries: []models.GitDirectory{include("clusters/[")},
 			want:    nil,

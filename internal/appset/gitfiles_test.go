@@ -79,6 +79,8 @@ func TestMatchFiles(t *testing.T) {
 			want:    nil,
 		},
 		{
+			// Validate rejects such a pattern up front; the matcher stays
+			// defensive so an unvalidated caller cannot get a wrong match.
 			name:    "malformed pattern matches nothing",
 			entries: []models.GitFile{fileEntry("clusters/[")},
 			want:    nil,
