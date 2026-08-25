@@ -37,27 +37,14 @@ type Target struct {
 
 // parse loads the target application's manifest into memory and validates its structure.
 func (t *Target) parse() error {
-	app := models.Application{}
-
-	var file string
-
-	// Use filepath.IsAbs to check if the path is absolute rather than checking for /tmp/
-	if filepath.IsAbs(t.File) {
-		file = t.File
-	} else {
-		gitRepoRoot, err := GetGitRepoRoot()
-		if err != nil {
-			return err
-		}
-		file = filepath.Join(gitRepoRoot, t.File)
-	}
-
-	t.Log.Debugf("Parsing %s...", file)
-
-	yamlContent, err := t.FileReader.ReadFile(file)
+	yamlContent, err := readManifest(t.FileReader, t.File)
 	if err != nil {
-		return fmt.Errorf("read application file %q: %w", file, err)
+		return err
 	}
+
+	t.Log.Debugf("Parsing %s...", t.File)
+
+	app := models.Application{}
 	if err := yaml.Unmarshal(yamlContent, &app); err != nil {
 		return err
 	}
@@ -69,6 +56,53 @@ func (t *Target) parse() error {
 	t.App = app
 
 	return nil
+}
+
+// readManifest reads a manifest file, resolving a relative path against the
+// repository root so callers can pass either form.
+func readManifest(fileReader ports.FileReader, path string) ([]byte, error) {
+	file := path
+
+	// Use filepath.IsAbs to check if the path is absolute rather than checking for /tmp/
+	if !filepath.IsAbs(path) {
+		gitRepoRoot, err := GetGitRepoRoot()
+		if err != nil {
+			return nil, err
+		}
+		file = filepath.Join(gitRepoRoot, path)
+	}
+
+	content, err := fileReader.ReadFile(file)
+	if err != nil {
+		return nil, fmt.Errorf("read application file %q: %w", file, err)
+	}
+
+	return content, nil
+}
+
+// parseApplicationSet loads and validates an ApplicationSet manifest from path.
+func parseApplicationSet(fileReader ports.FileReader, path string) (*models.ApplicationSet, error) {
+	yamlContent, err := readManifest(fileReader, path)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseApplicationSetContent(yamlContent)
+}
+
+// parseApplicationSetContent validates an ApplicationSet manifest already held
+// in memory, such as one read out of a Git tree.
+func parseApplicationSetContent(yamlContent []byte) (*models.ApplicationSet, error) {
+	appSet := &models.ApplicationSet{}
+	if err := yaml.Unmarshal(yamlContent, appSet); err != nil {
+		return nil, err
+	}
+
+	if err := appSet.Validate(); err != nil {
+		return nil, err
+	}
+
+	return appSet, nil
 }
 
 // generateValuesFiles materializes Helm values files so templates can be rendered.

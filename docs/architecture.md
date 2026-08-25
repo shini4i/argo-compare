@@ -1,7 +1,7 @@
 # Architecture
 
 This document describes the code structure of `argo-compare` — package
-responsibilities, dependency direction, and where the two entry flows live.
+responsibilities, dependency direction, and where the three entry flows live.
 For the user-facing pipeline (what the tool *does*, step by step), see
 [How it works](how-it-works.md).
 
@@ -16,9 +16,11 @@ cmd/argo-compare/
 
 internal/
 ├── app/                  # orchestrator: end-to-end comparison workflow
-│                         # holds Config, App, the two entry flows, and the
+│                         # holds Config, App, the three entry flows, and the
 │                         # comment/diff strategies
 ├── anchor/               # .argo-compare.yml schema + loader
+├── appset/               # expands ApplicationSet manifests into the
+│                         # Applications they generate (goTemplate only)
 ├── comment/              # Poster interface
 │   └── gitlab/           # GitLab MR comment adapter
 ├── helpers/              # env vars, Helm label stripping, retry, fs utils
@@ -40,7 +42,7 @@ cmd/argo-compare/main.go
 cmd/argo-compare/command          (cobra wiring)
         │
         ▼
-internal/app  ──────────────►  internal/{anchor, models, sanitizer, comment, ui, helpers}
+internal/app  ──────────────►  internal/{anchor, appset, models, sanitizer, comment, ui, helpers}
         │                                      │
         │                                      ▼
         └────────► internal/ports ◄────── cmd/argo-compare/utils
@@ -58,16 +60,22 @@ to shell out, touch the filesystem, glob, or render Helm goes through a port
 — which keeps `internal/app` testable with the fakes in
 `internal/ports/portstest`.
 
-## Two entry flows
+## Entry flows
 
-`internal/app` selects between two entry paths based on what the PR diff
+`internal/app` selects between three entry paths based on what the PR diff
 contains:
 
 1. **Standard flow** — the PR modifies ArgoCD Application YAML files
    directly. Driver code lives in `internal/app/app.go`,
    `application_fetcher.go`, `git.go`, `target.go`, `compare.go`.
 
-2. **Anchor flow** — the PR modifies chart content (e.g. Helm values)
+2. **ApplicationSet flow** — the PR modifies an ApplicationSet manifest.
+   `internal/appset` expands it into the Applications it generates on both
+   branches, and those are matched by name and compared one pair at a time,
+   so an Application the change adds or drops shows up as such. Driver code
+   lives in `internal/app/appset_flow.go`.
+
+3. **Anchor flow** — the PR modifies chart content (e.g. Helm values)
    rather than an Application YAML. `argo-compare` walks up to the
    nearest `.argo-compare.yml`, resolves the referenced Application, and
    renders the chart twice (working tree vs. merge-base). Driver code
@@ -75,7 +83,7 @@ contains:
    `tree_materialize.go`. The anchor schema itself is in
    `internal/anchor`.
 
-Both flows converge on the same comparison + comment publication path in
+All three converge on the same comparison + comment publication path in
 `internal/app/compare.go` and `comment_strategy.go`.
 
 ## Side-effects and where they live

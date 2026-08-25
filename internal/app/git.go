@@ -261,6 +261,30 @@ func (g *GitRepo) GetChangedFileContent(targetBranch, targetFile string, printAd
 	return g.parseTargetApplication(fileContent)
 }
 
+// GetChangedFileRaw returns the unparsed contents of targetFile on
+// targetBranch, or errGitFileDoesNotExist when the file is absent there.
+func (g *GitRepo) GetChangedFileRaw(targetBranch, targetFile string) ([]byte, error) {
+	targetTree, err := g.treeForBranch(targetBranch)
+	if err != nil {
+		return nil, err
+	}
+
+	fileEntry, err := targetTree.File(targetFile)
+	if err != nil {
+		if errors.Is(err, object.ErrFileNotFound) {
+			return nil, errGitFileDoesNotExist
+		}
+		return nil, fmt.Errorf("failed to find file %s in target branch %s: %w", targetFile, targetBranch, err)
+	}
+
+	fileContent, err := fileEntry.Contents()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get contents of file %s: %w", targetFile, err)
+	}
+
+	return []byte(fileContent), nil
+}
+
 // treeForBranch resolves the Git tree for the provided remote branch reference.
 func (g *GitRepo) treeForBranch(targetBranch string) (*object.Tree, error) {
 	targetCommit, err := g.commitForBranch(targetBranch)
@@ -364,17 +388,17 @@ func (g *GitRepo) sortChangedFiles(files []string, repoRoot string) (application
 			continue
 		}
 
-		switch isApp, err := g.checkIfApp(file); {
+		switch kind, err := g.classifyManifest(file); {
 		case errors.Is(err, models.ErrNotApplication):
 			g.log.Debugf("Skipping non-application file [%s]", file)
 		case errors.Is(err, models.ErrUnsupportedAppConfiguration):
-			g.log.Warningf("Skipping unsupported application configuration [%s]", file)
+			g.log.Warningf("Skipping unsupported application configuration [%s]: %s", file, err)
 		case errors.Is(err, models.ErrEmptyFile):
 			g.log.Debugf("Skipping empty file [%s]", file)
 		case err != nil:
 			g.log.Errorf("Error checking if [%s] is an Application: %s", file, err)
 			invalid = append(invalid, file)
-		case isApp:
+		case kind != "":
 			applications = append(applications, file)
 		}
 	}
@@ -417,8 +441,11 @@ func isHelmTemplate(fs afero.Fs, repoRoot, relFile string) (bool, error) {
 	return false, nil
 }
 
-// checkIfApp determines whether the provided path points to a valid Application manifest.
-func (g *GitRepo) checkIfApp(file string) (bool, error) {
+// classifyManifest reports whether file holds a manifest argo-compare can
+// process, returning models.KindApplication or models.KindApplicationSet.
+// A file that is neither yields ErrNotApplication, so the caller reports it
+// with the same message it always has.
+func (g *GitRepo) classifyManifest(file string) (string, error) {
 	g.log.Debugf("===> Checking if [%s] is an Application", ui.Cyan(file))
 
 	target := Target{
@@ -428,10 +455,22 @@ func (g *GitRepo) checkIfApp(file string) (bool, error) {
 		File:       file,
 	}
 
-	if err := target.parse(); err != nil {
-		return false, err
+	appErr := target.parse()
+	if appErr == nil {
+		return models.KindApplication, nil
 	}
-	return true, nil
+	if !errors.Is(appErr, models.ErrNotApplication) {
+		return "", appErr
+	}
+
+	switch _, setErr := parseApplicationSet(g.fileReader, file); {
+	case setErr == nil:
+		return models.KindApplicationSet, nil
+	case errors.Is(setErr, models.ErrNotApplicationSet):
+		return "", appErr
+	default:
+		return "", setErr
+	}
 }
 
 // GetGitRepoRoot returns the filesystem path of the nearest parent directory,

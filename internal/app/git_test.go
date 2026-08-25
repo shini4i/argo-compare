@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -728,4 +729,174 @@ func buildGitRepo(t *testing.T, includeRemote bool) (*GitRepo, *git.Repository) 
 	require.NoError(t, err)
 
 	return repoInstance, repo
+}
+
+// TestGitRepoGetChangedFilesDiscoversApplicationSets proves the discovery gate
+// admits goTemplate ApplicationSets while still skipping the legacy
+// fasttemplate ones the render path cannot reproduce.
+func TestGitRepoGetChangedFilesDiscoversApplicationSets(t *testing.T) {
+	tempDir := t.TempDir()
+	workDir := filepath.Join(tempDir, "repo")
+	require.NoError(t, os.MkdirAll(filepath.Join(workDir, "apps"), 0o755))
+
+	repo, err := git.PlainInit(workDir, false)
+	require.NoError(t, err)
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))))
+
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "README.md"), []byte("seed\n"), 0o644))
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+	_, err = worktree.Add("README.md")
+	require.NoError(t, err)
+	commitHash, err := worktree.Commit("initial", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	remotePath := filepath.Join(tempDir, "origin.git")
+	_, err = git.PlainInit(remotePath, true)
+	require.NoError(t, err)
+	_, err = repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{remotePath}})
+	require.NoError(t, err)
+	require.NoError(t, repo.Push(&git.PushOptions{RemoteName: "origin", RefSpecs: []config.RefSpec{"refs/heads/main:refs/heads/main"}}))
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), commitHash)))
+
+	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("feature"), Create: true}))
+
+	goTemplateSet := `apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: guestbook
+  namespace: argocd
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+  template:
+    metadata:
+      name: '{{.cluster}}-guestbook'
+    spec:
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: guestbook
+      source:
+        repoURL: fake.repo/charts
+        chart: guestbook
+        targetRevision: 1.0.0
+`
+	legacySet := `apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: legacy
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+  template:
+    metadata:
+      name: '{{cluster}}-guestbook'
+`
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "apps", "guestbook.yaml"), []byte(goTemplateSet), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "apps", "legacy.yaml"), []byte(legacySet), 0o644))
+	// Neither an Application nor an ApplicationSet: must fold back to the
+	// original ErrNotApplication and be skipped, not flagged invalid.
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "apps", "configmap.yaml"),
+		[]byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: demo\ndata: {}\n"), 0o644))
+
+	_, err = worktree.Add("apps/guestbook.yaml")
+	require.NoError(t, err)
+	_, err = worktree.Add("apps/legacy.yaml")
+	require.NoError(t, err)
+	_, err = worktree.Add("apps/configmap.yaml")
+	require.NoError(t, err)
+	_, err = worktree.Commit("add application sets", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	originalWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(workDir))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(originalWD))
+	})
+
+	log := logger.New("git-test-appset")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), portstest.NoopCmdRunner{}, utils.OsFileReader{}, log)
+	require.NoError(t, err)
+
+	result, err := repoInstance.GetChangedFiles("main", nil, "")
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"apps/guestbook.yaml"}, result.Applications)
+	require.Empty(t, result.Invalid, "a legacy-templating ApplicationSet is skipped, not invalid")
+}
+
+// TestGitRepoSkipWarningNamesTheReason keeps the operator-facing warning
+// actionable: a skipped ApplicationSet must say which rule rejected it.
+func TestGitRepoSkipWarningNamesTheReason(t *testing.T) {
+	tempDir := t.TempDir()
+	workDir := filepath.Join(tempDir, "repo")
+	require.NoError(t, os.MkdirAll(filepath.Join(workDir, "apps"), 0o755))
+
+	repo, err := git.PlainInit(workDir, false)
+	require.NoError(t, err)
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))))
+
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "README.md"), []byte("seed\n"), 0o644))
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+	_, err = worktree.Add("README.md")
+	require.NoError(t, err)
+	commitHash, err := worktree.Commit("initial", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	remotePath := filepath.Join(tempDir, "origin.git")
+	_, err = git.PlainInit(remotePath, true)
+	require.NoError(t, err)
+	_, err = repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{remotePath}})
+	require.NoError(t, err)
+	require.NoError(t, repo.Push(&git.PushOptions{RemoteName: "origin", RefSpecs: []config.RefSpec{"refs/heads/main:refs/heads/main"}}))
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), commitHash)))
+
+	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("feature"), Create: true}))
+
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "apps", "matrix.yaml"), []byte(`apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: matrix
+  namespace: argocd
+spec:
+  goTemplate: true
+  generators:
+    - matrix:
+        generators: []
+  template:
+    metadata:
+      name: '{{.cluster}}'
+`), 0o644))
+
+	_, err = worktree.Add("apps/matrix.yaml")
+	require.NoError(t, err)
+	_, err = worktree.Commit("add matrix application set", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	originalWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(workDir))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(originalWD))
+	})
+
+	var logBuffer bytes.Buffer
+	logger.RedirectForTest(t, &logBuffer)
+
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), portstest.NoopCmdRunner{}, utils.OsFileReader{}, logger.New("git-test-skip-reason"))
+	require.NoError(t, err)
+
+	result, err := repoInstance.GetChangedFiles("main", nil, "")
+	require.NoError(t, err)
+	require.Empty(t, result.Applications)
+
+	require.Contains(t, logBuffer.String(), `generator "matrix" is not supported`)
 }
