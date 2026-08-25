@@ -90,6 +90,13 @@ spec:
 Bumping `revision` for one element produces a diff for that generated
 Application only.
 
+## Limits
+
+A rendered Application is capped at 1 MiB. Real Applications are a few
+kilobytes, so hitting the cap means a template is producing something
+unintended, and expansion fails with a clear error rather than carrying the
+oversized document into the diff.
+
 ## Application identity
 
 Generated Applications are matched between branches by `metadata.name` alone.

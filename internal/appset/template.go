@@ -4,6 +4,7 @@ package appset
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -15,6 +16,27 @@ import (
 
 // maxDNSNameLength is the length normalize truncates to, per RFC 1123 subdomain.
 const maxDNSNameLength = 253
+
+// maxRenderedBytes caps one rendered Application manifest. Real Applications are
+// a few kilobytes; the cap stops a runaway template from growing the document
+// that every later stage — YAML decode, diff, merge request comment — carries.
+const maxRenderedBytes = 1 << 20
+
+// errRenderTooLarge reports a rendered Application over maxRenderedBytes.
+var errRenderTooLarge = errors.New("rendered Application exceeds the 1 MiB limit")
+
+// limitedBuffer collects rendered output and fails once it passes limit.
+type limitedBuffer struct {
+	buf   bytes.Buffer
+	limit int
+}
+
+func (w *limitedBuffer) Write(p []byte) (int, error) {
+	if w.buf.Len()+len(p) > w.limit {
+		return 0, errRenderTooLarge
+	}
+	return w.buf.Write(p)
+}
 
 // invalidDNSNameChars matches every character normalize replaces with a hyphen.
 var invalidDNSNameChars = regexp.MustCompile("[^-a-z0-9.]")
@@ -73,12 +95,15 @@ func render(text string, params map[string]any, options []string) (string, error
 		return "", fmt.Errorf("parse spec.template: %w", err)
 	}
 
-	var buf bytes.Buffer
+	buf := limitedBuffer{limit: maxRenderedBytes}
 	if err := parsed.Execute(&buf, params); err != nil {
+		if errors.Is(err, errRenderTooLarge) {
+			return "", errRenderTooLarge
+		}
 		return "", fmt.Errorf("render spec.template: %w", err)
 	}
 
-	return buf.String(), nil
+	return buf.buf.String(), nil
 }
 
 // validateTemplateOptions rejects goTemplateOptions entries text/template does
