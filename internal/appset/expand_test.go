@@ -667,3 +667,78 @@ spec:
 	assert.Equal(t, true, values["enabled"])
 	assert.InDelta(t, 1.5, values["ratio"], 0.0001)
 }
+
+// TestExpandRendersValuesObjectKeys covers what ArgoCD templates and this once
+// missed: a map's keys, not only its values, at any depth.
+func TestExpandRendersValuesObjectKeys(t *testing.T) {
+	appSet := mustParse(t, `
+kind: ApplicationSet
+metadata:
+  name: guestbook
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+            key: region
+  template:
+    metadata:
+      name: '{{ .cluster }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: guestbook
+        targetRevision: 1.0.0
+        helm:
+          valuesObject:
+            '{{ .cluster }}':
+              '{{ .key }}': eu-west-1
+              plain: kept
+`)
+
+	apps, err := Expand(appSet, nil)
+	require.NoError(t, err)
+	require.Len(t, apps, 1)
+
+	values := apps[0].Spec.Source.Helm.ValuesObject
+	cluster, ok := values["dev"].(map[string]any)
+	require.True(t, ok, "the top-level key must be rendered")
+	assert.Equal(t, "eu-west-1", cluster["region"], "the nested key must be rendered too")
+	assert.Equal(t, "kept", cluster["plain"])
+}
+
+// TestExpandRejectsCollidingValuesObjectKeys keeps two keys that render alike
+// from silently overwriting each other. ArgoCD's last-write-wins over random
+// map order would make the diff flap between runs.
+func TestExpandRejectsCollidingValuesObjectKeys(t *testing.T) {
+	appSet := mustParse(t, `
+kind: ApplicationSet
+metadata:
+  name: guestbook
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+  template:
+    metadata:
+      name: '{{ .cluster }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: guestbook
+        targetRevision: 1.0.0
+        helm:
+          valuesObject:
+            dev: first
+            '{{ .cluster }}': second
+`)
+
+	for i := 0; i < 10; i++ {
+		_, err := Expand(appSet, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `renders to "dev"`)
+	}
+}

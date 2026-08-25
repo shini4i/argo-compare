@@ -1,6 +1,8 @@
 package appset
 
 import (
+	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/shini4i/argo-compare/internal/models"
@@ -77,9 +79,39 @@ func (r *renderer) source(source *models.Source) {
 		source.Helm.Parameters[i].Value = r.text(source.Helm.Parameters[i].Value)
 	}
 
-	for key, value := range source.Helm.ValuesObject {
-		source.Helm.ValuesObject[key] = r.nested(value)
+	source.Helm.ValuesObject = r.mapping(source.Helm.ValuesObject)
+}
+
+// mapping renders a map's keys as well as its values, which ArgoCD does so a
+// template can name the key it is setting. Keys are visited in sorted order so
+// a collision is reported the same way on every run.
+func (r *renderer) mapping(original map[string]any) map[string]any {
+	if original == nil || r.err != nil {
+		return original
 	}
+
+	keys := make([]string, 0, len(original))
+	for key := range original {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	rendered := make(map[string]any, len(original))
+	for _, key := range keys {
+		renderedKey := r.text(key)
+		if r.err != nil {
+			return original
+		}
+
+		if _, taken := rendered[renderedKey]; taken {
+			r.err = fmt.Errorf("key %q renders to %q, which another key in the same map already produced", key, renderedKey)
+			return original
+		}
+
+		rendered[renderedKey] = r.nested(original[key])
+	}
+
+	return rendered
 }
 
 // nested renders the strings inside helm.valuesObject, which is free-form YAML
@@ -89,10 +121,7 @@ func (r *renderer) nested(value any) any {
 	case string:
 		return r.text(typed)
 	case map[string]any:
-		for key, item := range typed {
-			typed[key] = r.nested(item)
-		}
-		return typed
+		return r.mapping(typed)
 	case []any:
 		for i, item := range typed {
 			typed[i] = r.nested(item)
