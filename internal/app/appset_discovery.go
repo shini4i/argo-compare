@@ -27,15 +27,15 @@ const maxManifestBytes = 1 << 20
 // directory the diff touched. A git generator's Applications change when
 // directories appear or disappear, which leaves the manifest itself untouched,
 // so those changes would otherwise never reach the ApplicationSet flow.
-func DiscoverApplicationSets(filesystem afero.Fs, fileReader ports.FileReader, repoRoot, originURL, targetBranch string, changedFiles []string) ([]string, error) {
+func DiscoverApplicationSets(filesystem afero.Fs, fileReader ports.FileReader, repoRoot, originURL, targetBranch string, changedFiles []string) ([]string, []string, error) {
 	touched := touchedDirectories(changedFiles)
 	if len(touched) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	candidates, err := findApplicationSets(filesystem, fileReader, repoRoot)
+	candidates, unusable, err := findApplicationSets(filesystem, fileReader, repoRoot)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var matched []string
@@ -51,8 +51,9 @@ func DiscoverApplicationSets(filesystem afero.Fs, fileReader ports.FileReader, r
 	}
 
 	sort.Strings(matched)
+	sort.Strings(unusable)
 
-	return matched, nil
+	return matched, unusable, nil
 }
 
 // discoveredAppSet pairs a parsed manifest with its repo-relative path.
@@ -102,12 +103,9 @@ func touchedDirectories(changedFiles []string) []string {
 }
 
 // findApplicationSets walks the working tree for expandable ApplicationSet
-// manifests that declare a git generator. Manifests that fail to parse or are
-// unsupported are skipped: a changed one is reported by discovery already, and
-// an unchanged one is not this run's concern.
-func findApplicationSets(filesystem afero.Fs, fileReader ports.FileReader, repoRoot string) ([]discoveredAppSet, error) {
-	var found []discoveredAppSet
-
+// manifests. It also returns the files that name the kind but could not be read
+// or parsed, so the caller can report them instead of losing them silently.
+func findApplicationSets(filesystem afero.Fs, fileReader ports.FileReader, repoRoot string) (found []discoveredAppSet, unusable []string, err error) {
 	walkErr := afero.Walk(filesystem, repoRoot, func(fullPath string, info fs.FileInfo, err error) error {
 		// An unreadable entry is skipped, not fatal: this scan visits the whole
 		// repository, and one directory it cannot enter is not this run.
@@ -129,17 +127,21 @@ func findApplicationSets(filesystem afero.Fs, fileReader ports.FileReader, repoR
 			return nil
 		}
 
-		if appSet := readApplicationSet(fileReader, fullPath, rel); appSet != nil {
+		appSet, readErr := readApplicationSet(fileReader, fullPath, rel)
+		switch {
+		case readErr != nil:
+			unusable = append(unusable, fmt.Sprintf("%s (%s)", rel, readErr))
+		case appSet != nil:
 			found = append(found, discoveredAppSet{path: rel, appSet: appSet})
 		}
 
 		return nil
 	})
 	if walkErr != nil {
-		return nil, fmt.Errorf("scan for ApplicationSet manifests: %w", walkErr)
+		return nil, nil, fmt.Errorf("scan for ApplicationSet manifests: %w", walkErr)
 	}
 
-	return found, nil
+	return found, unusable, nil
 }
 
 // discoverGeneratorApplicationSets finds ApplicationSets a directory change
@@ -153,9 +155,15 @@ func (g *GitRepo) discoverGeneratorApplicationSets(repoRoot, targetBranch string
 		return nil, err
 	}
 
-	matched, err := DiscoverApplicationSets(g.fs, g.fileReader, repoRoot, originURL, targetBranch, changed)
+	matched, unusable, err := DiscoverApplicationSets(g.fs, g.fileReader, repoRoot, originURL, targetBranch, changed)
 	if err != nil {
 		return nil, err
+	}
+
+	// A manifest naming the kind but failing to load may well be one this
+	// change affects, so say so rather than dropping it without a word.
+	for _, file := range unusable {
+		g.log.Warningf("Skipping unreadable ApplicationSet manifest during discovery: %s", file)
 	}
 
 	matched = filterIgnored(matched, filesToIgnore)
@@ -184,26 +192,32 @@ func mergePaths(base, extra []string) []string {
 	return base
 }
 
-// readApplicationSet returns the expandable ApplicationSet at fullPath, or nil
-// when the file is not one. A read or parse failure yields nil rather than an
-// error: this scan visits every YAML in the repository, and one it cannot use
-// is not this run's concern.
-func readApplicationSet(fileReader ports.FileReader, fullPath, rel string) *models.ApplicationSet {
+// readApplicationSet returns the expandable ApplicationSet at fullPath, nil when
+// the file is not one, or an error when a file that looks like one cannot be
+// used. The caller reports that rather than failing, so a single broken
+// manifest does not stop a run it may have nothing to do with.
+func readApplicationSet(fileReader ports.FileReader, fullPath, rel string) (*models.ApplicationSet, error) {
 	if ext := path.Ext(rel); ext != ".yaml" && ext != ".yml" {
-		return nil
+		return nil, nil
 	}
 
 	content, err := fileReader.ReadFile(fullPath)
-	if err != nil || !bytes.Contains(content, appSetKindMarker) {
-		return nil
+	if err != nil {
+		return nil, err
+	}
+
+	// Only a file naming the kind is worth reporting on; every other YAML in
+	// the repository is simply not a manifest this scan wants.
+	if !bytes.Contains(content, appSetKindMarker) {
+		return nil, nil
 	}
 
 	appSet, err := parseApplicationSetContent(content)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
-	return appSet
+	return appSet, nil
 }
 
 // skipUnreadable abandons an entry the walk could not stat, descending no

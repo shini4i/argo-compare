@@ -1,7 +1,9 @@
 package app
 
 import (
+	"errors"
 	"path"
+	"strings"
 	"testing"
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
@@ -110,7 +112,7 @@ spec:
 func TestDiscoverApplicationSetsMatchesTouchedDirectory(t *testing.T) {
 	filesystem, root := seedDiscoveryTree(t)
 
-	matched, err := DiscoverApplicationSets(filesystem, utils.OsFileReader{}, root, discoveryOrigin, "main",
+	matched, _, err := DiscoverApplicationSets(filesystem, utils.OsFileReader{}, root, discoveryOrigin, "main",
 		[]string{"clusters/staging/values.yaml"})
 
 	require.NoError(t, err)
@@ -122,17 +124,17 @@ func TestDiscoverApplicationSetsIgnoresUnmatchedChanges(t *testing.T) {
 	reader := utils.OsFileReader{}
 
 	// Excluded by the generator itself.
-	matched, err := DiscoverApplicationSets(filesystem, reader, root, discoveryOrigin, "main", []string{"clusters/donotdeploy/values.yaml"})
+	matched, _, err := DiscoverApplicationSets(filesystem, reader, root, discoveryOrigin, "main", []string{"clusters/donotdeploy/values.yaml"})
 	require.NoError(t, err)
 	assert.Empty(t, matched)
 
 	// Outside every pattern.
-	matched, err = DiscoverApplicationSets(filesystem, reader, root, discoveryOrigin, "main", []string{"docs/readme.yaml"})
+	matched, _, err = DiscoverApplicationSets(filesystem, reader, root, discoveryOrigin, "main", []string{"docs/readme.yaml"})
 	require.NoError(t, err)
 	assert.Empty(t, matched)
 
 	// A repository-root file touches no directory at all.
-	matched, err = DiscoverApplicationSets(filesystem, reader, root, discoveryOrigin, "main", []string{"README.md"})
+	matched, _, err = DiscoverApplicationSets(filesystem, reader, root, discoveryOrigin, "main", []string{"README.md"})
 	require.NoError(t, err)
 	assert.Empty(t, matched)
 }
@@ -142,10 +144,56 @@ func TestDiscoverApplicationSetsIgnoresUnmatchedChanges(t *testing.T) {
 func TestDiscoverApplicationSetsSkipsNonCandidates(t *testing.T) {
 	filesystem, root := seedDiscoveryTree(t)
 
-	matched, err := DiscoverApplicationSets(filesystem, utils.OsFileReader{}, root, discoveryOrigin, "main",
+	matched, _, err := DiscoverApplicationSets(filesystem, utils.OsFileReader{}, root, discoveryOrigin, "main",
 		[]string{"clusters/dev/values.yaml"})
 
 	require.NoError(t, err)
 	// The list-generator, plain, broken, non-YAML and hidden manifests are all absent.
 	assert.Equal(t, []string{"apps/addons.yaml"}, matched)
+}
+
+// failingReader fails on one path and delegates the rest, standing in for a
+// manifest the scan cannot read. chmod would be a no-op when tests run as root.
+type failingReader struct {
+	failPath string
+}
+
+func (r failingReader) ReadFile(file string) ([]byte, error) {
+	if strings.HasSuffix(file, r.failPath) {
+		return nil, errors.New("boom")
+	}
+	return utils.OsFileReader{}.ReadFile(file)
+}
+
+// TestDiscoverApplicationSetsReportsUnusableManifests keeps a manifest that
+// names the kind but cannot be loaded from vanishing without a word — it may be
+// exactly the one the change affects.
+func TestDiscoverApplicationSetsReportsUnusableManifests(t *testing.T) {
+	filesystem, root := seedDiscoveryTree(t)
+
+	matched, unusable, err := DiscoverApplicationSets(filesystem, failingReader{failPath: "apps/addons.yaml"},
+		root, discoveryOrigin, "main", []string{"clusters/dev/values.yaml"})
+
+	require.NoError(t, err)
+	assert.Empty(t, matched, "the unreadable manifest cannot be matched")
+
+	// The seeded tree also holds an unparseable manifest, so both are reported.
+	joined := strings.Join(unusable, "\n")
+	assert.Contains(t, joined, "apps/addons.yaml")
+	assert.Contains(t, joined, "boom")
+	assert.Contains(t, joined, "apps/broken.yaml")
+}
+
+// TestDiscoverApplicationSetsReportsUnparseableManifests covers the other half:
+// the file reads, names the kind, and fails to decode.
+func TestDiscoverApplicationSetsReportsUnparseableManifests(t *testing.T) {
+	filesystem, root := seedDiscoveryTree(t)
+
+	_, unusable, err := DiscoverApplicationSets(filesystem, utils.OsFileReader{},
+		root, discoveryOrigin, "main", []string{"clusters/dev/values.yaml"})
+
+	require.NoError(t, err)
+	require.Len(t, unusable, 1)
+	assert.Contains(t, unusable[0], "apps/broken.yaml")
+	assert.Contains(t, unusable[0], "did not find expected key")
 }
