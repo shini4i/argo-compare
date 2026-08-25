@@ -16,11 +16,6 @@ func Expand(appSet *models.ApplicationSet, lister DirectoryLister) ([]models.App
 		return nil, err
 	}
 
-	text, err := yaml.Marshal(&appSet.Spec.Template)
-	if err != nil {
-		return nil, fmt.Errorf("marshal spec.template: %w", err)
-	}
-
 	parameters, err := collectParameters(appSet, lister)
 	if err != nil {
 		return nil, err
@@ -30,7 +25,7 @@ func Expand(appSet *models.ApplicationSet, lister DirectoryLister) ([]models.App
 	seen := make(map[string]bool)
 
 	for i, params := range parameters {
-		app, err := renderApplication(string(text), params, appSet.Spec.GoTemplateOptions)
+		app, err := renderApplication(&appSet.Spec.Template, params, appSet.Spec.GoTemplateOptions)
 		if err != nil {
 			return nil, fmt.Errorf("generator element %d: %w", i, err)
 		}
@@ -86,17 +81,19 @@ func collectParameters(appSet *models.ApplicationSet, lister DirectoryLister) ([
 	return params, nil
 }
 
-// renderApplication turns one parameter set into a validated Application.
+// renderApplication turns one parameter set into a validated Application. The
+// template is decoded first and each field rendered afterwards, so a value's
+// quotes, newlines or indentation cannot alter the manifest's own structure.
 // Kind is set here because spec.template carries only metadata and spec.
-func renderApplication(text string, params map[string]any, options []string) (models.Application, error) {
-	rendered, err := render(text, params, options)
-	if err != nil {
-		return models.Application{}, err
+func renderApplication(template *yaml.Node, params map[string]any, options []string) (models.Application, error) {
+	var app models.Application
+	if err := template.Decode(&app); err != nil {
+		return models.Application{}, fmt.Errorf("decode spec.template: %w", err)
 	}
 
-	var app models.Application
-	if err := yaml.Unmarshal([]byte(rendered), &app); err != nil {
-		return models.Application{}, fmt.Errorf("decode generated Application: %w", err)
+	fields := renderer{params: params, options: options}
+	if err := fields.application(&app); err != nil {
+		return models.Application{}, err
 	}
 
 	app.Kind = models.KindApplication

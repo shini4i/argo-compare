@@ -256,7 +256,7 @@ spec:
 	}
 }
 
-func TestExpandReportsInvalidRenderedYAML(t *testing.T) {
+func TestExpandKeepsSpecialCharactersInValues(t *testing.T) {
 	appSet := mustParse(t, `
 kind: ApplicationSet
 metadata:
@@ -277,9 +277,10 @@ spec:
         targetRevision: 1.0.0
 `)
 
-	_, err := Expand(appSet, nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "decode generated Application")
+	apps, err := Expand(appSet, nil)
+	require.NoError(t, err)
+	require.Len(t, apps, 1)
+	assert.Equal(t, "it's broken", apps[0].Metadata.Name)
 }
 
 // TestExpandRejectsUnknownTemplateOption keeps an unrecognised goTemplateOptions
@@ -361,4 +362,308 @@ spec:
 	_, err := Expand(appSet, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "generator element 1")
+}
+
+// TestExpandSupportsArgoCDTemplateFunctions proves the functions ArgoCD adds on
+// top of sprig are reachable from a real manifest, not just callable in Go.
+func TestExpandSupportsArgoCDTemplateFunctions(t *testing.T) {
+	appSet := mustParse(t, `
+kind: ApplicationSet
+metadata:
+  name: guestbook
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - branch: Feature/ABC 123
+            config: '{"chart":"guestbook","version":"1.2.3"}'
+            extras:
+              - one
+              - two
+  template:
+    metadata:
+      name: '{{ cat .branch | slugify 11 }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: '{{ (fromYaml .config).chart }}'
+        targetRevision: '{{ (fromYaml .config).version }}'
+        helm:
+          releaseName: '{{ index (fromYamlArray (toYaml .extras)) 1 }}'
+`)
+
+	apps, err := Expand(appSet, nil)
+	require.NoError(t, err)
+	require.Len(t, apps, 1)
+
+	assert.Equal(t, "feature-abc", apps[0].Metadata.Name)
+	assert.Equal(t, "guestbook", apps[0].Spec.Source.Chart)
+	assert.Equal(t, "1.2.3", apps[0].Spec.Source.TargetRevision)
+	// toYaml re-serialized the list and fromYamlArray parsed it back.
+	assert.Equal(t, "two", apps[0].Spec.Source.Helm.ReleaseName)
+}
+
+// TestExpandRendersToYamlIntoAStringField covers toYaml's main use. Because
+// each field is rendered on its own, the value is just a string and needs no
+// indentation ceremony to survive.
+func TestExpandRendersToYamlIntoAStringField(t *testing.T) {
+	appSet := mustParse(t, `
+kind: ApplicationSet
+metadata:
+  name: guestbook
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+            values:
+              replicaCount: 2
+              image:
+                tag: 1.0.0
+  template:
+    metadata:
+      name: '{{ .cluster }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: guestbook
+        targetRevision: 1.0.0
+        helm:
+          values: '{{ toYaml .values }}'
+`)
+
+	apps, err := Expand(appSet, nil)
+	require.NoError(t, err)
+	require.Len(t, apps, 1)
+
+	assert.Equal(t, "image:\n  tag: 1.0.0\nreplicaCount: 2", apps[0].Spec.Source.Helm.Values)
+}
+
+// TestExpandNindentUsesTheAuthorsColumn proves nindent means what the author
+// wrote. It once had to match argo-compare's re-marshalled layout instead, and
+// a wrong guess emptied the field with no error.
+func TestExpandNindentUsesTheAuthorsColumn(t *testing.T) {
+	appSet := mustParse(t, `
+kind: ApplicationSet
+metadata:
+  name: guestbook
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+            values:
+              replicaCount: 2
+  template:
+    metadata:
+      name: '{{ .cluster }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: guestbook
+        targetRevision: 1.0.0
+        helm:
+          values: '{{ toYaml .values | nindent 4 }}'
+`)
+
+	apps, err := Expand(appSet, nil)
+	require.NoError(t, err)
+	require.Len(t, apps, 1)
+
+	assert.Equal(t, "\n    replicaCount: 2", apps[0].Spec.Source.Helm.Values)
+}
+
+// TestExpandRendersValuesObject covers helm.valuesObject, which is free-form
+// YAML and so needs rendering at any depth rather than only at the top level.
+func TestExpandRendersValuesObject(t *testing.T) {
+	appSet := mustParse(t, `
+kind: ApplicationSet
+metadata:
+  name: guestbook
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+            tag: 2.1.0
+  template:
+    metadata:
+      name: '{{ .cluster }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: guestbook
+        targetRevision: 1.0.0
+        helm:
+          valueFiles:
+            - 'values-{{ .cluster }}.yaml'
+          parameters:
+            - name: 'image.tag'
+              value: '{{ .tag }}'
+          valuesObject:
+            image:
+              tag: '{{ .tag }}'
+              hosts:
+                - '{{ .cluster }}.example.com'
+`)
+
+	apps, err := Expand(appSet, nil)
+	require.NoError(t, err)
+	require.Len(t, apps, 1)
+
+	helm := apps[0].Spec.Source.Helm
+	assert.Equal(t, []string{"values-dev.yaml"}, helm.ValueFiles)
+	assert.Equal(t, "2.1.0", helm.Parameters[0].Value)
+
+	image, ok := helm.ValuesObject["image"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "2.1.0", image["tag"])
+	assert.Equal(t, []any{"dev.example.com"}, image["hosts"])
+}
+
+// TestExpandRejectsTplFunction pins the documented gap: ArgoCD's tpl is not
+// implemented, and sprig provides no function of that name.
+func TestExpandRejectsTplFunction(t *testing.T) {
+	appSet := mustParse(t, `
+kind: ApplicationSet
+metadata:
+  name: guestbook
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+  template:
+    metadata:
+      name: '{{ tpl "{{ .cluster }}" . }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: guestbook
+        targetRevision: 1.0.0
+`)
+
+	_, err := Expand(appSet, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not defined")
+}
+
+// TestExpandRendersMultiSourceApplications covers spec.sources, where each
+// entry needs the same field-by-field rendering as a single source.
+func TestExpandRendersMultiSourceApplications(t *testing.T) {
+	appSet := mustParse(t, `
+kind: ApplicationSet
+metadata:
+  name: guestbook
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+            revision: 2.0.0
+  template:
+    metadata:
+      name: '{{ .cluster }}'
+      namespace: '{{ .cluster }}-argocd'
+    spec:
+      destination:
+        server: 'https://{{ .cluster }}.example.com'
+        namespace: '{{ .cluster }}'
+      sources:
+        - repoURL: https://charts.example.com
+          chart: guestbook
+          targetRevision: '{{ .revision }}'
+        - repoURL: https://git.example.com/repo.git
+          path: 'charts/{{ .cluster }}'
+          targetRevision: HEAD
+`)
+
+	apps, err := Expand(appSet, nil)
+	require.NoError(t, err)
+	require.Len(t, apps, 1)
+
+	app := apps[0]
+	assert.Equal(t, "dev-argocd", app.Metadata.Namespace)
+	assert.Equal(t, "https://dev.example.com", app.Spec.Destination.Server)
+	assert.Equal(t, "dev", app.Spec.Destination.Namespace)
+	require.Len(t, app.Spec.Sources, 2)
+	assert.Equal(t, "2.0.0", app.Spec.Sources[0].TargetRevision)
+	assert.Equal(t, "charts/dev", app.Spec.Sources[1].Path)
+}
+
+// TestExpandReportsAFailureFromAnyField proves the first failing field stops
+// the render and is reported, wherever in the Application it sits.
+func TestExpandReportsAFailureFromAnyField(t *testing.T) {
+	appSet := mustParse(t, `
+kind: ApplicationSet
+metadata:
+  name: guestbook
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+  template:
+    metadata:
+      name: '{{ .cluster }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: guestbook
+        targetRevision: 1.0.0
+        helm:
+          valuesObject:
+            nested:
+              deep:
+                - '{{ nosuchfunction .cluster }}'
+`)
+
+	_, err := Expand(appSet, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "generator element 0")
+	assert.Contains(t, err.Error(), "not defined")
+}
+
+// TestExpandLeavesNonStringValuesObjectEntriesAlone keeps numbers and booleans
+// out of the template engine, which only has meaning for strings.
+func TestExpandLeavesNonStringValuesObjectEntriesAlone(t *testing.T) {
+	appSet := mustParse(t, `
+kind: ApplicationSet
+metadata:
+  name: guestbook
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+  template:
+    metadata:
+      name: '{{ .cluster }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: guestbook
+        targetRevision: 1.0.0
+        helm:
+          valuesObject:
+            replicaCount: 3
+            enabled: true
+            ratio: 1.5
+`)
+
+	apps, err := Expand(appSet, nil)
+	require.NoError(t, err)
+
+	values := apps[0].Spec.Source.Helm.ValuesObject
+	assert.Equal(t, 3, values["replicaCount"])
+	assert.Equal(t, true, values["enabled"])
+	assert.InDelta(t, 1.5, values["ratio"], 0.0001)
 }
