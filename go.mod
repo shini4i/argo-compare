@@ -2,6 +2,8 @@ module github.com/shini4i/argo-compare
 
 go 1.26.5
 
+toolchain go1.26.7
+
 require (
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/aws/aws-sdk-go-v2 v1.41.11
@@ -10,7 +12,7 @@ require (
 	github.com/codingsince1985/checksum v1.3.0
 	github.com/fatih/color v1.19.0
 	github.com/go-git/go-billy/v5 v5.9.0
-	github.com/go-git/go-git/v5 v5.19.1
+	github.com/go-git/go-git/v5 v5.19.2
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/mattn/go-zglob v0.0.6
 	github.com/spf13/afero v1.15.0
@@ -62,9 +64,9 @@ require (
 	github.com/spf13/cast v1.7.0 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
-	golang.org/x/crypto v0.53.0 // indirect
-	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/crypto v0.55.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
