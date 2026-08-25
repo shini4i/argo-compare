@@ -157,3 +157,133 @@ func TestAppRunDiscoveryIgnoresForeignRepoApplicationSet(t *testing.T) {
 	assert.Zero(t, runner.helm.callCount("RenderAppSource"))
 	assert.NotContains(t, runner.log.String(), "Processing changed ApplicationSet")
 }
+
+// gitFileAppSetYAML is a git file generator over clusters/**/config.yaml whose
+// template reads parameters out of each matched file's contents.
+func gitFileAppSetYAML(repoURL string) string {
+	return `apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: cluster-addons
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: ` + repoURL + `
+        revision: HEAD
+        files:
+          - path: clusters/**/config.yaml
+        values:
+          label: '{{ .path.basename }}-addons'
+  template:
+    metadata:
+      name: '{{ .values.label }}'
+      namespace: argocd
+    spec:
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .cluster.name }}'
+      source:
+        repoURL: fake.repo/charts
+        chart: demo-chart
+        targetRevision: '{{ .cluster.version }}'
+        helm:
+          releaseName: '{{ .values.label }}'
+`
+}
+
+func clusterConfig(cluster, version string) string {
+	return "cluster:\n  name: " + cluster + "\n  version: " + version + "\n"
+}
+
+// TestAppRunGitFileGeneratorComparesFileContents is what the file generator
+// exists for: the branch edits a config file the generator reads, the
+// ApplicationSet manifest is untouched, and the diff still appears.
+func TestAppRunGitFileGeneratorComparesFileContents(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skip integration test in short mode")
+	}
+
+	manifest := gitFileAppSetYAML(originPlaceholder)
+
+	seedAppSetRepoState(t,
+		branchState{manifest: manifest, files: map[string]string{
+			"clusters/dev/config.yaml":  clusterConfig("dev", "1.0.0"),
+			"clusters/prod/config.yaml": clusterConfig("prod", "1.0.0"),
+		}},
+		branchState{manifest: manifest, files: map[string]string{
+			"clusters/dev/config.yaml":  clusterConfig("dev", "1.1.0"),
+			"clusters/prod/config.yaml": clusterConfig("prod", "1.0.0"),
+		}})
+
+	runner := newAppSetRunner(t, Config{}, nil)
+	require.NoError(t, runner.app.Run(context.Background()))
+
+	output := runner.log.String()
+	assert.Contains(t, output, "Generates 2 Application(s) on this branch and 2 on main; comparing 2")
+	assert.Contains(t, output, "dev-addons")
+	assert.Contains(t, output, "1 file would be changed")
+
+	// Both Applications render on both legs.
+	assert.Equal(t, 4, runner.helm.callCount("RenderAppSource"))
+
+	runner.assertTempDirsRemoved(t)
+}
+
+// TestAppRunGitFileGeneratorReportsAddedFile covers a new config file, which
+// adds an Application without the manifest changing.
+func TestAppRunGitFileGeneratorReportsAddedFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skip integration test in short mode")
+	}
+
+	manifest := gitFileAppSetYAML(originPlaceholder)
+
+	seedAppSetRepoState(t,
+		branchState{manifest: manifest, files: map[string]string{
+			"clusters/dev/config.yaml": clusterConfig("dev", "1.0.0"),
+		}},
+		branchState{manifest: manifest, files: map[string]string{
+			"clusters/dev/config.yaml":     clusterConfig("dev", "1.0.0"),
+			"clusters/staging/config.yaml": clusterConfig("staging", "1.0.0"),
+		}})
+
+	runner := newAppSetRunner(t, Config{PrintAddedManifests: true}, nil)
+	require.NoError(t, runner.app.Run(context.Background()))
+
+	output := runner.log.String()
+	assert.Contains(t, output, "staging-addons")
+	// dev on both legs, staging on the source leg only.
+	assert.Equal(t, 3, runner.helm.callCount("RenderAppSource"))
+}
+
+// TestAppRunGitFileGeneratorReportsDeletedFile is the mirror of the added-file
+// case: deleting a config file stops generating its Application, and discovery
+// has to match on the pattern alone since the file is gone from this branch.
+func TestAppRunGitFileGeneratorReportsDeletedFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skip integration test in short mode")
+	}
+
+	manifest := gitFileAppSetYAML(originPlaceholder)
+
+	seedAppSetRepoState(t,
+		branchState{manifest: manifest, files: map[string]string{
+			"clusters/dev/config.yaml":     clusterConfig("dev", "1.0.0"),
+			"clusters/staging/config.yaml": clusterConfig("staging", "1.0.0"),
+		}},
+		branchState{manifest: manifest, files: map[string]string{
+			"clusters/dev/config.yaml": clusterConfig("dev", "1.0.0"),
+		}})
+
+	runner := newAppSetRunner(t, Config{PrintRemovedManifests: true}, nil)
+	require.NoError(t, runner.app.Run(context.Background()))
+
+	output := runner.log.String()
+	assert.Contains(t, output, "Generates 1 Application(s) on this branch and 2 on main; comparing 2")
+	assert.Contains(t, output, "staging-addons")
+	// dev on both legs, staging on the target leg only.
+	assert.Equal(t, 3, runner.helm.callCount("RenderAppSource"))
+}

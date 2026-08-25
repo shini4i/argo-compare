@@ -12,11 +12,11 @@ plane is never contacted.
 | `goTemplate: true` templating | supported |
 | Legacy (fasttemplate) templating | not supported — the manifest is skipped |
 | `list` generator | supported |
-| `git` generator, `directories` | supported for this repository — see below |
-| `git` generator, `files` | not supported yet — the manifest is skipped |
+| `git` generator, `directories` and `files` | supported for this repository — see below |
+| git generator `values` | supported |
 | `matrix`, `merge`, `clusters`, `scmProvider`, `pullRequest`, … | not supported — the manifest is skipped |
 | `goTemplateOptions` | supported (`missingkey=default\|invalid\|zero\|error`) |
-| Generator-level `template` overrides, `elementsYaml`, git `values`, `pathParamPrefix` | not supported — the manifest is skipped |
+| Generator-level `template` overrides, `elementsYaml`, `pathParamPrefix` | not supported — the manifest is skipped |
 
 A skipped manifest is reported at warning level with the reason. It never
 fails the run, and plain Application manifests in the same diff are still
@@ -35,9 +35,14 @@ that is the one implemented. Add `goTemplate: true` to your ApplicationSet —
 ArgoCD [recommends it](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/GoTemplate/)
 and pairs it with `goTemplateOptions: ["missingkey=error"]`.
 
-## The git directory generator
+## The git generator
 
-A git generator builds one Application per directory matching its patterns:
+A git generator reads either `directories` or `files`, never both in the same
+generator. Declare two generators if you need both.
+
+### directories
+
+One Application per directory matching the patterns:
 
 ```yaml
 generators:
@@ -55,11 +60,56 @@ Available parameters are `.path.path`, `.path.segments`, `.path.basename` and
 order they appear in, and a directory whose name starts with a dot never
 generates an Application.
 
-**Adding or deleting a directory is what usually changes the output**, and that
-leaves the ApplicationSet manifest untouched. So `argo-compare` also scans the
-repository for ApplicationSets with git generators and compares any whose
-patterns cover a directory your change touched. You do not have to edit the
-manifest to see the diff.
+### files
+
+One Application per matching file, with the file's own contents as parameters:
+
+```yaml
+generators:
+  - git:
+      repoURL: https://github.com/you/your-repo.git
+      revision: HEAD
+      files:
+        - path: clusters/**/config.yaml
+      values:
+        label: '{{ .path.basename }}-addons'
+```
+
+A file holding `cluster: {name: dev}` is read as `{{ .cluster.name }}`. A file
+holding a *list* generates one Application per element. JSON works too, since
+it is a subset of YAML.
+
+`**` recurses here, unlike in a `directories` pattern — ArgoCD matches files
+with a different globber, and this follows it. For the same reason a dot
+directory is *not* skipped for files: name it in the pattern and its files
+generate Applications, where a `directories` pattern would never match one.
+
+A matched file must parse as a mapping, or as a sequence of them. Anything else
+fails the run rather than being skipped, because a comparison that quietly
+covers fewer Applications is worse than one that stops. Keep patterns narrow
+enough not to sweep in chart templates. Files over 1 MiB are rejected, and a
+symlink is never read as generator input.
+
+Alongside the file's contents you get `.path.path`, `.path.segments`,
+`.path.basename`, `.path.basenameNormalized`, `.path.filename` and
+`.path.filenameNormalized`. Note that `.path.path` is the directory holding the
+file, not the file itself — so a file at the repository root reports `.`, whose
+normalized basename is the empty string. That is ArgoCD's shape, awkward as it
+is; name such Applications from the file rather than the directory.
+
+### values
+
+Both generator shapes accept a `values` block, rendered against the parameters
+above and exposed as `.values.<key>`. Entries cannot reference one another —
+they are all rendered against the same starting parameters, as in ArgoCD.
+
+### Changes are detected without editing the manifest
+
+**Adding a directory, or editing a config file, is what usually changes the
+output**, and that leaves the ApplicationSet manifest untouched. So
+`argo-compare` also scans the repository for ApplicationSets with git
+generators and compares any whose patterns cover a directory or file your
+change touched.
 
 ### repoURL must be this repository
 

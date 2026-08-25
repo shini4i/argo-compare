@@ -283,14 +283,6 @@ func TestApplicationSetValidateRejectsUnsupportedGitFields(t *testing.T) {
 		wantErrMsg string
 	}{
 		{
-			name: "files",
-			generator: `
-        repoURL: https://example.com/repo.git
-        files:
-          - path: "clusters/**/config.json"`,
-			wantErrMsg: "'files' is not supported yet",
-		},
-		{
 			name: "pathParamPrefix",
 			generator: `
         repoURL: https://example.com/repo.git
@@ -300,16 +292,6 @@ func TestApplicationSetValidateRejectsUnsupportedGitFields(t *testing.T) {
 			wantErrMsg: "'pathParamPrefix' is not supported",
 		},
 		{
-			name: "values",
-			generator: `
-        repoURL: https://example.com/repo.git
-        directories:
-          - path: 'clusters/*'
-        values:
-          base_dir: "{{ .path.path }}"`,
-			wantErrMsg: "'values' is not supported",
-		},
-		{
 			name: "missing repoURL",
 			generator: `
         directories:
@@ -317,10 +299,28 @@ func TestApplicationSetValidateRejectsUnsupportedGitFields(t *testing.T) {
 			wantErrMsg: "requires repoURL",
 		},
 		{
-			name: "no directories",
+			name: "neither directories nor files",
 			generator: `
         repoURL: https://example.com/repo.git`,
-			wantErrMsg: "at least one 'directories' entry",
+			wantErrMsg: "requires a 'directories' or 'files' entry",
+		},
+		{
+			name: "both directories and files",
+			generator: `
+        repoURL: https://example.com/repo.git
+        directories:
+          - path: 'clusters/*'
+        files:
+          - path: 'clusters/**/config.yaml'`,
+			wantErrMsg: "each generator reads one or the other",
+		},
+		{
+			name: "file without a path",
+			generator: `
+        repoURL: https://example.com/repo.git
+        files:
+          - {}`,
+			wantErrMsg: "every git generator 'files' entry requires a path",
 		},
 		{
 			name: "directory without a path",

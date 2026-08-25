@@ -28,8 +28,11 @@ const maxManifestBytes = 1 << 20
 // directories appear or disappear, which leaves the manifest itself untouched,
 // so those changes would otherwise never reach the ApplicationSet flow.
 func DiscoverApplicationSets(filesystem afero.Fs, fileReader ports.FileReader, repoRoot, originURL, targetBranch string, changedFiles []string) ([]string, []string, error) {
+	// A file at the repository root touches no directory but can still match a
+	// file generator's pattern, so both lists gate the scan.
 	touched := touchedDirectories(changedFiles)
-	if len(touched) == 0 {
+	changed := slashPaths(changedFiles)
+	if len(changed) == 0 {
 		return nil, nil, nil
 	}
 
@@ -45,7 +48,7 @@ func DiscoverApplicationSets(filesystem afero.Fs, fileReader ports.FileReader, r
 		if assertGitGeneratorsComparable(candidate.appSet, originURL, targetBranch) != nil {
 			continue
 		}
-		if coversAnyDirectory(candidate.appSet, touched) {
+		if covers(candidate.appSet, touched, changed) {
 			matched = append(matched, candidate.path)
 		}
 	}
@@ -62,21 +65,40 @@ type discoveredAppSet struct {
 	appSet *models.ApplicationSet
 }
 
-// coversAnyDirectory reports whether a git generator in appSet would generate
-// an Application for one of the supplied directories.
-func coversAnyDirectory(appSet *models.ApplicationSet, dirs []string) bool {
+// covers reports whether a git generator in appSet reads something the diff
+// touched: a directory it generates for, or a file it takes parameters from.
+func covers(appSet *models.ApplicationSet, dirs, files []string) bool {
 	for _, generator := range appSet.Spec.Generators {
 		if generator.Git == nil {
 			continue
 		}
+
 		for _, dir := range dirs {
 			if appset.Matches(generator.Git, dir) {
+				return true
+			}
+		}
+
+		for _, file := range files {
+			if appset.MatchesFile(generator.Git, file) {
 				return true
 			}
 		}
 	}
 
 	return false
+}
+
+// slashPaths normalises changed paths to the separator patterns are written in.
+func slashPaths(paths []string) []string {
+	normalised := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if p != "" {
+			normalised = append(normalised, filepath.ToSlash(p))
+		}
+	}
+
+	return normalised
 }
 
 // touchedDirectories returns every ancestor directory of the changed files,

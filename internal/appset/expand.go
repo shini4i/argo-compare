@@ -9,14 +9,14 @@ import (
 
 // Expand renders every Application an ApplicationSet generates, in generator
 // and element order. Manifests Validate rejects are returned as an error, never
-// as a partial result. lister supplies the directories a git generator matches
-// against, and is called only when the manifest declares one.
-func Expand(appSet *models.ApplicationSet, lister DirectoryLister) ([]models.Application, error) {
+// as a partial result. tree supplies what a git generator reads, and is
+// consulted only when the manifest declares one.
+func Expand(appSet *models.ApplicationSet, tree Tree) ([]models.Application, error) {
 	if err := appSet.Validate(); err != nil {
 		return nil, err
 	}
 
-	parameters, err := collectParameters(appSet, lister)
+	parameters, err := collectParameters(appSet, tree)
 	if err != nil {
 		return nil, err
 	}
@@ -43,42 +43,17 @@ func Expand(appSet *models.ApplicationSet, lister DirectoryLister) ([]models.App
 }
 
 // collectParameters flattens every generator into the parameter sets that each
-// produce one Application. Directories are listed once and shared by every git
-// generator, since they all read the same tree.
-func collectParameters(appSet *models.ApplicationSet, lister DirectoryLister) ([]map[string]any, error) {
-	var (
-		params []map[string]any
-		dirs   []string
-		listed bool
-	)
+// produce one Application.
+func collectParameters(appSet *models.ApplicationSet, tree Tree) ([]map[string]any, error) {
+	collector := parameterCollector{tree: tree, options: appSet.Spec.GoTemplateOptions}
 
 	for _, generator := range appSet.Spec.Generators {
-		if generator.List != nil {
-			params = append(params, generator.List.Elements...)
-		}
-
-		if generator.Git == nil {
-			continue
-		}
-
-		if lister == nil {
-			return nil, fmt.Errorf("%w: git generators need a repository to list", models.ErrUnsupportedAppConfiguration)
-		}
-
-		if !listed {
-			var err error
-			if dirs, err = lister(); err != nil {
-				return nil, fmt.Errorf("list directories for git generator: %w", err)
-			}
-			listed = true
-		}
-
-		for _, dir := range matchDirectories(dirs, generator.Git.Directories) {
-			params = append(params, directoryParams(dir))
+		if err := collector.collect(generator); err != nil {
+			return nil, err
 		}
 	}
 
-	return params, nil
+	return collector.params, nil
 }
 
 // renderApplication turns one parameter set into a validated Application. The

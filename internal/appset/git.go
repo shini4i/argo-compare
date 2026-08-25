@@ -8,10 +8,14 @@ import (
 	"github.com/shini4i/argo-compare/internal/models"
 )
 
-// DirectoryLister returns every directory in the tree being expanded, as paths
-// relative to the repository root and separated by "/". It is called only when
-// the ApplicationSet declares a git generator.
-type DirectoryLister func() ([]string, error)
+// Tree gives expansion read access to the branch being compared. Paths are
+// relative to the repository root and separated by "/". It is consulted only
+// when the ApplicationSet declares a git generator.
+type Tree interface {
+	Directories() ([]string, error)
+	Files() ([]string, error)
+	ReadFile(path string) ([]byte, error)
+}
 
 // matchDirectories selects the directories a git generator generates an
 // Application for, sorted so the generated order is stable. A directory is
@@ -78,8 +82,8 @@ func directoryParams(dir string) map[string]any {
 	basename := path.Base(dir)
 
 	return map[string]any{
-		"path": map[string]any{
-			"path":               dir,
+		pathParam: map[string]any{
+			pathParam:            dir,
 			"segments":           strings.Split(dir, "/"),
 			"basename":           basename,
 			"basenameNormalized": normalize(basename),

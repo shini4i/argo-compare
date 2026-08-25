@@ -5,8 +5,8 @@ import (
 	"path"
 	"sort"
 
+	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/shini4i/argo-compare/internal/appset"
 	"github.com/shini4i/argo-compare/internal/models"
 )
 
@@ -35,20 +35,64 @@ func assertGitGeneratorsComparable(appSet *models.ApplicationSet, originURL, tar
 	return nil
 }
 
-// treeLister lists the directories recorded in a Git tree.
-func treeLister(tree *object.Tree) appset.DirectoryLister {
-	return func() ([]string, error) {
-		var files []string
+// gitTree reads one comparison leg out of a Git tree. Listing from the tree
+// rather than the filesystem keeps both legs alike: the working tree also holds
+// untracked and ignored files, which Git does not record and ArgoCD never sees.
+type gitTree struct {
+	tree *object.Tree
+}
 
-		if err := tree.Files().ForEach(func(file *object.File) error {
-			files = append(files, file.Name)
-			return nil
-		}); err != nil {
-			return nil, fmt.Errorf("list target branch directories: %w", err)
-		}
-
-		return directoriesOf(files), nil
+// Directories reports every directory the tree records, derived from its file
+// paths because Git stores no empty directories.
+func (g gitTree) Directories() ([]string, error) {
+	files, err := g.Files()
+	if err != nil {
+		return nil, err
 	}
+
+	return directoriesOf(files), nil
+}
+
+// Files reports every file path the tree records.
+func (g gitTree) Files() ([]string, error) {
+	var files []string
+
+	if err := g.tree.Files().ForEach(func(file *object.File) error {
+		// A symlink's blob holds its target path, not the target's content, so
+		// reading one as generator input would parse the link text as YAML.
+		if file.Mode != filemode.Regular && file.Mode != filemode.Executable {
+			return nil
+		}
+		files = append(files, file.Name)
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("list tree contents: %w", err)
+	}
+
+	sort.Strings(files)
+
+	return files, nil
+}
+
+// ReadFile returns the contents of one file recorded in the tree.
+func (g gitTree) ReadFile(path string) ([]byte, error) {
+	entry, err := g.tree.File(path)
+	if err != nil {
+		return nil, fmt.Errorf("find %s in tree: %w", path, err)
+	}
+
+	// A generator pattern is written by the pull request, so it can match a
+	// blob of any size; the same bound the manifest scan uses applies here.
+	if entry.Size > maxManifestBytes {
+		return nil, fmt.Errorf("%s is %d bytes, over the %d byte limit for generator input", path, entry.Size, maxManifestBytes)
+	}
+
+	content, err := entry.Contents()
+	if err != nil {
+		return nil, fmt.Errorf("read %s from tree: %w", path, err)
+	}
+
+	return []byte(content), nil
 }
 
 // directoriesOf derives the directory set implied by a list of file paths.

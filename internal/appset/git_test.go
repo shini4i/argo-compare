@@ -151,9 +151,7 @@ spec:
 func TestExpandGitDirectoryGenerator(t *testing.T) {
 	appSet := mustParse(t, gitAppSet)
 
-	apps, err := Expand(appSet, func() ([]string, error) {
-		return []string{"clusters", "clusters/dev", "clusters/prod", "clusters/donotdeploy", "apps/other"}, nil
-	})
+	apps, err := Expand(appSet, dirTree("clusters", "clusters/dev", "clusters/prod", "clusters/donotdeploy", "apps/other"))
 	require.NoError(t, err)
 	require.Len(t, apps, 2)
 
@@ -190,14 +188,11 @@ spec:
         targetRevision: 1.0.0
 `)
 
-	calls := 0
-	apps, err := Expand(appSet, func() ([]string, error) {
-		calls++
-		return []string{"apps/one", "clusters/two"}, nil
-	})
+	tree := dirTree("apps/one", "clusters/two")
+	apps, err := Expand(appSet, tree)
 
 	require.NoError(t, err)
-	assert.Equal(t, 1, calls)
+	assert.Equal(t, 1, tree.dirCalls)
 	require.Len(t, apps, 2)
 	assert.Equal(t, "one", apps[0].Metadata.Name)
 	assert.Equal(t, "two", apps[1].Metadata.Name)
@@ -213,9 +208,7 @@ func TestExpandRequiresAListerForGitGenerators(t *testing.T) {
 func TestExpandPropagatesListerErrors(t *testing.T) {
 	appSet := mustParse(t, gitAppSet)
 
-	_, err := Expand(appSet, func() ([]string, error) {
-		return nil, assert.AnError
-	})
+	_, err := Expand(appSet, &fakeTree{dirErr: assert.AnError})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "list directories for git generator")
 }
@@ -243,14 +236,12 @@ spec:
         targetRevision: 1.0.0
 `)
 
-	called := false
-	_, err := Expand(appSet, func() ([]string, error) {
-		called = true
-		return nil, nil
-	})
+	tree := &fakeTree{}
+	_, err := Expand(appSet, tree)
 
 	require.NoError(t, err)
-	assert.False(t, called)
+	assert.Zero(t, tree.dirCalls)
+	assert.Zero(t, tree.fileCalls)
 }
 
 // TestMatches covers the gate that decides whether a directory change reaches
@@ -400,9 +391,7 @@ spec:
         targetRevision: 1.0.0
 `)
 
-	_, err := Expand(appSet, func() ([]string, error) {
-		return []string{"apps/dev", "clusters/dev"}, nil
-	})
+	_, err := Expand(appSet, dirTree("apps/dev", "clusters/dev"))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "duplicate")
@@ -432,9 +421,7 @@ spec:
         targetRevision: 1.0.0
 `)
 
-	_, err := Expand(appSet, func() ([]string, error) {
-		return []string{"clusters/eu-west-1", "clusters/eu_west_1"}, nil
-	})
+	_, err := Expand(appSet, dirTree("clusters/eu-west-1", "clusters/eu_west_1"))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "duplicate")
