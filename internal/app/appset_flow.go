@@ -37,8 +37,12 @@ func (a *App) processChangedApplicationSet(ctx context.Context, repo *GitRepo, f
 		return false, err
 	}
 
+	pairs := pairGeneratedApplications(srcApps, dstApps)
+	a.logger.Infof("Generates %d Application(s) on this branch and %d on %s; comparing %d",
+		len(srcApps), len(dstApps), a.cfg.TargetBranch, len(pairs))
+
 	anyFailed := false
-	for _, pair := range pairGeneratedApplications(srcApps, dstApps) {
+	for _, pair := range pairs {
 		failed, err := a.compareGeneratedApplication(ctx, repo, file, pair)
 		if err != nil {
 			return anyFailed, err

@@ -205,6 +205,7 @@ func TestAppRunExpandsApplicationSet(t *testing.T) {
 
 	output := runner.log.String()
 	assert.Contains(t, output, "Processing changed ApplicationSet")
+	assert.Contains(t, output, "Generates 3 Application(s) on this branch and 2 on main; comparing 3")
 	for _, name := range []string{"dev-guestbook", "prod-guestbook", "staging-guestbook"} {
 		assert.Contains(t, output, name)
 	}
