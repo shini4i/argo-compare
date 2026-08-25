@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5"
@@ -23,6 +25,10 @@ import (
 )
 
 const appSetPath = "apps/guestbook.yaml"
+
+// originPlaceholder is replaced with the seeded origin path, so a git generator
+// manifest can name the repository before that path exists.
+const originPlaceholder = "ORIGIN_URL"
 
 // legacyAppSet uses fasttemplate substitution, which argo-compare rejects.
 const legacyAppSet = `apiVersion: argoproj.io/v1alpha1
@@ -76,14 +82,35 @@ spec:
 `
 }
 
+// branchState is what one branch holds: the ApplicationSet manifest at
+// appSetPath, plus any extra files whose directories a git generator matches.
+type branchState struct {
+	manifest string
+	files    map[string]string
+}
+
 // seedAppSetRepo builds a repository whose main branch holds mainManifest and
 // whose checked-out feature branch holds featureManifest, both at appSetPath.
-// An empty mainManifest leaves the file absent there. Chdirs into the repo, so
-// tests using this helper can never run in parallel.
+// An empty mainManifest leaves the file absent there.
 func seedAppSetRepo(t *testing.T, mainManifest, featureManifest string) {
 	t.Helper()
 
+	seedAppSetRepoState(t, branchState{manifest: mainManifest}, branchState{manifest: featureManifest})
+}
+
+// seedAppSetRepoState is seedAppSetRepo with extra per-branch files. It chdirs
+// into the repository, so tests using either helper can never run in parallel.
+func seedAppSetRepoState(t *testing.T, main, feature branchState) {
+	t.Helper()
+
 	tempDir := t.TempDir()
+	remoteDir := filepath.Join(tempDir, "origin.git")
+
+	// A git generator names the repository by URL, which is only known once the
+	// origin exists, so manifests carry a placeholder for it.
+	mainManifest := strings.ReplaceAll(main.manifest, originPlaceholder, remoteDir)
+	featureManifest := strings.ReplaceAll(feature.manifest, originPlaceholder, remoteDir)
+
 	workDir := filepath.Join(tempDir, "work")
 	require.NoError(t, os.MkdirAll(filepath.Join(workDir, "apps"), 0o755))
 
@@ -104,11 +131,11 @@ func seedAppSetRepo(t *testing.T, mainManifest, featureManifest string) {
 		_, err = worktree.Add(appSetPath)
 		require.NoError(t, err)
 	}
+	writeBranchFiles(t, worktree, workDir, main.files)
 
 	initialHash, err := worktree.Commit("initial commit", &git.CommitOptions{Author: defaultSignature()})
 	require.NoError(t, err)
 
-	remoteDir := filepath.Join(tempDir, "origin.git")
 	_, err = git.PlainInit(remoteDir, true)
 	require.NoError(t, err)
 	_, err = repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{remoteDir}})
@@ -121,6 +148,17 @@ func seedAppSetRepo(t *testing.T, mainManifest, featureManifest string) {
 	require.NoError(t, os.WriteFile(filepath.Join(workDir, appSetPath), []byte(featureManifest), 0o644))
 	_, err = worktree.Add(appSetPath)
 	require.NoError(t, err)
+
+	// Files the branch drops must be removed, not merely left out, or the diff
+	// never records the deletion.
+	for _, name := range sortedKeys(main.files) {
+		if _, kept := feature.files[name]; !kept {
+			_, removeErr := worktree.Remove(name)
+			require.NoError(t, removeErr)
+		}
+	}
+	writeBranchFiles(t, worktree, workDir, feature.files)
+
 	_, err = worktree.Commit("update application set", &git.CommitOptions{Author: defaultSignature()})
 	require.NoError(t, err)
 
@@ -396,4 +434,27 @@ func TestGetChangedFileRaw(t *testing.T) {
 
 	_, err = repoInstance.GetChangedFileRaw("main", "apps/absent.yaml")
 	assert.True(t, errors.Is(err, errGitFileDoesNotExist))
+}
+
+// writeBranchFiles commits the extra files a branch holds, creating any parent
+// directories the git generator will later match.
+func writeBranchFiles(t *testing.T, worktree *git.Worktree, workDir string, files map[string]string) {
+	t.Helper()
+
+	for _, name := range sortedKeys(files) {
+		full := filepath.Join(workDir, filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+		require.NoError(t, os.WriteFile(full, []byte(files[name]), 0o644))
+		_, err := worktree.Add(name)
+		require.NoError(t, err)
+	}
+}
+
+func sortedKeys(files map[string]string) []string {
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

@@ -48,7 +48,7 @@ spec:
         targetRevision: '{{.revision}}'
 `)
 
-	apps, err := Expand(appSet)
+	apps, err := Expand(appSet, nil)
 	require.NoError(t, err)
 	require.Len(t, apps, 2)
 
@@ -85,7 +85,7 @@ spec:
         targetRevision: 1.0.0
 `)
 
-	apps, err := Expand(appSet)
+	apps, err := Expand(appSet, nil)
 	require.NoError(t, err)
 	require.Len(t, apps, 2)
 	assert.Equal(t, "dev", apps[0].Metadata.Name)
@@ -114,7 +114,7 @@ spec:
         targetRevision: 1.0.0
 `)
 
-	_, err := Expand(appSet)
+	_, err := Expand(appSet, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "duplicate")
 }
@@ -141,7 +141,7 @@ spec:
         targetRevision: 1.0.0
 `)
 
-	_, err := Expand(appSet)
+	_, err := Expand(appSet, nil)
 	assert.ErrorIs(t, err, models.ErrUnsupportedAppConfiguration)
 }
 
@@ -160,7 +160,7 @@ spec:
       name: '{{cluster}}'
 `)
 
-	_, err := Expand(appSet)
+	_, err := Expand(appSet, nil)
 	assert.ErrorIs(t, err, models.ErrUnsupportedAppConfiguration)
 }
 
@@ -189,7 +189,7 @@ spec:
         targetRevision: 1.0.0
 `)
 
-	_, err := Expand(appSet)
+	_, err := Expand(appSet, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing")
 }
@@ -215,7 +215,7 @@ spec:
         targetRevision: '{{ default "1.0.0" .revision }}'
 `)
 
-	apps, err := Expand(appSet)
+	apps, err := Expand(appSet, nil)
 	require.NoError(t, err)
 	require.Len(t, apps, 1)
 	assert.Equal(t, "feature-abc-123", apps[0].Metadata.Name)
@@ -249,7 +249,7 @@ spec:
         targetRevision: 1.0.0
 `)
 
-			_, err := Expand(appSet)
+			_, err := Expand(appSet, nil)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "not defined")
 		})
@@ -277,7 +277,7 @@ spec:
         targetRevision: 1.0.0
 `)
 
-	_, err := Expand(appSet)
+	_, err := Expand(appSet, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "decode generated Application")
 }
@@ -306,7 +306,7 @@ spec:
         targetRevision: 1.0.0
 `)
 
-	_, err := Expand(appSet)
+	_, err := Expand(appSet, nil)
 	assert.ErrorIs(t, err, models.ErrUnsupportedAppConfiguration)
 	assert.Contains(t, err.Error(), "missingkey=bogus")
 }
@@ -329,7 +329,7 @@ spec:
       name: '{{.cluster}}'
 `)
 
-	apps, err := Expand(appSet)
+	apps, err := Expand(appSet, nil)
 	require.NoError(t, err)
 	assert.Empty(t, apps)
 }
@@ -358,7 +358,7 @@ spec:
         targetRevision: 1.0.0
 `)
 
-	_, err := Expand(appSet)
+	_, err := Expand(appSet, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "generator element 1")
 }

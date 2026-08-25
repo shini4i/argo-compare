@@ -148,6 +148,12 @@ func (g *GitRepo) GetChangedFiles(targetBranch string, filesToIgnore []string, a
 	}
 	filtered := filterIgnored(applications, filesToIgnore)
 
+	generated, err := g.discoverGeneratorApplicationSets(repoRoot, targetBranch, foundFiles, removedFiles, filesToIgnore)
+	if err != nil {
+		return ChangedFilesResult{}, err
+	}
+	filtered = mergePaths(filtered, generated)
+
 	var anchorGroups []AnchorGroup
 	if anchorFileName != "" {
 		anchorChanged := filterIgnored(foundFiles, filesToIgnore)
@@ -522,4 +528,27 @@ func filterIgnored(files, ignored []string) []string {
 	}
 
 	return filtered
+}
+
+// HeadTree returns the tree of the commit at HEAD. Directory listing reads it
+// rather than the filesystem so both comparison legs see the same universe:
+// the working tree also holds untracked and ignored files, which Git does not
+// record and ArgoCD would never deploy.
+func (g *GitRepo) HeadTree() (*object.Tree, error) {
+	headRef, err := g.repo.Head()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get HEAD: %w", err)
+	}
+
+	headCommit, err := g.repo.CommitObject(headRef.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get commit object for current branch: %w", err)
+	}
+
+	tree, err := headCommit.Tree()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tree for head commit: %w", err)
+	}
+
+	return tree, nil
 }

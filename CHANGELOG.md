@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- ApplicationSet git directory generator. One Application is generated per directory matching the generator's patterns, with `.path.path`, `.path.segments`, `.path.basename` and `.path.basenameNormalized` available to the template. Adding or deleting a directory is detected on its own: `argo-compare` finds the ApplicationSets whose patterns cover a changed directory, so the manifest itself does not have to be edited. Generators reading another repository are skipped with a warning, as are `files` entries.
 - ApplicationSet support. A changed ApplicationSet manifest is expanded into the Applications it generates on both branches, and each generated Application is compared individually, so an Application the change adds or removes is reported as such (gated by `--print-added-manifests` / `--print-removed-manifests`). Covers manifests using `goTemplate: true` with the `list` generator; every other generator and legacy fasttemplate substitution are skipped with a warning naming the reason. See [ApplicationSets](docs/applicationsets.md).
 
 ### Changed
