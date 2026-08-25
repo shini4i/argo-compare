@@ -2,6 +2,7 @@ package appset
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/gosimple/slug"
 )
@@ -46,9 +47,18 @@ func slugify(args ...any) (string, error) {
 	return makeSlug(normalize(name), maxLength, smartTruncate), nil
 }
 
+// slugSettings serialises the whole save, configure, render and restore around
+// gosimple/slug's package-level settings, which it offers no per-call
+// alternative to. Without it two concurrent renders read each other's
+// truncation options and produce wrongly named Applications.
+var slugSettings sync.Mutex
+
 // makeSlug applies the package-level configuration slug exposes and restores it
 // afterwards, so one call cannot change the shape of the next.
 func makeSlug(name string, maxLength int, smartTruncate bool) string {
+	slugSettings.Lock()
+	defer slugSettings.Unlock()
+
 	previousMaxLength, previousSmartTruncate := slug.MaxLength, slug.EnableSmartTruncate
 	defer func() {
 		slug.MaxLength, slug.EnableSmartTruncate = previousMaxLength, previousSmartTruncate

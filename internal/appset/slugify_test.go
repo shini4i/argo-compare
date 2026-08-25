@@ -1,7 +1,9 @@
 package appset
 
 import (
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gosimple/slug"
@@ -138,4 +140,46 @@ func TestSlugifyDefaultLengthApplies(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Len(t, got, defaultSlugMaxLength)
+}
+
+// TestSlugifyIsSafeUnderConcurrency asserts values rather than relying on the
+// race detector, which this project's test task does not enable. Without the
+// mutex, workers read each other's truncation settings and return the wrong
+// slug, so the failure shows up as a bad Application name.
+func TestSlugifyIsSafeUnderConcurrency(t *testing.T) {
+	cases := []struct {
+		args []any
+		want string
+	}{
+		{args: []any{7, "feature branch name"}, want: "feature"},
+		{args: []any{10, false, "feature branch name"}, want: "feature-br"},
+		{args: []any{"feature branch name"}, want: "feature-branch-name"},
+	}
+
+	var wg sync.WaitGroup
+	failures := make(chan string, 300)
+
+	for range 100 {
+		for _, tc := range cases {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				got, err := slugify(tc.args...)
+				if err != nil {
+					failures <- err.Error()
+					return
+				}
+				if got != tc.want {
+					failures <- fmt.Sprintf("got %q, want %q", got, tc.want)
+				}
+			}()
+		}
+	}
+
+	wg.Wait()
+	close(failures)
+
+	for failure := range failures {
+		t.Error(failure)
+	}
 }
