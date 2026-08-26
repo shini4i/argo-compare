@@ -80,9 +80,11 @@ contains:
 
 3. **Anchor flow** — the PR modifies chart content (e.g. Helm values)
    rather than an Application YAML. `argo-compare` walks up to the
-   nearest `.argo-compare.yml`, resolves the referenced Application, and
-   renders the chart twice (working tree vs. merge-base). Driver code
-   lives in `internal/app/anchor_discovery.go`, `anchor_flow.go`,
+   nearest `.argo-compare.yml` and resolves the manifest it references.
+   An Application is rendered from the chart twice (working tree vs.
+   merge-base); an ApplicationSet is expanded per leg and handed to the
+   ApplicationSet flow's per-Application comparison. Driver code lives in
+   `internal/app/anchor_discovery.go`, `anchor_flow.go`,
    `tree_materialize.go`. The anchor schema itself is in
    `internal/anchor`.
 

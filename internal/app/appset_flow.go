@@ -192,8 +192,12 @@ func (a *App) compareGeneratedApplication(ctx context.Context, repo *GitRepo, fi
 
 	validationResults := make(map[string]ports.ValidationResult)
 
-	if err = a.renderGeneratedLegs(ctx, repo, pair, tmpDir, validationResults); err != nil {
+	proceed, err := a.renderGeneratedLegs(ctx, repo, pair, tmpDir, validationResults)
+	if err != nil {
 		return false, err
+	}
+	if !proceed {
+		return false, nil
 	}
 
 	if err = a.runComparison(ctx, tmpDir, generatedLabel(file, pair.name), validationResults); err != nil {
@@ -227,21 +231,34 @@ func (a *App) skipOneSidedPair(pair generatedPair) bool {
 
 // renderGeneratedLegs renders whichever branches still generate the Application.
 // A leg with no Application renders nothing, so the comparison reports every
-// manifest on the other side as added or removed.
-func (a *App) renderGeneratedLegs(ctx context.Context, repo *GitRepo, pair generatedPair, tmpDir string, validationResults map[string]ports.ValidationResult) error {
+// manifest on the other side as added or removed. It returns false when the
+// comparison should be skipped for want of a baseline to diff against.
+func (a *App) renderGeneratedLegs(ctx context.Context, repo *GitRepo, pair generatedPair, tmpDir string, validationResults map[string]ports.ValidationResult) (bool, error) {
 	if pair.src != nil {
 		if err := a.renderGeneratedLeg(ctx, repo, *pair.src, TargetTypeSource, tmpDir, validationResults); err != nil {
-			return err
+			return false, err
 		}
 	}
 
-	if pair.dst != nil {
-		if err := a.renderGeneratedLeg(ctx, repo, *pair.dst, TargetTypeDestination, tmpDir, validationResults); err != nil {
-			return err
-		}
+	if pair.dst == nil {
+		return true, nil
 	}
 
-	return nil
+	// A path-based chart the branch adds for the first time is absent from the
+	// merge-base tree even though both branches generate the Application, so the
+	// baseline leg has nothing to render. That is a new chart, not a failure.
+	destErr := a.renderGeneratedLeg(ctx, repo, *pair.dst, TargetTypeDestination, tmpDir, validationResults)
+	switch {
+	case destErr == nil:
+		return true, nil
+	case errors.Is(destErr, ErrChartPathNotInTree):
+		a.logger.Warning(ui.Yellow(fmt.Sprintf(
+			"The chart for generated Application [%s] does not exist in target branch %s, assuming it is new",
+			pair.name, a.cfg.TargetBranch)))
+		return a.cfg.PrintAddedManifests, nil
+	default:
+		return false, destErr
+	}
 }
 
 // renderGeneratedLeg renders one leg of a generated Application. No File is set

@@ -13,6 +13,7 @@ import (
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
+	"github.com/shini4i/argo-compare/internal/anchor"
 	"github.com/shini4i/argo-compare/internal/comment"
 	"github.com/shini4i/argo-compare/internal/comment/gitlab"
 	"github.com/shini4i/argo-compare/internal/models"
@@ -269,20 +270,33 @@ func (a *App) runComparisons(ctx context.Context, repo *GitRepo, changedFiles []
 // Paths on both sides are normalized via filepath.Clean so that anchor entries
 // spelled "./apps/foo.yaml" still match a changedApps entry of "apps/foo.yaml".
 func dedupAnchorGroups(groups []AnchorGroup, changedApps []string) []AnchorGroup {
-	if len(groups) == 0 || len(changedApps) == 0 {
+	if len(groups) == 0 {
 		return groups
 	}
 	changed := make(map[string]struct{}, len(changedApps))
 	for _, f := range changedApps {
 		changed[filepath.Clean(f)] = struct{}{}
 	}
+
+	seen := make(map[anchor.ApplicationRef]struct{}, len(groups))
 	out := groups[:0]
 	for _, g := range groups {
-		if g.Anchor.Application.Repo == "" {
-			if _, dup := changed[filepath.Clean(g.Anchor.Application.Path)]; dup {
+		ref := g.Anchor.Application
+		ref.Path = filepath.Clean(ref.Path)
+
+		if ref.Repo == "" {
+			if _, dup := changed[ref.Path]; dup {
 				continue
 			}
 		}
+		// Two chart directories anchored to one manifest describe a single
+		// comparison. Rendering it per group would repeat the whole diff — and
+		// for an ApplicationSet, repeat it once per generated Application.
+		if _, dup := seen[ref]; dup {
+			continue
+		}
+		seen[ref] = struct{}{}
+
 		out = append(out, g)
 	}
 	return out

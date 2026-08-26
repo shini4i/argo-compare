@@ -4,18 +4,17 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
-	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"github.com/shini4i/argo-compare/internal/anchor"
-	"github.com/shini4i/argo-compare/internal/ports/portstest"
+	"github.com/shini4i/argo-compare/internal/models"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
-	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,12 +40,8 @@ spec:
 
 func newTestFetcher(t *testing.T) *RealApplicationFetcher {
 	t.Helper()
-	return &RealApplicationFetcher{
-		FS:         afero.NewOsFs(),
-		FileReader: utils.OsFileReader{},
-		CmdRunner:  portstest.NoopCmdRunner{},
-		Log:        logger.New("fetcher-test-" + t.Name()),
-	}
+	t.Helper()
+	return &RealApplicationFetcher{FileReader: utils.OsFileReader{}}
 }
 
 func TestFetcher_SameRepo_HappyPath(t *testing.T) {
@@ -55,11 +50,12 @@ func TestFetcher_SameRepo_HappyPath(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "apps", "example.yaml"), []byte(sampleApplicationYAML), 0o644))
 
 	f := newTestFetcher(t)
-	app, err := f.Fetch(context.Background(), anchor.ApplicationRef{Path: "apps/example.yaml"}, repoRoot)
+	manifest, err := f.Fetch(context.Background(), anchor.ApplicationRef{Path: "apps/example.yaml"}, repoRoot)
 	require.NoError(t, err)
-	assert.Equal(t, "Application", app.Kind)
-	assert.Equal(t, "example", app.Metadata.Name)
-	assert.Equal(t, "example-chart", app.Spec.Source.Chart)
+	require.NotNil(t, manifest.Application)
+	assert.Equal(t, "Application", manifest.Application.Kind)
+	assert.Equal(t, "example", manifest.Application.Metadata.Name)
+	assert.Equal(t, "example-chart", manifest.Application.Spec.Source.Chart)
 }
 
 func TestFetcher_SameRepo_FileMissing(t *testing.T) {
@@ -67,7 +63,10 @@ func TestFetcher_SameRepo_FileMissing(t *testing.T) {
 
 	f := newTestFetcher(t)
 	_, err := f.Fetch(context.Background(), anchor.ApplicationRef{Path: "apps/missing.yaml"}, repoRoot)
-	require.Error(t, err)
+	// OsFileReader maps a missing file to no content and no error, so the
+	// absence surfaces from validation rather than from the read.
+	require.ErrorIs(t, err, models.ErrEmptyFile)
+	assert.Contains(t, err.Error(), "read local manifest")
 }
 
 func TestFetcher_SameRepo_NotAnApplication(t *testing.T) {
@@ -100,14 +99,15 @@ func TestFetcher_CrossRepo_HappyPath(t *testing.T) {
 	require.NoError(t, seedBareRepoWithApplication(t, bareDir, "main", "apps/example.yaml", sampleApplicationYAML))
 
 	f := newTestFetcher(t)
-	app, err := f.Fetch(context.Background(), anchor.ApplicationRef{
+	manifest, err := f.Fetch(context.Background(), anchor.ApplicationRef{
 		Repo:   bareDir,
 		Path:   "apps/example.yaml",
 		Branch: "main",
 	}, "")
 	require.NoError(t, err)
-	assert.Equal(t, "example", app.Metadata.Name)
-	assert.Equal(t, "example-chart", app.Spec.Source.Chart)
+	require.NotNil(t, manifest.Application)
+	assert.Equal(t, "example", manifest.Application.Metadata.Name)
+	assert.Equal(t, "example-chart", manifest.Application.Spec.Source.Chart)
 }
 
 func TestFetcher_CrossRepo_FileMissing(t *testing.T) {
@@ -170,13 +170,14 @@ func TestFetcher_CrossRepo_BranchDefaultsToHEAD(t *testing.T) {
 	require.NoError(t, seedBareRepoWithApplication(t, bareDir, "main", "apps/example.yaml", sampleApplicationYAML))
 
 	f := newTestFetcher(t)
-	app, err := f.Fetch(context.Background(), anchor.ApplicationRef{
+	manifest, err := f.Fetch(context.Background(), anchor.ApplicationRef{
 		Repo: bareDir,
 		Path: "apps/example.yaml",
 		// Branch intentionally omitted.
 	}, "")
 	require.NoError(t, err)
-	assert.Equal(t, "example", app.Metadata.Name)
+	require.NotNil(t, manifest.Application)
+	assert.Equal(t, "example", manifest.Application.Metadata.Name)
 }
 
 func TestFetcher_buildCloneOptions_NoAuthWhenTokenEmpty(t *testing.T) {
@@ -257,7 +258,7 @@ func TestRedactRepo(t *testing.T) {
 	cases := []struct {
 		in, want string
 	}{
-		{"https://user:token@host.example.com/group/repo.git", "https://host.example.com/group/repo.git"},
+		{"https://user:token@host.example.com/group/repo.git", "https://host.example.com/group/repo.git"}, // trufflehog:ignore
 		{"https://host.example.com/group/repo.git", "https://host.example.com/group/repo.git"},
 		{"ssh://git@host.example.com/group/repo.git", "ssh://host.example.com/group/repo.git"},
 		{"git@host.example.com:group/repo.git", "git@host.example.com:group/repo.git"},
@@ -317,4 +318,74 @@ func seedBareRepoWithApplication(t *testing.T, bareDir, branch, filePath, conten
 		RemoteName: "origin",
 		RefSpecs:   []config.RefSpec{config.RefSpec("refs/heads/" + branch + ":refs/heads/" + branch)},
 	})
+}
+
+func TestParseAnchoredManifest(t *testing.T) {
+	const appSetYAML = `apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: demo
+  namespace: argocd
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+  template:
+    metadata:
+      name: '{{ .cluster }}-demo'
+`
+
+	cases := []struct {
+		name            string
+		content         string
+		wantKind        string
+		wantErrIs       error
+		wantErrContains string
+	}{
+		{name: "Application", content: sampleApplicationYAML, wantKind: models.KindApplication},
+		{name: "ApplicationSet", content: appSetYAML, wantKind: models.KindApplicationSet},
+		{name: "another kind", content: "kind: ConfigMap\nmetadata:\n  name: cm\n", wantErrIs: models.ErrNotApplication},
+		{name: "empty", content: "", wantErrIs: models.ErrEmptyFile},
+		{
+			name:            "Application shape the decoder rejects",
+			content:         "kind: Application\nspec:\n  source: not-a-map\n",
+			wantErrContains: "cannot unmarshal",
+		},
+		{
+			name:      "ApplicationSet without goTemplate",
+			content:   strings.Replace(appSetYAML, "  goTemplate: true\n", "", 1),
+			wantErrIs: models.ErrUnsupportedAppConfiguration,
+		},
+		{
+			name:      "Application with both chart and path",
+			content:   strings.Replace(sampleApplicationYAML, "    chart: example-chart\n", "    chart: example-chart\n    path: charts/demo\n", 1),
+			wantErrIs: models.ErrUnsupportedAppConfiguration,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			manifest, err := parseAnchoredManifest([]byte(c.content))
+			if c.wantErrIs != nil {
+				require.ErrorIs(t, err, c.wantErrIs)
+				return
+			}
+			if c.wantErrContains != "" {
+				require.ErrorContains(t, err, c.wantErrContains)
+				return
+			}
+
+			require.NoError(t, err)
+			switch c.wantKind {
+			case models.KindApplication:
+				require.NotNil(t, manifest.Application)
+				assert.Nil(t, manifest.ApplicationSet)
+			case models.KindApplicationSet:
+				require.NotNil(t, manifest.ApplicationSet)
+				assert.Nil(t, manifest.Application)
+			}
+		})
+	}
 }

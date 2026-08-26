@@ -175,15 +175,18 @@ type ManifestValidator interface {
 	Validate(ctx context.Context, target, manifestDir string) (ValidationResult, error)
 }
 
-// ApplicationFetcher resolves an anchor.ApplicationRef to a parsed
-// Application model.
-//
-// For same-repo refs (Repo == ""), implementations read from the working tree
-// at localRepoRoot. For cross-repo refs, implementations fetch the file from
-// the named remote at Branch tip without affecting the local working tree.
-//
-// Any failure (network, missing file, parse error) is returned as a hard
-// error so the caller can fail loudly; partial results are not supported.
+// AnchoredManifest is the manifest an anchor resolves to. Exactly one field is
+// non-nil: an anchor may name a single Application, or an ApplicationSet whose
+// generated Applications are then compared one by one.
+type AnchoredManifest struct {
+	Application    *models.Application
+	ApplicationSet *models.ApplicationSet
+}
+
+// ApplicationFetcher resolves an anchor.ApplicationRef to the manifest it names.
+// Same-repo refs (Repo == "") read from the working tree at localRepoRoot;
+// cross-repo refs read the file from the named remote at Branch tip. Any failure
+// is a hard error so the caller can fail loudly; partial results are unsupported.
 type ApplicationFetcher interface {
-	Fetch(ctx context.Context, ref anchor.ApplicationRef, localRepoRoot string) (models.Application, error)
+	Fetch(ctx context.Context, ref anchor.ApplicationRef, localRepoRoot string) (AnchoredManifest, error)
 }
