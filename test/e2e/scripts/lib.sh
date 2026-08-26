@@ -123,22 +123,41 @@ ARGOCD_URL="${ARGOCD_URL:-localhost:30081}"
 
 # argocd_login: authenticate the CLI against the lab's ArgoCD. Plaintext because
 # the lab server runs with server.insecure and is published on loopback only.
+# Retried: on a freshly booted lab the API answers before it serves sessions,
+# and a one-shot login would fail the phase for startup timing.
 argocd_login() {
   local pw
   pw="$(kc -n "$NS_ARGOCD" get secret argocd-initial-admin-secret \
     -o jsonpath='{.data.password}' | base64 -d)"
   [[ -n "$pw" ]] || return 1
-  argocd login "$ARGOCD_URL" --username admin --password "$pw" \
-    --plaintext --grpc-web >/dev/null 2>&1
+  retry 30 2 argocd login "$ARGOCD_URL" --username admin --password "$pw" \
+    --plaintext --grpc-web
   return
 }
 
 # argocd_manifests <app> <revision>: what ArgoCD itself renders for <app> at
 # <revision>. This varies chart content only — the Application spec comes from
-# the cluster — so it cannot model a change to the manifest itself.
+# the cluster — so it cannot model a change to the manifest itself. Retried
+# because the server may not have observed a just-applied Application yet.
 argocd_manifests() {
-  local app="$1" revision="$2"
-  argocd app manifests "$app" --revision "$revision" --plaintext --grpc-web 2>/dev/null
+  local app="$1" revision="$2" out
+  out="$(mktemp)"
+  if retry 30 2 argocd_manifests_once "$app" "$revision" "$out"; then
+    cat "$out"
+    rm -f "$out"
+    return 0
+  fi
+  rm -f "$out"
+  return 1
+}
+
+# argocd_manifests_once: one render attempt, written to <file> so a partial
+# failure never reaches the caller as if it were the full output.
+argocd_manifests_once() {
+  local app="$1" revision="$2" file="$3"
+  argocd app manifests "$app" --revision "$revision" \
+    --plaintext --grpc-web >"$file" 2>/dev/null || return 1
+  [[ -s "$file" ]]
   return
 }
 
