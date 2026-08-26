@@ -19,6 +19,7 @@ var ErrNotApplicationSet = errors.New("file is not an ApplicationSet")
 // access this tool deliberately does not have.
 var supportedGenerators = map[string]bool{
 	"list": true,
+	"git":  true,
 }
 
 // ApplicationSet models the subset of ArgoCD ApplicationSet fields needed to
@@ -47,6 +48,32 @@ type ApplicationSetSpec struct {
 type Generator struct {
 	Kinds []string
 	List  *ListGenerator
+	Git   *GitGenerator
+}
+
+// GitGenerator mirrors the git generator. Files and Values are decoded only to
+// be rejected: both add parameters, so ignoring them would produce a diff that
+// does not match ArgoCD.
+type GitGenerator struct {
+	RepoURL         string            `yaml:"repoURL"`
+	Revision        string            `yaml:"revision"`
+	Directories     []GitDirectory    `yaml:"directories"`
+	PathParamPrefix string            `yaml:"pathParamPrefix"`
+	Files           []GitFile         `yaml:"files"`
+	Values          map[string]string `yaml:"values"`
+	Template        yaml.Node         `yaml:"template"`
+}
+
+// GitDirectory is one entry of a git generator's directories list. Exclude
+// entries take priority over the including ones, matching ArgoCD.
+type GitDirectory struct {
+	Path    string `yaml:"path"`
+	Exclude bool   `yaml:"exclude"`
+}
+
+// GitFile is one entry of a git generator's files list.
+type GitFile struct {
+	Path string `yaml:"path"`
 }
 
 // ListGenerator mirrors the static list generator. ElementsYaml and Template
@@ -68,12 +95,19 @@ func (g *Generator) UnmarshalYAML(value *yaml.Node) error {
 		key := value.Content[i].Value
 		g.Kinds = append(g.Kinds, key)
 
-		if key == "list" {
+		switch key {
+		case "list":
 			var list ListGenerator
 			if err := value.Content[i+1].Decode(&list); err != nil {
 				return fmt.Errorf("decode list generator: %w", err)
 			}
 			g.List = &list
+		case "git":
+			var gitGen GitGenerator
+			if err := value.Content[i+1].Decode(&gitGen); err != nil {
+				return fmt.Errorf("decode git generator: %w", err)
+			}
+			g.Git = &gitGen
 		}
 	}
 
@@ -118,19 +152,58 @@ func (appSet *ApplicationSet) validateGenerators() error {
 	}
 
 	for _, generator := range appSet.Spec.Generators {
-		if len(generator.Kinds) != 1 {
-			return fmt.Errorf("%w: each entry of spec.generators must declare exactly one generator, got [%s]",
-				ErrUnsupportedAppConfiguration, strings.Join(generator.Kinds, ", "))
+		if err := validateGenerator(generator); err != nil {
+			return err
 		}
+	}
 
-		if kind := generator.Kinds[0]; !supportedGenerators[kind] {
-			return fmt.Errorf("%w: generator %q is not supported", ErrUnsupportedAppConfiguration, kind)
-		}
+	return nil
+}
 
-		if generator.List != nil {
-			if err := validateListGenerator(generator.List); err != nil {
-				return err
-			}
+// validateGenerator checks one spec.generators entry: exactly one kind, a
+// supported one, and no field of it that argo-compare cannot reproduce.
+func validateGenerator(generator Generator) error {
+	if len(generator.Kinds) != 1 {
+		return fmt.Errorf("%w: each entry of spec.generators must declare exactly one generator, got [%s]",
+			ErrUnsupportedAppConfiguration, strings.Join(generator.Kinds, ", "))
+	}
+
+	if kind := generator.Kinds[0]; !supportedGenerators[kind] {
+		return fmt.Errorf("%w: generator %q is not supported", ErrUnsupportedAppConfiguration, kind)
+	}
+
+	if generator.List != nil {
+		return validateListGenerator(generator.List)
+	}
+
+	if generator.Git != nil {
+		return validateGitGenerator(generator.Git)
+	}
+
+	return nil
+}
+
+// validateGitGenerator accepts a directory generator and rejects the fields
+// that would change the generated Applications without being reproduced here.
+func validateGitGenerator(gitGen *GitGenerator) error {
+	switch {
+	case gitGen.RepoURL == "":
+		return fmt.Errorf("%w: git generator requires repoURL", ErrUnsupportedAppConfiguration)
+	case len(gitGen.Files) > 0:
+		return fmt.Errorf("%w: git generator field 'files' is not supported yet; only 'directories' is", ErrUnsupportedAppConfiguration)
+	case len(gitGen.Directories) == 0:
+		return fmt.Errorf("%w: git generator requires at least one 'directories' entry", ErrUnsupportedAppConfiguration)
+	case len(gitGen.Values) > 0:
+		return fmt.Errorf("%w: git generator field 'values' is not supported", ErrUnsupportedAppConfiguration)
+	case gitGen.PathParamPrefix != "":
+		return fmt.Errorf("%w: git generator field 'pathParamPrefix' is not supported; it would nest the path parameters", ErrUnsupportedAppConfiguration)
+	case !gitGen.Template.IsZero():
+		return fmt.Errorf("%w: generator-level template overrides are not supported", ErrUnsupportedAppConfiguration)
+	}
+
+	for _, dir := range gitGen.Directories {
+		if dir.Path == "" {
+			return fmt.Errorf("%w: every git generator 'directories' entry requires a path", ErrUnsupportedAppConfiguration)
 		}
 	}
 

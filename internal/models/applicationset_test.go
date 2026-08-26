@@ -240,3 +240,173 @@ spec:
 		})
 	}
 }
+
+func TestApplicationSetValidateAcceptsGitDirectoryGenerator(t *testing.T) {
+	appSet := parseAppSet(t, `
+kind: ApplicationSet
+metadata:
+  name: cluster-addons
+spec:
+  goTemplate: true
+  generators:
+    - git:
+        repoURL: https://github.com/shini4i/argo-compare.git
+        revision: HEAD
+        directories:
+          - path: clusters/*
+          - path: clusters/donotdeploy
+            exclude: true
+  template:
+    metadata:
+      name: '{{ .path.basename }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: guestbook
+        targetRevision: 1.0.0
+`)
+
+	require.NoError(t, appSet.Validate())
+
+	gitGen := appSet.Spec.Generators[0].Git
+	require.NotNil(t, gitGen)
+	require.Len(t, gitGen.Directories, 2)
+	assert.Equal(t, "clusters/*", gitGen.Directories[0].Path)
+	assert.False(t, gitGen.Directories[0].Exclude)
+	assert.True(t, gitGen.Directories[1].Exclude)
+}
+
+func TestApplicationSetValidateRejectsUnsupportedGitFields(t *testing.T) {
+	tests := []struct {
+		name       string
+		generator  string
+		wantErrMsg string
+	}{
+		{
+			name: "files",
+			generator: `
+        repoURL: https://example.com/repo.git
+        files:
+          - path: "clusters/**/config.json"`,
+			wantErrMsg: "'files' is not supported yet",
+		},
+		{
+			name: "pathParamPrefix",
+			generator: `
+        repoURL: https://example.com/repo.git
+        directories:
+          - path: 'clusters/*'
+        pathParamPrefix: mycluster`,
+			wantErrMsg: "'pathParamPrefix' is not supported",
+		},
+		{
+			name: "values",
+			generator: `
+        repoURL: https://example.com/repo.git
+        directories:
+          - path: 'clusters/*'
+        values:
+          base_dir: "{{ .path.path }}"`,
+			wantErrMsg: "'values' is not supported",
+		},
+		{
+			name: "missing repoURL",
+			generator: `
+        directories:
+          - path: 'clusters/*'`,
+			wantErrMsg: "requires repoURL",
+		},
+		{
+			name: "no directories",
+			generator: `
+        repoURL: https://example.com/repo.git`,
+			wantErrMsg: "at least one 'directories' entry",
+		},
+		{
+			name: "directory without a path",
+			generator: `
+        repoURL: https://example.com/repo.git
+        directories:
+          - exclude: true`,
+			wantErrMsg: "requires a path",
+		},
+		{
+			name: "generator level template override",
+			generator: `
+        repoURL: https://example.com/repo.git
+        directories:
+          - path: 'clusters/*'
+        template:
+          metadata:
+            name: override`,
+			wantErrMsg: "generator-level template",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			appSet := parseAppSet(t, `
+kind: ApplicationSet
+metadata:
+  name: cluster-addons
+spec:
+  goTemplate: true
+  generators:
+    - git:`+tt.generator+`
+  template:
+    metadata:
+      name: '{{ .path.basename }}'
+`)
+
+			err := appSet.Validate()
+			assert.ErrorIs(t, err, ErrUnsupportedAppConfiguration)
+			assert.Contains(t, err.Error(), tt.wantErrMsg)
+		})
+	}
+}
+
+// TestApplicationSetGitGeneratorDecodeError pins that a malformed git generator
+// is a decode error, not the warn-and-skip an unsupported one gets.
+func TestApplicationSetGitGeneratorDecodeError(t *testing.T) {
+	var appSet ApplicationSet
+	err := yaml.Unmarshal([]byte(`
+kind: ApplicationSet
+spec:
+  generators:
+    - git: "not-a-mapping"
+`), &appSet)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "decode git generator")
+	assert.NotErrorIs(t, err, ErrUnsupportedAppConfiguration)
+}
+
+// TestApplicationSetKeepsGitRevision proves revision survives decoding. Whether
+// a given revision can be compared is decided in the app layer, which knows the
+// target branch; see assertGitGeneratorsComparable.
+func TestApplicationSetKeepsGitRevision(t *testing.T) {
+	appSet := parseAppSet(t, `
+kind: ApplicationSet
+metadata:
+  name: cluster-addons
+spec:
+  goTemplate: true
+  generators:
+    - git:
+        repoURL: https://example.com/repo.git
+        revision: v1.2.3
+        directories:
+          - path: 'clusters/*'
+  template:
+    metadata:
+      name: '{{ .path.basename }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: demo
+        targetRevision: 1.0.0
+`)
+
+	require.NoError(t, appSet.Validate())
+	assert.Equal(t, "v1.2.3", appSet.Spec.Generators[0].Git.Revision)
+}

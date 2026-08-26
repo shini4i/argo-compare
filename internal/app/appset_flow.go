@@ -27,7 +27,23 @@ type generatedPair struct {
 func (a *App) processChangedApplicationSet(ctx context.Context, repo *GitRepo, file string, srcSet *models.ApplicationSet) (bool, error) {
 	a.logger.Infof("===> Processing changed ApplicationSet: [%s]", ui.Cyan(file))
 
-	srcApps, err := appset.Expand(srcSet)
+	originURL, err := repo.OriginURL()
+	if err != nil {
+		return false, err
+	}
+	// Skipping rather than failing keeps one unsupported manifest from breaking a
+	// run, matching every other unsupported ApplicationSet configuration.
+	if err := assertGitGeneratorsComparable(srcSet, originURL, a.cfg.TargetBranch); err != nil {
+		a.logger.Warning(ui.Yellow(fmt.Sprintf("Skipping %s: %s", file, err)))
+		return false, nil
+	}
+
+	headTree, err := repo.HeadTree()
+	if err != nil {
+		return false, err
+	}
+
+	srcApps, err := appset.Expand(srcSet, treeLister(headTree))
 	if err != nil {
 		return false, fmt.Errorf("expand ApplicationSet %q: %w", file, err)
 	}
@@ -70,7 +86,7 @@ func (a *App) targetApplicationSet(repo *GitRepo, file string) ([]models.Applica
 		return nil, err
 	}
 
-	appSet, err := parseApplicationSetContent(content)
+	appSet, err := a.parseTargetApplicationSet(repo, content)
 	if err != nil {
 		// Adding `goTemplate: true` to an existing manifest is the migration
 		// this feature asks users to make, so an unexpandable baseline reports
@@ -84,12 +100,38 @@ func (a *App) targetApplicationSet(repo *GitRepo, file string) ([]models.Applica
 		return nil, fmt.Errorf("parse ApplicationSet %q from branch %q: %w", file, a.cfg.TargetBranch, err)
 	}
 
-	apps, err := appset.Expand(appSet)
+	tree, err := repo.MergeBaseTreeFor(a.cfg.TargetBranch)
+	if err != nil {
+		return nil, err
+	}
+
+	apps, err := appset.Expand(appSet, treeLister(tree))
 	if err != nil {
 		return nil, fmt.Errorf("expand ApplicationSet %q from branch %q: %w", file, a.cfg.TargetBranch, err)
 	}
 
 	return apps, nil
+}
+
+// parseTargetApplicationSet validates the target-branch manifest, including
+// that its git generators still name this repository. A generator pointing
+// elsewhere would otherwise be matched against the local tree.
+func (a *App) parseTargetApplicationSet(repo *GitRepo, content []byte) (*models.ApplicationSet, error) {
+	appSet, err := parseApplicationSetContent(content)
+	if err != nil {
+		return nil, err
+	}
+
+	originURL, err := repo.OriginURL()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := assertGitGeneratorsComparable(appSet, originURL, a.cfg.TargetBranch); err != nil {
+		return nil, err
+	}
+
+	return appSet, nil
 }
 
 // unexpandable reports whether err means the manifest is one argo-compare

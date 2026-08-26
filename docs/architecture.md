@@ -69,11 +69,14 @@ contains:
    directly. Driver code lives in `internal/app/app.go`,
    `application_fetcher.go`, `git.go`, `target.go`, `compare.go`.
 
-2. **ApplicationSet flow** — the PR modifies an ApplicationSet manifest.
-   `internal/appset` expands it into the Applications it generates on both
-   branches, and those are matched by name and compared one pair at a time,
-   so an Application the change adds or drops shows up as such. Driver code
-   lives in `internal/app/appset_flow.go`.
+2. **ApplicationSet flow** — the PR modifies an ApplicationSet manifest, or
+   touches a directory a git generator matches. `internal/appset` expands it
+   into the Applications it generates on both branches, and those are matched
+   by name and compared one pair at a time, so an Application the change adds
+   or drops shows up as such. Driver code lives in
+   `internal/app/appset_flow.go`, with directory listing in `appset_dirs.go`
+   and the repository scan that finds generator-affected manifests in
+   `appset_discovery.go`.
 
 3. **Anchor flow** — the PR modifies chart content (e.g. Helm values)
    rather than an Application YAML. `argo-compare` walks up to the

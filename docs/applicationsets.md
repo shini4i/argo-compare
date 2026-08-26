@@ -12,9 +12,11 @@ plane is never contacted.
 | `goTemplate: true` templating | supported |
 | Legacy (fasttemplate) templating | not supported — the manifest is skipped |
 | `list` generator | supported |
-| `git`, `matrix`, `merge`, `clusters`, `scmProvider`, `pullRequest`, … | not supported — the manifest is skipped |
+| `git` generator, `directories` | supported for this repository — see below |
+| `git` generator, `files` | not supported yet — the manifest is skipped |
+| `matrix`, `merge`, `clusters`, `scmProvider`, `pullRequest`, … | not supported — the manifest is skipped |
 | `goTemplateOptions` | supported (`missingkey=default\|invalid\|zero\|error`) |
-| Generator-level `template` overrides, `elementsYaml` | not supported — the manifest is skipped |
+| Generator-level `template` overrides, `elementsYaml`, git `values`, `pathParamPrefix` | not supported — the manifest is skipped |
 
 A skipped manifest is reported at warning level with the reason. It never
 fails the run, and plain Application manifests in the same diff are still
@@ -32,6 +34,56 @@ The modern engine is Go `text/template` with a documented parameter shape, so
 that is the one implemented. Add `goTemplate: true` to your ApplicationSet —
 ArgoCD [recommends it](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/GoTemplate/)
 and pairs it with `goTemplateOptions: ["missingkey=error"]`.
+
+## The git directory generator
+
+A git generator builds one Application per directory matching its patterns:
+
+```yaml
+generators:
+  - git:
+      repoURL: https://github.com/you/your-repo.git
+      revision: HEAD
+      directories:
+        - path: clusters/*
+        - path: clusters/donotdeploy
+          exclude: true
+```
+
+Available parameters are `.path.path`, `.path.segments`, `.path.basename` and
+`.path.basenameNormalized`. Exclude entries beat including ones no matter what
+order they appear in, and a directory whose name starts with a dot never
+generates an Application.
+
+**Adding or deleting a directory is what usually changes the output**, and that
+leaves the ApplicationSet manifest untouched. So `argo-compare` also scans the
+repository for ApplicationSets with git generators and compares any whose
+patterns cover a directory your change touched. You do not have to edit the
+manifest to see the diff.
+
+### repoURL must be this repository
+
+A generator reading another repository is skipped with a warning. Both sides of
+the comparison would read the same external tree, so the diff could only ever
+reflect edits to the ApplicationSet itself — never the directory changes the
+generator exists for.
+
+### revision must be HEAD or the compared branch
+
+Your branch and the target branch are the two revisions, so `revision: HEAD`
+(or the name of the branch you are comparing against) needs no further
+interpretation and is not consulted.
+
+A revision pinning anything else — a tag, or an unrelated branch — is skipped
+with a warning. ArgoCD would keep generating from that fixed tree, so a
+directory your branch adds changes nothing it deploys, and reporting a new
+Application would be a false positive.
+
+### pathParamPrefix is not supported
+
+It nests the path parameters under a prefix, so a template written for it would
+render against the wrong shape. Such a manifest is skipped rather than rendered
+incorrectly.
 
 ## Template functions
 
