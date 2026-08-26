@@ -27,22 +27,45 @@ const (
 	gitlabNoteLengthLimit = 1_000_000
 	// commentPartReserve keeps room for part numbering suffixes when chunking comments.
 	commentPartReserve = 32
+	// crowdedNoteDivisor halves a note's budget: once to cap a preamble that would
+	// fill a comment on its own, and again as the diff budget if that preamble or a
+	// continuation line would still consume the whole chunk.
+	crowdedNoteDivisor = 2
 	crdNoticeTemplate  = "> CRD manifest `%s` detected in the %s section. Diff omitted to keep merge request comments concise. Review the job logs for full details.\n"
 )
 
-// Present formats comparison results and pushes them as one or more comments depending on size.
+// commentSection is one Application's contribution to a run's comment. A run
+// comparing several Applications — an ApplicationSet generating them, or several
+// changed manifests — collects one section each and publishes them together.
+type commentSection struct {
+	label  string
+	result ComparisonResult
+}
+
+// Present formats one Application's comparison and pushes it as one or more
+// comments depending on size.
 // The context is used for cancellation and timeout control when posting comments.
 func (s CommentStrategy) Present(ctx context.Context, result ComparisonResult) error {
+	return s.PresentSections(ctx, []commentSection{{label: s.ApplicationPath, result: result}})
+}
+
+// PresentSections publishes every collected section as a single comment,
+// splitting into further comments only when GitLab's note limit demands it. An
+// empty batch posts nothing.
+func (s CommentStrategy) PresentSections(ctx context.Context, sections []commentSection) error {
 	if err := s.validate(); err != nil {
 		return err
 	}
+	if len(sections) == 0 {
+		return nil
+	}
 
-	bodies := buildCommentBodies(result, s.ShowAdded, s.ShowRemoved, s.ApplicationPath)
+	bodies := buildCommentBodies(sections, s.ShowAdded, s.ShowRemoved)
 	if err := s.postBodies(ctx, bodies); err != nil {
 		return err
 	}
 
-	s.logResult(result, len(bodies))
+	s.logSections(sections, len(bodies))
 	return nil
 }
 
@@ -72,68 +95,171 @@ func (s CommentStrategy) postBodies(ctx context.Context, bodies []string) error 
 	return nil
 }
 
-func (s CommentStrategy) logResult(result ComparisonResult, commentCount int) {
-	app := strings.TrimSpace(s.ApplicationPath)
-	if app == "" {
-		app = "unknown application"
+func (s CommentStrategy) logSections(sections []commentSection, commentCount int) {
+	subject := sectionLabel(sections[0].label)
+	if len(sections) > 1 {
+		subject = fmt.Sprintf("%d Applications", len(sections))
 	}
 
 	switch {
-	case result.IsEmpty():
-		s.Log.Infof("Posted comment summarizing absence of manifest changes for %s", app)
+	case allSectionsEmpty(sections):
+		s.Log.Infof("Posted comment summarizing absence of manifest changes for %s", subject)
 	case commentCount > 1:
-		s.Log.Infof("Posted %d comments with manifest diff summary for %s", commentCount, app)
+		s.Log.Infof("Posted %d comments with manifest diff summary for %s", commentCount, subject)
 	default:
-		s.Log.Infof("Posted comment with manifest diff summary for %s", app)
+		s.Log.Infof("Posted comment with manifest diff summary for %s", subject)
 	}
 }
 
-func buildCommentBodies(result ComparisonResult, showAdded, showRemoved bool, applicationPath string) []string {
-	appLabel := strings.TrimSpace(applicationPath)
-	if appLabel == "" {
-		appLabel = "unknown"
-	}
-	appDisplay := strings.ReplaceAll(appLabel, "`", "\\`")
-
-	var headerBuilder strings.Builder
-	headerBuilder.WriteString("## Argo Compare Results\n\n")
-	headerBuilder.WriteString(fmt.Sprintf("**Application:** `%s`\n\n", appDisplay))
-
-	if validationSummary := buildValidationSummary(result.ValidationResults); validationSummary != "" {
-		headerBuilder.WriteString(validationSummary)
-	}
-
-	if summary := buildSummaryLines(result, showAdded, showRemoved); summary != "" {
-		headerBuilder.WriteString(summary)
-	}
-
-	header := headerBuilder.String()
-	if result.IsEmpty() {
-		return []string{ensureTrailingNewline(header + "No manifest differences detected :white_check_mark:\n")}
-	}
-
-	maxPerComment := computeMaxPerComment(len(header))
-
-	maxChunkLen := maxPerComment - len(header)
-	if maxChunkLen <= 0 {
-		maxChunkLen = maxPerComment / 2
-	}
-
-	chunks, notices := collectDiffChunks(result, showAdded, showRemoved, maxChunkLen)
-	if len(notices) > 0 {
-		var noticeBuilder strings.Builder
-		noticeBuilder.WriteString("**CRD Notes**\n")
-		for _, notice := range notices {
-			noticeBuilder.WriteString(notice)
-			if !strings.HasSuffix(notice, "\n") {
-				noticeBuilder.WriteString("\n")
-			}
+func allSectionsEmpty(sections []commentSection) bool {
+	for _, section := range sections {
+		if !section.result.IsEmpty() {
+			return false
 		}
-		noticeBuilder.WriteString("\n")
-		chunks = append(chunks, noticeBuilder.String())
 	}
 
-	return assembleCommentBodies(header, chunks)
+	return true
+}
+
+// sectionLabel names an Application for a comment, falling back when the
+// caller had no path to give.
+func sectionLabel(label string) string {
+	if trimmed := strings.TrimSpace(label); trimmed != "" {
+		return trimmed
+	}
+
+	return "unknown"
+}
+
+// buildCommentBodies renders every section under one run header, then packs the
+// result into as few comments as GitLab's note limit allows.
+func buildCommentBodies(sections []commentSection, showAdded, showRemoved bool) []string {
+	const runHeader = "## Argo Compare Results\n\n"
+
+	// computeMaxPerComment guarantees room beyond the fixed run header.
+	maxChunkLen := computeMaxPerComment(len(runHeader)) - len(runHeader)
+
+	chunks := make([]commentChunk, 0, len(sections))
+	for _, section := range sections {
+		chunks = append(chunks, sectionChunks(section, showAdded, showRemoved, maxChunkLen)...)
+	}
+
+	return assembleCommentBodies(runHeader, chunks)
+}
+
+// commentChunk is one renderable piece of a comment together with the
+// Application it belongs to, so a comment starting partway through that
+// Application can still name it. opensSection marks the piece that already
+// carries the Application's own heading.
+type commentChunk struct {
+	label        string
+	text         string
+	opensSection bool
+}
+
+// continuationLine re-states an Application when its diffs spill into a
+// further comment.
+func continuationLine(label string) string {
+	return fmt.Sprintf("**Application:** `%s` _(continued)_\n\n", escapeCommentLabel(label))
+}
+
+func escapeCommentLabel(label string) string {
+	return strings.ReplaceAll(sectionLabel(label), "`", "\\`")
+}
+
+// preambleTruncationNotice replaces the tail of a validation summary too large
+// to publish, pointing at the job log for the rest.
+const preambleTruncationNotice = "> The rest of this summary was omitted to keep the comment within GitLab's size limit. Review the job logs for full details.\n\n"
+
+// truncatePreamble bounds a section's opening at limit, cutting on a line
+// boundary. A validation summary has one entry per failing resource and no cap,
+// and a comment that exceeds GitLab's limit is rejected outright — which with
+// batching would discard every other Application's comment too.
+func truncatePreamble(preamble string, limit int) string {
+	if len(preamble) <= limit {
+		return preamble
+	}
+
+	keep := max(limit-len(preambleTruncationNotice), 0)
+	if cut := strings.LastIndex(preamble[:keep], "\n"); cut > 0 {
+		keep = cut
+	}
+
+	return strings.TrimRight(preamble[:keep], "\n") + "\n\n" + preambleTruncationNotice
+}
+
+// sectionChunks renders one Application: its preamble (label, validation,
+// summary) followed by its diffs, or the no-differences note when it has none.
+// The preamble rides along with the first diff so the two never land in
+// separate comments.
+func sectionChunks(section commentSection, showAdded, showRemoved bool, maxChunkLen int) []commentChunk {
+	label := sectionLabel(section.label)
+
+	var preamble strings.Builder
+	fmt.Fprintf(&preamble, "**Application:** `%s`\n\n", escapeCommentLabel(label))
+
+	if validationSummary := buildValidationSummary(section.result.ValidationResults); validationSummary != "" {
+		preamble.WriteString(validationSummary)
+	}
+	if summary := buildSummaryLines(section.result, showAdded, showRemoved); summary != "" {
+		preamble.WriteString(summary)
+	}
+
+	// A validation summary grows with the number of failing resources, so an
+	// unbounded preamble could produce a comment GitLab rejects — abandoning
+	// every other Application's comment queued behind it.
+	preambleText := truncatePreamble(preamble.String(), maxChunkLen/crowdedNoteDivisor)
+
+	if section.result.IsEmpty() {
+		return []commentChunk{{
+			label:        label,
+			text:         preambleText + "No manifest differences detected :white_check_mark:\n\n",
+			opensSection: true,
+		}}
+	}
+
+	// Whichever opening is longer bounds the diffs, since a later comment
+	// re-states the Application in place of the full preamble.
+	reserved := max(len(preambleText), len(continuationLine(label)))
+	available := maxChunkLen - reserved
+	if available <= 0 {
+		available = maxChunkLen / crowdedNoteDivisor
+	}
+
+	diffs, notices := collectDiffChunks(section.result, showAdded, showRemoved, available)
+	if len(notices) > 0 {
+		diffs = append(diffs, buildCRDNotes(notices))
+	}
+
+	chunks := make([]commentChunk, 0, len(diffs))
+	for idx, diff := range diffs {
+		if idx == 0 {
+			chunks = append(chunks, commentChunk{label: label, text: preambleText + diff, opensSection: true})
+			continue
+		}
+		chunks = append(chunks, commentChunk{label: label, text: diff})
+	}
+
+	if len(chunks) == 0 {
+		chunks = append(chunks, commentChunk{label: label, text: preambleText, opensSection: true})
+	}
+
+	return chunks
+}
+
+// buildCRDNotes gathers the notices for diffs omitted from a section.
+func buildCRDNotes(notices []string) string {
+	var builder strings.Builder
+	builder.WriteString("**CRD Notes**\n")
+	for _, notice := range notices {
+		builder.WriteString(notice)
+		if !strings.HasSuffix(notice, "\n") {
+			builder.WriteString("\n")
+		}
+	}
+	builder.WriteString("\n")
+
+	return builder.String()
 }
 
 // escapeInlineMarkdown sanitizes a string for safe interpolation into Markdown.
@@ -379,23 +505,31 @@ func splitDiffContent(content string, limit int) (string, string) {
 	return chunk, strings.TrimPrefix(remaining, "\n")
 }
 
-func assembleCommentBodies(header string, chunks []string) []string {
+// assembleCommentBodies packs chunks into as few comments as the note limit
+// allows. A comment that starts partway through an Application repeats that
+// Application's name, so no diff is ever shown without saying whose it is.
+func assembleCommentBodies(header string, chunks []commentChunk) []string {
 	maxPerComment := computeMaxPerComment(len(header))
 
 	var bodies []string
 	var builder strings.Builder
 	builder.WriteString(header)
+	atCommentStart := true
 
 	for _, chunk := range includeNonEmptyChunks(chunks) {
-		if builder.Len()+len(chunk) > maxPerComment {
-			if builder.Len() > len(header) {
-				bodies = append(bodies, ensureTrailingNewline(builder.String()))
-				builder.Reset()
-				builder.WriteString(header)
-			}
+		if builder.Len()+len(chunk.text) > maxPerComment && builder.Len() > len(header) {
+			bodies = append(bodies, ensureTrailingNewline(builder.String()))
+			builder.Reset()
+			builder.WriteString(header)
+			atCommentStart = true
 		}
 
-		builder.WriteString(chunk)
+		if atCommentStart && !chunk.opensSection {
+			builder.WriteString(continuationLine(chunk.label))
+		}
+
+		builder.WriteString(chunk.text)
+		atCommentStart = false
 	}
 
 	if builder.Len() > len(header) {
@@ -409,10 +543,10 @@ func assembleCommentBodies(header string, chunks []string) []string {
 	return bodies
 }
 
-func includeNonEmptyChunks(chunks []string) []string {
-	result := make([]string, 0, len(chunks))
+func includeNonEmptyChunks(chunks []commentChunk) []commentChunk {
+	result := make([]commentChunk, 0, len(chunks))
 	for _, chunk := range chunks {
-		if strings.TrimSpace(chunk) == "" {
+		if strings.TrimSpace(chunk.text) == "" {
 			continue
 		}
 		result = append(result, chunk)

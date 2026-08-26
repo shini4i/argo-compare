@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A run now posts a single merge request note covering every Application it compared, with a section each, instead of one note per Application. An ApplicationSet generating thirty Applications previously produced thirty notes. The note is split only when it would exceed GitLab's 1 MB limit, and each part names the Application whose diff it carries. A validation summary large enough to fill a note on its own is truncated, with the full detail left in the job log.
 - Manifests skipped for an unsupported configuration now log why they were skipped, instead of only naming the file.
 - Cross-repo anchored Applications now fail with a clear, actionable error when the pull request restructures a chart's values files (for example splitting one `values.yaml` into several) but the Application — read from the anchored repo's branch tip — still references the old layout. Previously this surfaced as an opaque `helm template` "no such file" error. See `docs/anchored-repositories.md` for the workaround.
 

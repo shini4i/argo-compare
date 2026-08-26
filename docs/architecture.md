@@ -88,8 +88,13 @@ contains:
    `tree_materialize.go`. The anchor schema itself is in
    `internal/anchor`.
 
-All three converge on the same comparison + comment publication path in
-`internal/app/compare.go` and `comment_strategy.go`.
+All three converge on the same comparison path in `internal/app/compare.go`.
+
+Comment publication is decoupled from it: a `commentCollector` appends each
+comparison to `App.commentSections`, and `Run` publishes the batch as one
+comment once every comparison has finished (`internal/app/app.go`). The
+`Comment publishing` side-effect below therefore fires once per run, not once
+per comparison, while the stdout and external-diff presenters still run inline.
 
 ## Side-effects and where they live
 

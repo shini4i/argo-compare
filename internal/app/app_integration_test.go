@@ -180,6 +180,9 @@ type stubHelmProcessor struct {
 	mu      sync.Mutex
 	calls   map[string]int
 	tmpDirs map[string]struct{}
+	// renderErrFor fails RenderAppSource for a given release name, so a test can
+	// make one Application of a set fail while the rest render.
+	renderErrFor map[string]error
 }
 
 func newStubHelmProcessor(t *testing.T) *stubHelmProcessor {
@@ -235,6 +238,9 @@ func (s *stubHelmProcessor) ExtractHelmChart(_ context.Context, _ ports.HelmDeps
 
 func (s *stubHelmProcessor) RenderAppSource(_ context.Context, _ ports.CmdRunner, req ports.ChartRenderRequest) error {
 	s.record("RenderAppSource", req.TmpDir)
+	if err := s.renderErrFor[req.ReleaseName]; err != nil {
+		return err
+	}
 	dir := filepath.Join(req.TmpDir, "templates", req.TargetType, req.ChartName)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err

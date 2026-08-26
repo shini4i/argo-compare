@@ -87,8 +87,12 @@ func TestSelectDiffStrategiesIncludesCommentStrategy(t *testing.T) {
 
 	_, isStdout := strategies[0].(StdoutStrategy)
 	assert.True(t, isStdout)
-	_, isComment := strategies[1].(CommentStrategy)
-	assert.True(t, isComment)
+	// Comments are collected, not posted per comparison, so a run publishes one
+	// note covering every Application it compared.
+	collector, isCollector := strategies[1].(commentCollector)
+	require.True(t, isCollector)
+	assert.Equal(t, "apps/foo.yaml", collector.label)
+	assert.NotNil(t, appInstance.commentPoster, "the poster is built once, up front")
 }
 
 func TestSelectDiffStrategiesErrorFromFactory(t *testing.T) {

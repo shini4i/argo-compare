@@ -171,6 +171,11 @@ newlines and indentation inside it cannot change how the manifest parses, so
 `{{ toYaml .values }}` needs no `nindent` ceremony, and `nindent` means the
 column you wrote rather than one derived from anything internal.
 
+## Merge request comments
+
+Every generated Application appears as a section of a single merge request note,
+not one note each. See [GitLab integration](gitlab-integration.md).
+
 ## Added and removed Applications
 
 A change to an ApplicationSet can change *which* Applications exist, not only
