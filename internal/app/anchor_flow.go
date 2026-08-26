@@ -165,15 +165,13 @@ func (a *App) anchoredPairsInScope(ref anchor.ApplicationRef, pairs []generatedP
 
 	inScope := make([]generatedPair, 0, len(pairs))
 	for _, pair := range pairs {
-		reason, err := anchoredPairSkipReason(pair, originURL)
+		scoped, keep, err := a.scopeAnchoredPair(pair, originURL)
 		if err != nil {
 			return nil, fmt.Errorf("anchored ApplicationSet %s: %w", anchorRefDisplay(ref), err)
 		}
-		if reason != "" {
-			a.logger.Infof("Skipping generated Application [%s]: %s", ui.Cyan(pair.name), reason)
-			continue
+		if keep {
+			inScope = append(inScope, scoped)
 		}
-		inScope = append(inScope, pair)
 	}
 
 	if len(inScope) == 0 {
@@ -184,33 +182,73 @@ func (a *App) anchoredPairsInScope(ref anchor.ApplicationRef, pairs []generatedP
 	return inScope, nil
 }
 
-// anchoredPairSkipReason names why a generated Application is outside an
-// anchor's reach, or "" when it is comparable. A registry chart cannot be
-// affected by a change to this repository, and a path-based source belonging to
-// another repository would otherwise be rendered from the wrong tree.
-func anchoredPairSkipReason(pair generatedPair, originURL string) (string, error) {
-	for _, app := range []*models.Application{pair.src, pair.dst} {
-		if app == nil {
+// scopeAnchoredPair drops the comparison legs an anchor cannot report on,
+// judging each independently so an Application moving into or out of this
+// repository is still compared on the side that reads it. keep is false when
+// neither leg qualifies.
+func (a *App) scopeAnchoredPair(pair generatedPair, originURL string) (generatedPair, bool, error) {
+	srcReason, err := anchoredLegSkipReason(pair.src, originURL)
+	if err != nil {
+		return pair, false, err
+	}
+	dstReason, err := anchoredLegSkipReason(pair.dst, originURL)
+	if err != nil {
+		return pair, false, err
+	}
+
+	if srcReason != "" {
+		pair.src = nil
+	}
+	if dstReason != "" {
+		pair.dst = nil
+	}
+
+	reason := firstNonEmpty(srcReason, dstReason)
+	if pair.src == nil && pair.dst == nil {
+		a.logger.Infof("Skipping generated Application [%s]: %s", ui.Cyan(pair.name), reason)
+		return pair, false, nil
+	}
+	if reason != "" {
+		a.logger.Infof("Comparing generated Application [%s] on one branch only: %s", ui.Cyan(pair.name), reason)
+	}
+
+	return pair, true, nil
+}
+
+// anchoredLegSkipReason names why one comparison leg is outside an anchor's
+// reach, or "" when it is comparable — a leg with no Application included. A
+// registry chart cannot be affected by a change to this repository, and a
+// path-based source belonging to another repository would render from the wrong tree.
+func anchoredLegSkipReason(app *models.Application, originURL string) (string, error) {
+	if app == nil {
+		return "", nil
+	}
+
+	target := Target{App: *app}
+	if err := target.ClassifySources(); err != nil {
+		return "", err
+	}
+	if !target.PathBased() {
+		return "its source is a registry chart, which a change to this repository cannot affect", nil
+	}
+	for _, source := range target.pathSources() {
+		if source == nil || repoIdentityMatches(source.RepoURL, originURL) {
 			continue
 		}
-
-		target := Target{App: *app}
-		if err := target.ClassifySources(); err != nil {
-			return "", err
-		}
-		if !target.PathBased() {
-			return "its source is a registry chart, which a change to this repository cannot affect", nil
-		}
-		for _, source := range target.pathSources() {
-			if source == nil || repoIdentityMatches(source.RepoURL, originURL) {
-				continue
-			}
-			return fmt.Sprintf("its source repository %q is not this one, so this repository's tree cannot render it",
-				redactRepo(source.RepoURL)), nil
-		}
+		return fmt.Sprintf("its source repository %q is not this one, so this repository's tree cannot render it",
+			redactRepo(source.RepoURL)), nil
 	}
 
 	return "", nil
+}
+
+// firstNonEmpty returns the first non-empty string, or "" when both are empty.
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+
+	return b
 }
 
 // expandAnchoredApplicationSet expands appSet against one comparison leg's

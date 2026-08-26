@@ -291,7 +291,9 @@ func dedupAnchorGroups(groups []AnchorGroup, changedApps []string) []AnchorGroup
 		}
 		// Two chart directories anchored to one manifest describe a single
 		// comparison. Rendering it per group would repeat the whole diff — and
-		// for an ApplicationSet, repeat it once per generated Application.
+		// for an ApplicationSet, repeat it once per generated Application. The
+		// repo is keyed by identity, so two spellings of one remote still match.
+		ref.Repo = normalizeRepoIdentity(ref.Repo)
 		if _, dup := seen[ref]; dup {
 			continue
 		}

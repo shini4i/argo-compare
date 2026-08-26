@@ -722,3 +722,111 @@ spec:
 	assert.Contains(t, err.Error(), "apps/appset.yaml (local)")
 	assert.Contains(t, err.Error(), "for src leg")
 }
+
+// registryApp builds a single-source registry-chart Application.
+func registryApp(name string) *models.Application {
+	app := &models.Application{Kind: models.KindApplication}
+	app.Metadata.Name = name
+	app.Spec.Source = &models.Source{RepoURL: "https://charts.example.com", Chart: "demo"}
+
+	return app
+}
+
+// TestAnchoredPairsInScopeJudgesLegsIndependently covers an Application that
+// moves into or out of this repository on this branch: the leg that reads the
+// local repository must still be compared, not dropped with its counterpart.
+func TestAnchoredPairsInScopeJudgesLegsIndependently(t *testing.T) {
+	const origin = "https://git.example.com/group/repo.git"
+	ref := anchor.ApplicationRef{Path: "apps/appset.yaml"}
+
+	cases := []struct {
+		name     string
+		pair     generatedPair
+		wantKept bool
+		wantSrc  bool
+		wantDst  bool
+	}{
+		{
+			name:     "moving into this repository keeps the source leg",
+			pair:     generatedPair{name: "moving-in", src: pathApp("moving-in", origin), dst: registryApp("moving-in")},
+			wantKept: true, wantSrc: true, wantDst: false,
+		},
+		{
+			name:     "moving out of this repository keeps the destination leg",
+			pair:     generatedPair{name: "moving-out", src: registryApp("moving-out"), dst: pathApp("moving-out", origin)},
+			wantKept: true, wantSrc: false, wantDst: true,
+		},
+		{
+			name:     "a foreign source on one leg still keeps the local leg",
+			pair:     generatedPair{name: "foreign-dst", src: pathApp("foreign-dst", origin), dst: pathApp("foreign-dst", "https://other.example.com/g/o.git")},
+			wantKept: true, wantSrc: true, wantDst: false,
+		},
+		{
+			name:     "neither leg in this repository is skipped",
+			pair:     generatedPair{name: "never", src: registryApp("never"), dst: registryApp("never")},
+			wantKept: false,
+		},
+		{
+			name:     "a one-sided pair whose only leg is out of scope is skipped",
+			pair:     generatedPair{name: "added-registry", src: registryApp("added-registry")},
+			wantKept: false,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			app := &App{cfg: Config{TargetBranch: "main"}, logger: logger.New("leg-scope-test")}
+			// A second, always-comparable pair keeps the no-qualifying-Applications
+			// backstop from masking what this case is about.
+			filler := generatedPair{name: "filler", src: pathApp("filler", origin), dst: pathApp("filler", origin)}
+
+			inScope, err := app.anchoredPairsInScope(ref, []generatedPair{c.pair, filler}, origin)
+			require.NoError(t, err)
+
+			var got *generatedPair
+			for i := range inScope {
+				if inScope[i].name == c.pair.name {
+					got = &inScope[i]
+				}
+			}
+
+			if !c.wantKept {
+				assert.Nil(t, got, "pair must be skipped entirely")
+				return
+			}
+
+			require.NotNil(t, got, "pair must be kept")
+			assert.Equal(t, c.wantSrc, got.src != nil, "source leg presence")
+			assert.Equal(t, c.wantDst, got.dst != nil, "destination leg presence")
+		})
+	}
+}
+
+// TestDedupAnchorGroupsNormalizesRemoteIdentity proves two spellings of one
+// remote anchor collapse, so the same manifest is not compared twice.
+func TestDedupAnchorGroupsNormalizesRemoteIdentity(t *testing.T) {
+	groups := []AnchorGroup{
+		{Dir: "charts/a", Anchor: anchor.Anchor{Application: anchor.ApplicationRef{
+			Repo: "https://git.example.com/group/repo.git", Path: "apps/appset.yaml", Branch: "main"}}},
+		{Dir: "charts/b", Anchor: anchor.Anchor{Application: anchor.ApplicationRef{
+			Repo: "git@git.example.com:group/repo", Path: "./apps/appset.yaml", Branch: "main"}}},
+	}
+
+	deduped := dedupAnchorGroups(groups, nil)
+
+	require.Len(t, deduped, 1)
+	assert.Equal(t, "charts/a", deduped[0].Dir, "the first group wins")
+}
+
+// TestDedupAnchorGroupsKeepsDistinctBranches proves the same manifest at two
+// branch tips stays two comparisons.
+func TestDedupAnchorGroupsKeepsDistinctBranches(t *testing.T) {
+	groups := []AnchorGroup{
+		{Dir: "charts/a", Anchor: anchor.Anchor{Application: anchor.ApplicationRef{
+			Repo: "https://git.example.com/group/repo.git", Path: "apps/appset.yaml", Branch: "main"}}},
+		{Dir: "charts/b", Anchor: anchor.Anchor{Application: anchor.ApplicationRef{
+			Repo: "https://git.example.com/group/repo.git", Path: "apps/appset.yaml", Branch: "next"}}},
+	}
+
+	assert.Len(t, dedupAnchorGroups(groups, nil), 2)
+}

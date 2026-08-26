@@ -39,6 +39,8 @@ Because expansion reads the two local branch legs, a git generator must name the
 
 Only the generated Applications that render a chart from this repository are compared. One with a registry chart, or with a `spec.source.path` belonging to a different repository, is skipped with the reason named: neither can be affected by the change under the anchor, and rendering the latter would diff this repository's content against another repository's Application. If no generated Application qualifies, that is an error for the same reason a foreign generator is.
 
+Each branch is judged separately. An Application that moves into this repository on your branch — say from a registry chart to a local path — is still compared on the side that reads the chart here, and reported as added or removed accordingly.
+
 Several chart directories may share one anchored manifest. It is compared once, not once per anchor.
 
 ## Limits in this version
