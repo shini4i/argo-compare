@@ -42,6 +42,7 @@
         # (kind, kubectl, helm) are deliberately absent: they are heavy, and the
         # lab is a per-release gate rather than part of the everyday shell.
         e2eTools = with pkgs; [
+          argocd
           bats
           shellcheck
           yq-go

@@ -1,0 +1,20 @@
+# The render-parity fixture. Its manifest is IDENTICAL on both branches and
+# carries no inline values, so the only thing that can change what it renders is
+# the chart content. That makes ArgoCD's own render at each revision directly
+# comparable with argo-compare's diff, in both directions.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: addon
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: addon
+  source:
+    repoURL: REPO_URL
+    path: charts/addon
+    targetRevision: main
+    helm:
+      releaseName: addon

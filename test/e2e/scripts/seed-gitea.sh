@@ -26,7 +26,10 @@ cp -r "${E2E_DIR}/fixtures/gitops/." "${work}/"
 # The Application manifests name the in-cluster repo URL, which is what ArgoCD
 # resolves and what the clone's origin is rewritten to.
 mkdir -p "${work}/apps"
-sed "s|REPO_URL|${ORIGIN_URL}|g" "${E2E_DIR}/fixtures/app-demo.yaml" >"${work}/apps/demo.yaml"
+for app in demo addon; do
+  sed "s|REPO_URL|${ORIGIN_URL}|g" "${E2E_DIR}/fixtures/app-${app}.yaml" \
+    >"${work}/apps/${app}.yaml"
+done
 
 git -C "$work" add -A
 git -C "$work" commit -qm "seed gitops fixtures"
@@ -41,6 +44,13 @@ git -C "$work" checkout -q -b "$FEATURE_BRANCH"
 sed -i -E 's/^([[:space:]]*)replicaCount: 1$/\1replicaCount: 3/' "${work}/apps/demo.yaml"
 grep -qE '^[[:space:]]*replicaCount: 3$' "${work}/apps/demo.yaml" ||
   die "the feature-branch replica bump did not apply to apps/demo.yaml"
+
+# The addon chart's own content changes while apps/addon.yaml stays identical,
+# which is what makes the render-parity comparison two-directional.
+sed -i -E 's/^message: hello$/message: world/' "${work}/charts/addon/values.yaml"
+grep -qx 'message: world' "${work}/charts/addon/values.yaml" ||
+  die "the feature-branch addon chart change did not apply"
+
 mkdir -p "${work}/clusters/prod"
 printf 'cluster: prod\nreplicas: 4\n' >"${work}/clusters/prod/config.yaml"
 git -C "$work" add -A

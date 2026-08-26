@@ -23,6 +23,13 @@ for name in "${!want[@]}"; do
   sed "s|REPO_URL|${ORIGIN_URL}|g" "$fixture" | kc apply -f - >/dev/null
 done
 
+# The plain Applications too: render-parity asks ArgoCD what `addon` renders, so
+# ArgoCD has to know about it.
+for app in demo addon; do
+  sed "s|REPO_URL|${ORIGIN_URL}|g" "${E2E_DIR}/fixtures/app-${app}.yaml" |
+    kc apply -f - >/dev/null
+done
+
 for name in "${!want[@]}"; do
   wait_appset "$name" "${want[$name]}" 60 ||
     die "${name} generated $(appset_count "$name") Application(s), expected ${want[$name]}"

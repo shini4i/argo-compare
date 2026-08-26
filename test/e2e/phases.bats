@@ -32,3 +32,11 @@ teardown() {
   echo "$output"
   [ "$status" -eq 0 ]
 }
+
+# render-parity last: it is the strictest, and reaching it means expansion and
+# rendering are already known good.
+@test "render-parity: the reported diff matches what ArgoCD renders" {
+  run ./scripts/render-parity.sh
+  echo "$output"
+  [ "$status" -eq 0 ]
+}

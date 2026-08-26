@@ -83,6 +83,11 @@ tasks:
     cmds:
       - ./scripts/appset-parity.sh
 
+  render-parity:
+    desc: "Assert argo-compare's diff matches what ArgoCD itself renders"
+    cmds:
+      - ./scripts/render-parity.sh
+
   lint:
     desc: "shellcheck the phase scripts (no cluster needed)"
     cmds:

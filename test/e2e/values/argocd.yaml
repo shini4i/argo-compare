@@ -1,12 +1,21 @@
 # ArgoCD values for the argo-compare e2e lab. The ApplicationSet controller is
-# the point of this install: it is the oracle the parity phase compares
-# argo-compare's own expansion against. The repo-server and redis stay enabled
-# because a git generator cannot resolve without them.
+# the point of this install: it is the oracle the parity phases compare
+# argo-compare against. The repo-server and redis stay enabled because a git
+# generator cannot resolve without them.
 dex:
   enabled: false
 notifications:
   enabled: false
+
+configs:
+  params:
+    # Plaintext so the argocd CLI can reach the API without a trusted cert; the
+    # server is only published on loopback via the NodePort below.
+    server.insecure: true
+
 server:
-  # Nothing in the lab talks to the ArgoCD API, so no ingress or host port.
+  # Fixed NodePort so the render-parity phase can ask ArgoCD what it renders.
+  # The number must match the containerPort in kind-config.yaml.
   service:
-    type: ClusterIP
+    type: NodePort
+    nodePortHttp: 30081
