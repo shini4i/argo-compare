@@ -12,6 +12,9 @@ import (
 // untouched, so an ordinary value never reaches the template engine.
 const actionMarker = "{{"
 
+// pathParam is the parameter block every git generator exposes.
+const pathParam = "path"
+
 // renderer substitutes parameters into every string an Application carries.
 // Rendering field by field rather than over the whole manifest keeps a value's
 // content out of the document's structure: indentation, quotes and newlines in

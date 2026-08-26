@@ -48,7 +48,7 @@ See [Installation](docs/installation.md) and [Usage](docs/usage.md) for the full
 ## Current limitations
 
 - The default change-detection flow looks for Application YAMLs in the diff. Repos that store chart content separately from their Application files should use [Anchored repositories](docs/anchored-repositories.md).
-- ApplicationSet support covers `goTemplate: true` manifests using the `list` generator, and the `git` generator's `directories` for the repository being compared; see [ApplicationSets](docs/applicationsets.md).
+- ApplicationSet support covers `goTemplate: true` manifests using the `list` and `git` generators for the repository being compared; see [ApplicationSets](docs/applicationsets.md).
 
 ## Roadmap
 
@@ -59,7 +59,7 @@ See [Installation](docs/installation.md) and [Usage](docs/usage.md) for the full
 - [ ] Add support for posting diff as a comment to PR (GitHub)
 - [x] Add manifest validation via kubeconform
 - [x] Add support for the ApplicationSet git directory generator
-- [ ] Add support for the ApplicationSet git file generator
+- [x] Add support for the ApplicationSet git file generator
 
 ## Contributing
 

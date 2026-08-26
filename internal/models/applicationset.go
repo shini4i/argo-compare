@@ -3,8 +3,10 @@ package models
 import (
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"gopkg.in/yaml.v3"
 )
 
@@ -51,9 +53,9 @@ type Generator struct {
 	Git   *GitGenerator
 }
 
-// GitGenerator mirrors the git generator. Files and Values are decoded only to
-// be rejected: both add parameters, so ignoring them would produce a diff that
-// does not match ArgoCD.
+// GitGenerator mirrors the git generator. A generator reads Directories or
+// Files, never both. PathParamPrefix and Template are decoded only to be
+// rejected: each changes the generated output without being reproduced here.
 type GitGenerator struct {
 	RepoURL         string            `yaml:"repoURL"`
 	Revision        string            `yaml:"revision"`
@@ -189,12 +191,10 @@ func validateGitGenerator(gitGen *GitGenerator) error {
 	switch {
 	case gitGen.RepoURL == "":
 		return fmt.Errorf("%w: git generator requires repoURL", ErrUnsupportedAppConfiguration)
-	case len(gitGen.Files) > 0:
-		return fmt.Errorf("%w: git generator field 'files' is not supported yet; only 'directories' is", ErrUnsupportedAppConfiguration)
-	case len(gitGen.Directories) == 0:
-		return fmt.Errorf("%w: git generator requires at least one 'directories' entry", ErrUnsupportedAppConfiguration)
-	case len(gitGen.Values) > 0:
-		return fmt.Errorf("%w: git generator field 'values' is not supported", ErrUnsupportedAppConfiguration)
+	case len(gitGen.Directories) == 0 && len(gitGen.Files) == 0:
+		return fmt.Errorf("%w: git generator requires a 'directories' or 'files' entry", ErrUnsupportedAppConfiguration)
+	case len(gitGen.Directories) > 0 && len(gitGen.Files) > 0:
+		return fmt.Errorf("%w: git generator declares both 'directories' and 'files'; each generator reads one or the other", ErrUnsupportedAppConfiguration)
 	case gitGen.PathParamPrefix != "":
 		return fmt.Errorf("%w: git generator field 'pathParamPrefix' is not supported; it would nest the path parameters", ErrUnsupportedAppConfiguration)
 	case !gitGen.Template.IsZero():
@@ -204,6 +204,20 @@ func validateGitGenerator(gitGen *GitGenerator) error {
 	for _, dir := range gitGen.Directories {
 		if dir.Path == "" {
 			return fmt.Errorf("%w: every git generator 'directories' entry requires a path", ErrUnsupportedAppConfiguration)
+		}
+		// A malformed pattern matches nothing, so without this the manifest
+		// would expand to fewer Applications with nothing reported.
+		if _, err := path.Match(dir.Path, "x"); err != nil {
+			return fmt.Errorf("%w: git generator 'directories' pattern %q is malformed: %w", ErrUnsupportedAppConfiguration, dir.Path, err)
+		}
+	}
+
+	for _, file := range gitGen.Files {
+		if file.Path == "" {
+			return fmt.Errorf("%w: every git generator 'files' entry requires a path", ErrUnsupportedAppConfiguration)
+		}
+		if !doublestar.ValidatePattern(file.Path) {
+			return fmt.Errorf("%w: git generator 'files' pattern %q is malformed", ErrUnsupportedAppConfiguration, file.Path)
 		}
 	}
 

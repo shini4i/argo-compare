@@ -9,6 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.41.11
 	github.com/aws/aws-sdk-go-v2/config v1.32.22
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.58.0
+	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/codingsince1985/checksum v1.3.0
 	github.com/fatih/color v1.19.0
 	github.com/go-git/go-billy/v5 v5.9.0

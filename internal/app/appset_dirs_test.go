@@ -152,10 +152,10 @@ spec:
 	assert.NoError(t, assertGitGeneratorsComparable(&models.ApplicationSet{}, "", "main"))
 }
 
-// TestTreeListerReadsCommittedDirectories proves the lister both legs share
+// TestGitTreeReadsCommittedDirectories proves the reader both legs share
 // reports exactly the directories Git records, and nothing from the working
 // tree that Git does not track.
-func TestTreeListerReadsCommittedDirectories(t *testing.T) {
+func TestGitTreeReadsCommittedDirectories(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skip integration test in short mode")
 	}
@@ -174,13 +174,13 @@ func TestTreeListerReadsCommittedDirectories(t *testing.T) {
 
 	headTree, err := repoInstance.HeadTree()
 	require.NoError(t, err)
-	headDirs, err := treeLister(headTree)()
+	headDirs, err := gitTree{tree: headTree}.Directories()
 	require.NoError(t, err)
 	assert.Equal(t, []string{"apps", "clusters", "clusters/dev", "clusters/prod", "clusters/prod/addons"}, headDirs)
 
 	baseTree, err := repoInstance.MergeBaseTreeFor("main")
 	require.NoError(t, err)
-	baseDirs, err := treeLister(baseTree)()
+	baseDirs, err := gitTree{tree: baseTree}.Directories()
 	require.NoError(t, err)
 	assert.Equal(t, []string{"apps", "clusters", "clusters/dev"}, baseDirs)
 
@@ -188,8 +188,43 @@ func TestTreeListerReadsCommittedDirectories(t *testing.T) {
 	require.NoError(t, os.MkdirAll("untracked/build", 0o755))
 	require.NoError(t, os.WriteFile("untracked/build/out.yaml", []byte("x: 1\n"), 0o644))
 
-	headDirs, err = treeLister(headTree)()
+	headDirs, err = gitTree{tree: headTree}.Directories()
 	require.NoError(t, err)
 	assert.NotContains(t, headDirs, "untracked")
 	assert.NotContains(t, headDirs, "untracked/build")
+}
+
+// TestGitTreeReadsCommittedFiles covers the file half of the reader, which the
+// file generator depends on: paths sorted and repo-relative, contents exact,
+// and a missing path named in the error.
+func TestGitTreeReadsCommittedFiles(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skip integration test in short mode")
+	}
+
+	manifest := applicationSetYAML([][2]string{{"dev", "1.0.0"}})
+	seedAppSetRepoState(t,
+		branchState{manifest: manifest},
+		branchState{manifest: manifest, files: map[string]string{
+			"clusters/dev/config.yaml": "cluster:\n  name: dev\n",
+		}})
+
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), portstest.NoopCmdRunner{}, utils.OsFileReader{}, logger.New("tree-files-test"))
+	require.NoError(t, err)
+
+	headTree, err := repoInstance.HeadTree()
+	require.NoError(t, err)
+	reader := gitTree{tree: headTree}
+
+	files, err := reader.Files()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"README.md", appSetPath, "clusters/dev/config.yaml"}, files)
+
+	content, err := reader.ReadFile("clusters/dev/config.yaml")
+	require.NoError(t, err)
+	assert.Equal(t, "cluster:\n  name: dev\n", string(content))
+
+	_, err = reader.ReadFile("clusters/missing.yaml")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "find clusters/missing.yaml in tree")
 }

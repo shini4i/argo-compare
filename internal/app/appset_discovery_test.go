@@ -197,3 +197,64 @@ func TestDiscoverApplicationSetsReportsUnparseableManifests(t *testing.T) {
 	assert.Contains(t, unusable[0], "apps/broken.yaml")
 	assert.Contains(t, unusable[0], "did not find expected key")
 }
+
+// discoverableFileAppSet reads parameters out of matched files, including one
+// at the repository root, so discovery must match on file patterns too.
+const discoverableFileAppSet = `apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: file-addons
+  namespace: argocd
+spec:
+  goTemplate: true
+  generators:
+    - git:
+        repoURL: https://example.com/repo.git
+        files:
+          - path: clusters/**/config.yaml
+          - path: config.yaml
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: demo
+        targetRevision: 1.0.0
+`
+
+// TestDiscoverApplicationSetsMatchesChangedFile is the file generator's half of
+// discovery: a config file changes and the manifest reading it is untouched.
+func TestDiscoverApplicationSetsMatchesChangedFile(t *testing.T) {
+	filesystem, root := seedDiscoveryTree(t)
+	require.NoError(t, afero.WriteFile(filesystem, root+"/apps/files.yaml", []byte(discoverableFileAppSet), 0o644))
+
+	tests := []struct {
+		name    string
+		changed []string
+		want    []string
+	}{
+		{name: "modified file", changed: []string{"clusters/dev/config.yaml"}, want: []string{"apps/addons.yaml", "apps/files.yaml"}},
+		// Patterns are tested directly, so a file that exists on neither disk
+		// nor the listing still matches — this is what makes an added or a
+		// deleted config file reach the generator.
+		{name: "added file", changed: []string{"clusters/new/config.yaml"}, want: []string{"apps/addons.yaml", "apps/files.yaml"}},
+		{name: "deleted file", changed: []string{"clusters/gone/config.yaml"}, want: []string{"apps/addons.yaml", "apps/files.yaml"}},
+		// A repository-root file touches no directory at all, so only the file
+		// half of the gate can find it.
+		{name: "repository root file", changed: []string{"config.yaml"}, want: []string{"apps/files.yaml"}},
+		{name: "a file the patterns do not cover", changed: []string{"docs/readme.yaml"}, want: nil},
+		{name: "nothing changed", changed: nil, want: nil},
+		{name: "empty path", changed: []string{""}, want: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matched, _, err := DiscoverApplicationSets(filesystem, utils.OsFileReader{}, root,
+				discoveryOrigin, "main", tt.changed)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, matched)
+		})
+	}
+}

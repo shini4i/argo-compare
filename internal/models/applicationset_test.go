@@ -283,14 +283,6 @@ func TestApplicationSetValidateRejectsUnsupportedGitFields(t *testing.T) {
 		wantErrMsg string
 	}{
 		{
-			name: "files",
-			generator: `
-        repoURL: https://example.com/repo.git
-        files:
-          - path: "clusters/**/config.json"`,
-			wantErrMsg: "'files' is not supported yet",
-		},
-		{
 			name: "pathParamPrefix",
 			generator: `
         repoURL: https://example.com/repo.git
@@ -300,16 +292,6 @@ func TestApplicationSetValidateRejectsUnsupportedGitFields(t *testing.T) {
 			wantErrMsg: "'pathParamPrefix' is not supported",
 		},
 		{
-			name: "values",
-			generator: `
-        repoURL: https://example.com/repo.git
-        directories:
-          - path: 'clusters/*'
-        values:
-          base_dir: "{{ .path.path }}"`,
-			wantErrMsg: "'values' is not supported",
-		},
-		{
 			name: "missing repoURL",
 			generator: `
         directories:
@@ -317,10 +299,28 @@ func TestApplicationSetValidateRejectsUnsupportedGitFields(t *testing.T) {
 			wantErrMsg: "requires repoURL",
 		},
 		{
-			name: "no directories",
+			name: "neither directories nor files",
 			generator: `
         repoURL: https://example.com/repo.git`,
-			wantErrMsg: "at least one 'directories' entry",
+			wantErrMsg: "requires a 'directories' or 'files' entry",
+		},
+		{
+			name: "both directories and files",
+			generator: `
+        repoURL: https://example.com/repo.git
+        directories:
+          - path: 'clusters/*'
+        files:
+          - path: 'clusters/**/config.yaml'`,
+			wantErrMsg: "each generator reads one or the other",
+		},
+		{
+			name: "file without a path",
+			generator: `
+        repoURL: https://example.com/repo.git
+        files:
+          - {}`,
+			wantErrMsg: "every git generator 'files' entry requires a path",
 		},
 		{
 			name: "directory without a path",
@@ -409,4 +409,91 @@ spec:
 
 	require.NoError(t, appSet.Validate())
 	assert.Equal(t, "v1.2.3", appSet.Spec.Generators[0].Git.Revision)
+}
+
+// TestApplicationSetRejectsMalformedGitPatterns keeps a broken pattern from
+// matching nothing in silence, which would compare fewer Applications than the
+// manifest asks for and report nothing about it.
+func TestApplicationSetRejectsMalformedGitPatterns(t *testing.T) {
+	tests := []struct {
+		name       string
+		generator  string
+		wantErrMsg string
+	}{
+		{
+			name: "malformed directories pattern",
+			generator: `
+        repoURL: https://example.com/repo.git
+        directories:
+          - path: 'clusters/['`,
+			wantErrMsg: `'directories' pattern "clusters/[" is malformed`,
+		},
+		{
+			name: "malformed exclude pattern",
+			generator: `
+        repoURL: https://example.com/repo.git
+        directories:
+          - path: 'clusters/*'
+          - path: 'clusters/a[b-'
+            exclude: true`,
+			wantErrMsg: `'directories' pattern "clusters/a[b-" is malformed`,
+		},
+		{
+			name: "malformed files pattern",
+			generator: `
+        repoURL: https://example.com/repo.git
+        files:
+          - path: 'clusters/['`,
+			wantErrMsg: `'files' pattern "clusters/[" is malformed`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			appSet := parseAppSet(t, `
+kind: ApplicationSet
+metadata:
+  name: cluster-addons
+spec:
+  goTemplate: true
+  generators:
+    - git:`+tt.generator+`
+  template:
+    metadata:
+      name: '{{ .path.basename }}'
+`)
+
+			err := appSet.Validate()
+			assert.ErrorIs(t, err, ErrUnsupportedAppConfiguration)
+			assert.Contains(t, err.Error(), tt.wantErrMsg)
+		})
+	}
+}
+
+// TestApplicationSetAcceptsRecursiveFilePatterns keeps the validator from
+// rejecting `**`, which is exactly what a files pattern is written with.
+func TestApplicationSetAcceptsRecursiveFilePatterns(t *testing.T) {
+	appSet := parseAppSet(t, `
+kind: ApplicationSet
+metadata:
+  name: cluster-addons
+spec:
+  goTemplate: true
+  generators:
+    - git:
+        repoURL: https://example.com/repo.git
+        files:
+          - path: 'clusters/**/config.yaml'
+          - path: '**'
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: demo
+        targetRevision: 1.0.0
+`)
+
+	assert.NoError(t, appSet.Validate())
 }

@@ -43,7 +43,7 @@ func (a *App) processChangedApplicationSet(ctx context.Context, repo *GitRepo, f
 		return false, err
 	}
 
-	srcApps, err := appset.Expand(srcSet, treeLister(headTree))
+	srcApps, err := appset.Expand(srcSet, gitTree{tree: headTree})
 	if err != nil {
 		return false, fmt.Errorf("expand ApplicationSet %q: %w", file, err)
 	}
@@ -105,7 +105,7 @@ func (a *App) targetApplicationSet(repo *GitRepo, file string) ([]models.Applica
 		return nil, err
 	}
 
-	apps, err := appset.Expand(appSet, treeLister(tree))
+	apps, err := appset.Expand(appSet, gitTree{tree: tree})
 	if err != nil {
 		return nil, fmt.Errorf("expand ApplicationSet %q from branch %q: %w", file, a.cfg.TargetBranch, err)
 	}
