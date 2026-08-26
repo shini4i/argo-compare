@@ -5,6 +5,9 @@ repos:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-yaml
+        # Helm templates are not YAML until rendered: a `{{ ... }}` action where
+        # a key belongs parses as an unhashable mapping key.
+        exclude: '/charts/[^/]+/templates/'
       - id: check-added-large-files
       - id: no-commit-to-branch
         args:

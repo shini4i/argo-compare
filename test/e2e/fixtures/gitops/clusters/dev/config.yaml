@@ -1,0 +1,2 @@
+cluster: dev
+replicas: 1

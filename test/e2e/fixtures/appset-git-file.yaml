@@ -1,0 +1,35 @@
+# Git file generator: one Application per matching file, with that file's own
+# contents as parameters. Both the file discovery and the parameter merge have to
+# agree with the real controller, which is what makes this the strictest of the
+# three generators to hold parity on.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: e2e-git-file
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: REPO_URL
+        revision: main
+        files:
+          - path: "clusters/**/config.yaml"
+  template:
+    metadata:
+      name: 'file-{{ .cluster }}'
+      namespace: argocd
+    spec:
+      project: default
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .cluster }}'
+      source:
+        repoURL: REPO_URL
+        path: charts/demo
+        targetRevision: main
+        helm:
+          releaseName: 'file-{{ .cluster }}'
+          values: |
+            replicaCount: {{ .replicas }}

@@ -1,0 +1,15 @@
+# Single-node kind cluster for the argo-compare e2e lab. Gitea gets a fixed host
+# port because argo-compare runs on the host, so it needs a clone URL that
+# outlives any pod; kind requires containerPort to equal the Service's nodePort,
+# so this file and values/gitea.yaml must agree. See README.md.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # Gitea HTTP: git clone, plus the admin API the seed script drives.
+      - containerPort: 30300
+        hostPort: 30300
+        # Loopback keeps Gitea's throwaway admin credentials off the network.
+        listenAddress: "127.0.0.1"
+        protocol: TCP

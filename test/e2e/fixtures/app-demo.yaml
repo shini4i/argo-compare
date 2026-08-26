@@ -1,0 +1,21 @@
+# A plain path-based Application: the standard flow's fixture. The feature branch
+# changes its inline values, so argo-compare renders the chart with real helm on
+# both branches and the diff is the assertion.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo
+  source:
+    repoURL: REPO_URL
+    path: charts/demo
+    targetRevision: main
+    helm:
+      releaseName: demo
+      values: |
+        replicaCount: 1

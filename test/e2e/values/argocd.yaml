@@ -1,0 +1,12 @@
+# ArgoCD values for the argo-compare e2e lab. The ApplicationSet controller is
+# the point of this install: it is the oracle the parity phase compares
+# argo-compare's own expansion against. The repo-server and redis stay enabled
+# because a git generator cannot resolve without them.
+dex:
+  enabled: false
+notifications:
+  enabled: false
+server:
+  # Nothing in the lab talks to the ArgoCD API, so no ingress or host port.
+  service:
+    type: ClusterIP

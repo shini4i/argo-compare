@@ -1,0 +1,71 @@
+name: E2E lab
+
+# Per-release gate, launched from a PR: add the `e2e` label and this boots a
+# disposable kind cluster with real ArgoCD + Gitea and runs the phase suite
+# against the PR's branch. Re-run by removing and re-adding the label.
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: e2e (kind + real ArgoCD/Gitea)
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'e2e'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      # go, bats, shellcheck and jq come from the devshell, the same versions a
+      # local run gets. Only the cluster tools are fetched separately.
+      - uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
+
+      - name: Install kind, kubectl, helm
+        env:
+          KIND_VERSION: v0.31.0
+          KUBECTL_VERSION: v1.36.3
+          HELM_VERSION: v3.20.2
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$tmp/kind" \
+            "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$tmp/kubectl" \
+            "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          curl --proto '=https' --tlsv1.2 -fsSL \
+            "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" \
+            | tar -xz -C "$tmp" --strip-components=1 linux-amd64/helm
+          sudo install -m 0755 "$tmp"/kind "$tmp"/kubectl "$tmp"/helm /usr/local/bin/
+
+      # kind uses the runner's docker provider here; the lab loads no images, so
+      # nothing depends on which provider it is.
+      - name: Run the e2e lab
+        run: nix develop -c task -d test/e2e e2e
+
+      - name: Upload phase report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-phase-report
+          path: test/e2e/reports/
+          if-no-files-found: warn
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          echo "::group::pods"; kubectl get pods -A || true; echo "::endgroup::"
+          echo "::group::applicationsets"
+          kubectl -n argocd get applicationsets -o yaml || true
+          echo "::endgroup::"
+          echo "::group::applications"
+          kubectl -n argocd get applications -o wide || true
+          echo "::endgroup::"
+          echo "::group::applicationset-controller"
+          kubectl -n argocd logs deploy/argocd-applicationset-controller --tail=200 || true
+          echo "::endgroup::"
