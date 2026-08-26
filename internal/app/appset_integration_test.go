@@ -16,6 +16,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
+	"github.com/shini4i/argo-compare/internal/comment"
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/shini4i/argo-compare/internal/ports/portstest"
@@ -183,6 +184,14 @@ type appSetRunner struct {
 func newAppSetRunner(t *testing.T, cfg Config, validator *stubValidator) *appSetRunner {
 	t.Helper()
 
+	return newAppSetRunnerWith(t, cfg, validator, nil)
+}
+
+// newAppSetRunnerWith is newAppSetRunner with an optional comment poster. Both
+// share one wiring so a dependency added here reaches every caller.
+func newAppSetRunnerWith(t *testing.T, cfg Config, validator *stubValidator, poster comment.Poster) *appSetRunner {
+	t.Helper()
+
 	tempDir := t.TempDir()
 	cfg.TargetBranch = "main"
 	cfg.CacheDir = filepath.Join(tempDir, "cache")
@@ -204,6 +213,9 @@ func newAppSetRunner(t *testing.T, cfg Config, validator *stubValidator) *appSet
 	}
 	if validator != nil {
 		deps.ManifestValidator = validator
+	}
+	if poster != nil {
+		deps.CommentPosterFactory = func(Config) (comment.Poster, error) { return poster, nil }
 	}
 
 	appInstance, err := New(cfg, deps)

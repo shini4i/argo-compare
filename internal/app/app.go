@@ -66,6 +66,8 @@ type App struct {
 	sensitiveDataMasker ports.SensitiveDataMasker // Applied to manifest content prior to diff generation.
 	validator           ports.ManifestValidator   // Optional validator for rendered manifests.
 	fetcher             ports.ApplicationFetcher  // Resolves anchored Applications. Optional; defaults to a real impl.
+	commentPoster       comment.Poster            // Built on first use and kept; nil until a comparison needs it.
+	commentSections     []commentSection          // One per comparison, published together at the end of the run.
 }
 
 // CommentPosterFactory builds a comment poster based on the active configuration.
@@ -184,9 +186,19 @@ func (a *App) Run(ctx context.Context) error {
 		return nil
 	}
 
-	validationFailed, err := a.runComparisons(ctx, repo, inputs.changed, inputs.groups)
-	if err != nil {
-		return err
+	validationFailed, compareErr := a.runComparisons(ctx, repo, inputs.changed, inputs.groups)
+
+	// Publish even when a later comparison failed: what was already compared is
+	// still what the reviewer needs. A cancelled context is the exception — the
+	// poster honours it, so an interrupted run publishes nothing.
+	if flushErr := a.flushComments(ctx); flushErr != nil {
+		a.logger.Errorf("Failed to publish the comparison comment: %s", flushErr)
+		// Both are reported: a caller that only sees the comparison error cannot
+		// tell the merge request went unpublished.
+		return errors.Join(compareErr, flushErr)
+	}
+	if compareErr != nil {
+		return compareErr
 	}
 
 	if err := a.reportInvalidFiles(inputs.invalid); err != nil {
@@ -621,24 +633,67 @@ func (a *App) selectDiffStrategies(applicationFile string) ([]DiffPresenter, err
 	}
 
 	if a.cfg.Comment != nil && a.cfg.Comment.Provider != CommentProviderNone {
-		poster, err := a.commentFactory(a.cfg)
-		if err != nil {
+		if _, err := a.commentPosterForRun(); err != nil {
 			return nil, err
 		}
-		if poster == nil {
-			return nil, fmt.Errorf("comment poster factory returned nil for provider %q", a.cfg.Comment.Provider)
-		}
 
-		strategies = append(strategies, CommentStrategy{
-			Log:             a.logger,
-			Poster:          poster,
-			ShowAdded:       a.cfg.PrintAddedManifests,
-			ShowRemoved:     a.cfg.PrintRemovedManifests,
-			ApplicationPath: applicationFile,
-		})
+		strategies = append(strategies, commentCollector{app: a, label: applicationFile})
 	}
 
 	return strategies, nil
+}
+
+// commentCollector defers one comparison's result to the run's single comment,
+// so an ApplicationSet generating many Applications does not post a note each.
+type commentCollector struct {
+	app   *App
+	label string
+}
+
+// Present adds the comparison to the run's batch rather than publishing it;
+// flushComments publishes the batch once every comparison has finished.
+func (c commentCollector) Present(_ context.Context, result ComparisonResult) error {
+	c.app.commentSections = append(c.app.commentSections, commentSection{label: c.label, result: result})
+	return nil
+}
+
+// commentPosterForRun builds the poster on first use and reuses it, so one
+// client serves every comparison in the run.
+func (a *App) commentPosterForRun() (comment.Poster, error) {
+	if a.commentPoster != nil {
+		return a.commentPoster, nil
+	}
+
+	poster, err := a.commentFactory(a.cfg)
+	if err != nil {
+		return nil, err
+	}
+	if poster == nil {
+		return nil, fmt.Errorf("comment poster factory returned nil for provider %q", a.cfg.Comment.Provider)
+	}
+
+	a.commentPoster = poster
+
+	return poster, nil
+}
+
+// flushComments publishes every comparison collected during the run as one
+// comment, splitting only when the note limit demands it. The batch is cleared
+// as it is taken, so a second run publishes only its own comparisons.
+func (a *App) flushComments(ctx context.Context) error {
+	if len(a.commentSections) == 0 || a.commentPoster == nil {
+		return nil
+	}
+
+	sections := a.commentSections
+	a.commentSections = nil
+
+	return CommentStrategy{
+		Log:         a.logger,
+		Poster:      a.commentPoster,
+		ShowAdded:   a.cfg.PrintAddedManifests,
+		ShowRemoved: a.cfg.PrintRemovedManifests,
+	}.PresentSections(ctx, sections)
 }
 
 // collectRepoCredentials loads repository credentials from environment variables.

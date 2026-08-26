@@ -15,10 +15,20 @@ import (
 type stubPoster struct {
 	bodies []string
 	err    error
+	// failOnCall, when positive, fails only that 1-based Post call, so a test can
+	// fail one part of a multi-part note and see the rest abandoned.
+	failOnCall int
 }
 
 func (s *stubPoster) Post(_ context.Context, body string) error {
 	s.bodies = append(s.bodies, body)
+	if s.failOnCall > 0 {
+		if len(s.bodies) == s.failOnCall {
+			return s.err
+		}
+		return nil
+	}
+
 	return s.err
 }
 

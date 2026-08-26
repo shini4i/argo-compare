@@ -31,3 +31,18 @@ When running inside GitLab CI, most settings are detected automatically:
 - `--gitlab-project-id` falls back to `CI_PROJECT_ID`.
 - `--gitlab-merge-request-iid` falls back to `CI_MERGE_REQUEST_IID`.
 - `--gitlab-token` falls back to `CI_JOB_TOKEN` if no explicit token is provided (ensure the token has the necessary scope to post notes).
+
+## One note per run
+
+A run publishes a single note covering every Application it compared, with a
+section each. An ApplicationSet generating thirty Applications therefore posts
+one note, not thirty. Applications with no differences are still listed, so the
+note accounts for everything that was compared.
+
+The note is split only when it would exceed GitLab's 1 MB limit. Each part is
+numbered, and a part that begins partway through an Application repeats its
+name, so no diff is ever shown without saying which Application it belongs to.
+
+An Application whose validation output alone would fill a note has that summary
+truncated, with a pointer to the job log for the rest — a note over the limit is
+rejected outright, which would cost every other Application its results too.
