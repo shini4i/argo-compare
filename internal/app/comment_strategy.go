@@ -227,9 +227,7 @@ func sectionChunks(section commentSection, showAdded, showRemoved bool, maxChunk
 	}
 
 	diffs, notices := collectDiffChunks(section.result, showAdded, showRemoved, available)
-	if len(notices) > 0 {
-		diffs = append(diffs, buildCRDNotes(notices))
-	}
+	diffs = append(diffs, buildCRDNotes(notices, available)...)
 
 	chunks := make([]commentChunk, 0, len(diffs))
 	for idx, diff := range diffs {
@@ -247,19 +245,34 @@ func sectionChunks(section commentSection, showAdded, showRemoved bool, maxChunk
 	return chunks
 }
 
-// buildCRDNotes gathers the notices for diffs omitted from a section.
-func buildCRDNotes(notices []string) string {
-	var builder strings.Builder
-	builder.WriteString("**CRD Notes**\n")
-	for _, notice := range notices {
-		builder.WriteString(notice)
-		if !strings.HasSuffix(notice, "\n") {
-			builder.WriteString("\n")
-		}
-	}
-	builder.WriteString("\n")
+// buildCRDNotes packs the notices for omitted diffs into chunks that fit a
+// comment. One Application can omit arbitrarily many CRDs, and a chunk is never
+// split further, so gathering them all into one would produce a comment GitLab
+// rejects — discarding every Application queued behind it.
+func buildCRDNotes(notices []string, limit int) []string {
+	const heading = "**CRD Notes**\n"
 
-	return builder.String()
+	var (
+		chunks  []string
+		builder strings.Builder
+	)
+	builder.WriteString(heading)
+
+	for _, notice := range notices {
+		line := ensureTrailingNewline(notice)
+		if builder.Len()+len(line) > limit && builder.Len() > len(heading) {
+			chunks = append(chunks, builder.String()+"\n")
+			builder.Reset()
+			builder.WriteString(heading)
+		}
+		builder.WriteString(line)
+	}
+
+	if builder.Len() > len(heading) {
+		chunks = append(chunks, builder.String()+"\n")
+	}
+
+	return chunks
 }
 
 // escapeInlineMarkdown sanitizes a string for safe interpolation into Markdown.

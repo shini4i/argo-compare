@@ -58,9 +58,10 @@ func TestAppRunPublishesWhatItComparedBeforeAFailure(t *testing.T) {
 	assert.NotContains(t, body, "**Application:** `"+generatedLabel(appSetPath, "gamma-guestbook")+"`")
 }
 
-// TestAppRunPrefersTheComparisonErrorOverTheCommentError proves the root cause
-// wins when both fail, with the publishing failure still surfaced in the log.
-func TestAppRunPrefersTheComparisonErrorOverTheCommentError(t *testing.T) {
+// TestAppRunReportsBothTheComparisonAndCommentErrors proves neither failure is
+// swallowed: a caller seeing only the comparison error could not tell the merge
+// request went unpublished.
+func TestAppRunReportsBothTheComparisonAndCommentErrors(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skip integration test in short mode")
 	}
@@ -76,8 +77,8 @@ func TestAppRunPrefersTheComparisonErrorOverTheCommentError(t *testing.T) {
 
 	err := runner.app.Run(context.Background())
 
-	require.ErrorIs(t, err, assert.AnError, "the comparison error is the root cause")
-	assert.NotErrorIs(t, err, postErr)
+	require.ErrorIs(t, err, assert.AnError, "the comparison failure is reported")
+	require.ErrorIs(t, err, postErr, "the publishing failure is reported too")
 	assert.Contains(t, runner.log.String(), "Failed to publish the comparison comment")
 }
 

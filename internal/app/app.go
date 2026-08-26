@@ -192,10 +192,10 @@ func (a *App) Run(ctx context.Context) error {
 	// still what the reviewer needs. A cancelled context is the exception — the
 	// poster honours it, so an interrupted run publishes nothing.
 	if flushErr := a.flushComments(ctx); flushErr != nil {
-		if compareErr == nil {
-			return flushErr
-		}
 		a.logger.Errorf("Failed to publish the comparison comment: %s", flushErr)
+		// Both are reported: a caller that only sees the comparison error cannot
+		// tell the merge request went unpublished.
+		return errors.Join(compareErr, flushErr)
 	}
 	if compareErr != nil {
 		return compareErr
