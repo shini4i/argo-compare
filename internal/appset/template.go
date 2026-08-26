@@ -17,13 +17,13 @@ import (
 // maxDNSNameLength is the length normalize truncates to, per RFC 1123 subdomain.
 const maxDNSNameLength = 253
 
-// maxRenderedBytes caps one rendered Application manifest. Real Applications are
-// a few kilobytes; the cap stops a runaway template from growing the document
-// that every later stage — YAML decode, diff, merge request comment — carries.
+// maxRenderedBytes caps one rendered field. Real Application fields are far
+// smaller; the cap stops a runaway template from growing the value that every
+// later stage — the diff, a merge request comment — carries.
 const maxRenderedBytes = 1 << 20
 
-// errRenderTooLarge reports a rendered Application over maxRenderedBytes.
-var errRenderTooLarge = errors.New("rendered Application exceeds the 1 MiB limit")
+// errRenderTooLarge reports a rendered field over maxRenderedBytes.
+var errRenderTooLarge = errors.New("rendered field exceeds the 1 MiB limit")
 
 // limitedBuffer collects rendered output and fails once it passes limit.
 type limitedBuffer struct {
@@ -66,6 +66,10 @@ func buildTemplateFuncs() template.FuncMap {
 	delete(funcs, "getHostByName")
 
 	funcs["normalize"] = normalize
+	funcs["slugify"] = slugify
+	funcs["toYaml"] = toYAML
+	funcs["fromYaml"] = fromYAML
+	funcs["fromYamlArray"] = fromYAMLArray
 
 	return funcs
 }

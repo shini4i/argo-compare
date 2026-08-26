@@ -87,16 +87,30 @@ incorrectly.
 
 ## Template functions
 
-The [Sprig](https://masterminds.github.io/sprig/) library is available, plus
-`normalize` for turning a value into a valid DNS name.
+The [Sprig](https://masterminds.github.io/sprig/) library is available, plus the
+five ArgoCD adds:
+
+| Function | Does |
+|---|---|
+| `normalize` | turns a value into a valid DNS name |
+| `slugify` | sanitizes and truncates — `slugify`, `slugify 23`, `slugify 50 false`, name last |
+| `toYaml` | renders a value as YAML, without a trailing newline |
+| `fromYaml` | parses a YAML or JSON mapping |
+| `fromYamlArray` | parses a YAML or JSON sequence |
 
 `env`, `expandenv` and `getHostByName` are deliberately absent, as they are in
 ArgoCD. Rendering runs in CI next to repository credentials, and the diff may
 be posted as a merge request comment — a template able to read the environment
 would turn a pull request into a way to read those secrets.
 
-ArgoCD's `slugify`, `toYaml`, `fromYaml` and `fromYamlArray` are not
-implemented yet; a template using one fails with `function "…" not defined`.
+`tpl`, which renders a string as a template of its own, is not implemented; a
+template using it fails with `function "tpl" not defined`.
+
+`spec.template` is decoded first and each field rendered afterwards, the same
+way ArgoCD does it. A rendered value is therefore only ever a value: quotes,
+newlines and indentation inside it cannot change how the manifest parses, so
+`{{ toYaml .values }}` needs no `nindent` ceremony, and `nindent` means the
+column you wrote rather than one derived from anything internal.
 
 ## Added and removed Applications
 
@@ -144,10 +158,10 @@ Application only.
 
 ## Limits
 
-A rendered Application is capped at 1 MiB. Real Applications are a few
-kilobytes, so hitting the cap means a template is producing something
-unintended, and expansion fails with a clear error rather than carrying the
-oversized document into the diff.
+Each rendered field is capped at 1 MiB. Real Application fields are far
+smaller, so hitting the cap means a template is producing something unintended,
+and expansion fails with a clear error rather than carrying the oversized value
+into the diff.
 
 ## Application identity
 
