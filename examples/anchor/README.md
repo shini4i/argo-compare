@@ -48,3 +48,7 @@ chart content), argo-compare walks up to the nearest
 in-memory clone for cross-repo), and renders the chart twice — once
 against the working tree (post-PR state) and once against the
 merge-base (pre-PR state) — before producing the diff.
+
+`path` may also name an ApplicationSet, in which case each Application it
+generates is compared in turn. See
+[Anchoring an ApplicationSet](../../docs/anchored-repositories.md#anchoring-an-applicationset).

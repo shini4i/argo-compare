@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `.argo-compare.yml` anchor may point at an ApplicationSet, not only an Application. Each Application it generates is compared in turn, added and removed ones included. Only the generated Applications rendering a chart from this repository are compared; a registry chart or a source in another repository is skipped with the reason named. This is the only way to reach an ApplicationSet stored in a different repository, which the repository scan cannot see. See [Anchored repositories](docs/anchored-repositories.md).
 - The ApplicationSet template functions ArgoCD adds on top of Sprig: `slugify`, `toYaml`, `fromYaml` and `fromYamlArray`, alongside the existing `normalize`. A manifest using one no longer fails with `function "…" not defined`.
 - ApplicationSet templates are now rendered field by field, the way ArgoCD does it, instead of over the manifest as a whole. A rendered value can therefore contain quotes, newlines or indentation without altering how the Application parses; `toYaml` needs no `nindent` ceremony, and `nindent` means the column you wrote.
 - ApplicationSet git **file** generator. One Application per file matching the generator's patterns, with the file's own contents as parameters, plus `.path.filename` and `.path.filenameNormalized`. A file holding a list generates one Application per element, and JSON files work as well as YAML. File patterns match with `doublestar`, so `**` recurses — unlike a `directories` pattern. Editing a config file is detected on its own, without the manifest changing.
@@ -20,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Manifests skipped for an unsupported configuration now log why they were skipped, instead of only naming the file.
 - Cross-repo anchored Applications now fail with a clear, actionable error when the pull request restructures a chart's values files (for example splitting one `values.yaml` into several) but the Application — read from the anchored repo's branch tip — still references the old layout. Previously this surfaced as an opaque `helm template` "no such file" error. See `docs/anchored-repositories.md` for the workaround.
+
+### Fixed
+
+- Several chart directories anchored to the same Application are now compared once rather than once per anchor, which previously repeated the whole diff and posted a duplicate merge request comment for it.
 
 ## [0.9.2] - 2026-07-08
 

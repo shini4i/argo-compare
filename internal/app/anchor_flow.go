@@ -9,10 +9,12 @@ import (
 	"strings"
 
 	"github.com/shini4i/argo-compare/internal/anchor"
+	"github.com/shini4i/argo-compare/internal/appset"
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/shini4i/argo-compare/internal/ui"
 
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/spf13/afero"
 )
 
@@ -74,16 +76,195 @@ func (a *App) compareAnchorGroups(ctx context.Context, repo *GitRepo, groups []A
 	return anyFailed, nil
 }
 
-// processAnchorGroup renders, diffs, and validates the Application that the
-// anchor points to. tmpDir is created fresh per group and cleaned up at end.
-func (a *App) processAnchorGroup(ctx context.Context, repo *GitRepo, group AnchorGroup, fetcher ports.ApplicationFetcher, repoRoot, originURL string) (validationFailed bool, err error) {
+// processAnchorGroup compares whatever the anchor points at: a single
+// Application, or every Application an ApplicationSet generates.
+func (a *App) processAnchorGroup(ctx context.Context, repo *GitRepo, group AnchorGroup, fetcher ports.ApplicationFetcher, repoRoot, originURL string) (bool, error) {
 	a.logger.Infof("===> Processing anchored chart in [%s]", ui.Cyan(group.Dir))
 
-	app, err := fetcher.Fetch(ctx, group.Anchor.Application, repoRoot)
+	manifest, err := fetcher.Fetch(ctx, group.Anchor.Application, repoRoot)
 	if err != nil {
 		return false, err
 	}
 
+	if manifest.ApplicationSet != nil {
+		return a.processAnchoredApplicationSet(ctx, repo, group, manifest.ApplicationSet, originURL)
+	}
+	if manifest.Application == nil {
+		return false, fmt.Errorf("fetcher resolved %s to no manifest", anchorRefDisplay(group.Anchor.Application))
+	}
+
+	return a.processAnchoredApplication(ctx, repo, group, *manifest.Application, repoRoot, originURL)
+}
+
+// processAnchoredApplicationSet compares every Application an anchored
+// ApplicationSet generates. The manifest is read once — an anchor exists
+// because the chart changed, not the manifest — while each leg expands it
+// against its own tree, so a directory the change adds or drops is reported.
+func (a *App) processAnchoredApplicationSet(ctx context.Context, repo *GitRepo, group AnchorGroup, appSet *models.ApplicationSet, originURL string) (bool, error) {
+	ref := group.Anchor.Application
+
+	// Expansion reads the two local branch legs, so a generator naming another
+	// repository has no tree here to expand against. Unlike a manifest found by
+	// scanning the diff, an anchor is an explicit pointer: skipping it silently
+	// would leave the change it names uncompared with nothing said.
+	if err := assertGitGeneratorsComparable(appSet, originURL, a.cfg.TargetBranch); err != nil {
+		return false, fmt.Errorf("anchored ApplicationSet %s: %w", anchorRefDisplay(ref), err)
+	}
+
+	headTree, err := repo.HeadTree()
+	if err != nil {
+		return false, err
+	}
+	srcApps, err := expandAnchoredApplicationSet(appSet, headTree, ref, TargetTypeSource)
+	if err != nil {
+		return false, err
+	}
+
+	baseTree, err := repo.MergeBaseTreeFor(a.cfg.TargetBranch)
+	if err != nil {
+		return false, err
+	}
+	dstApps, err := expandAnchoredApplicationSet(appSet, baseTree, ref, TargetTypeDestination)
+	if err != nil {
+		return false, err
+	}
+
+	pairs := pairGeneratedApplications(srcApps, dstApps)
+	inScope, err := a.anchoredPairsInScope(ref, pairs, originURL)
+	if err != nil {
+		return false, err
+	}
+
+	a.logger.Infof("Anchored ApplicationSet %s generates %d Application(s) on this branch and %d on %s; comparing %d",
+		ui.Cyan(anchorRefDisplay(ref)), len(srcApps), len(dstApps), a.cfg.TargetBranch, len(inScope))
+
+	anyFailed := false
+	for _, pair := range inScope {
+		failed, err := a.compareGeneratedApplication(ctx, repo, ref.Path, pair)
+		if err != nil {
+			return anyFailed, err
+		}
+		if failed {
+			anyFailed = true
+		}
+	}
+
+	return anyFailed, nil
+}
+
+// anchoredPairsInScope keeps the generated Applications that read chart content
+// from this repository — the only ones an anchor can be reporting on. It fails
+// when none qualify, because an anchor names a change that must not go
+// uncompared with nothing said.
+func (a *App) anchoredPairsInScope(ref anchor.ApplicationRef, pairs []generatedPair, originURL string) ([]generatedPair, error) {
+	// Every path-based render reads the local repo, so without an origin to
+	// compare against there is no way to tell which Applications belong to it.
+	if originURL == "" {
+		return nil, fmt.Errorf("anchored ApplicationSet %s: local repo has no origin remote configured", anchorRefDisplay(ref))
+	}
+
+	inScope := make([]generatedPair, 0, len(pairs))
+	for _, pair := range pairs {
+		scoped, keep, err := a.scopeAnchoredPair(pair, originURL)
+		if err != nil {
+			return nil, fmt.Errorf("anchored ApplicationSet %s: %w", anchorRefDisplay(ref), err)
+		}
+		if keep {
+			inScope = append(inScope, scoped)
+		}
+	}
+
+	if len(inScope) == 0 {
+		return nil, fmt.Errorf("anchored ApplicationSet %s generates no Application rendering a chart from this repository, so the change under the anchor is not covered by any comparison",
+			anchorRefDisplay(ref))
+	}
+
+	return inScope, nil
+}
+
+// scopeAnchoredPair drops the comparison legs an anchor cannot report on,
+// judging each independently so an Application moving into or out of this
+// repository is still compared on the side that reads it. keep is false when
+// neither leg qualifies.
+func (a *App) scopeAnchoredPair(pair generatedPair, originURL string) (generatedPair, bool, error) {
+	srcReason, err := anchoredLegSkipReason(pair.src, originURL)
+	if err != nil {
+		return pair, false, err
+	}
+	dstReason, err := anchoredLegSkipReason(pair.dst, originURL)
+	if err != nil {
+		return pair, false, err
+	}
+
+	if srcReason != "" {
+		pair.src = nil
+	}
+	if dstReason != "" {
+		pair.dst = nil
+	}
+
+	reason := firstNonEmpty(srcReason, dstReason)
+	if pair.src == nil && pair.dst == nil {
+		a.logger.Infof("Skipping generated Application [%s]: %s", ui.Cyan(pair.name), reason)
+		return pair, false, nil
+	}
+	if reason != "" {
+		a.logger.Infof("Comparing generated Application [%s] on one branch only: %s", ui.Cyan(pair.name), reason)
+	}
+
+	return pair, true, nil
+}
+
+// anchoredLegSkipReason names why one comparison leg is outside an anchor's
+// reach, or "" when it is comparable — a leg with no Application included. A
+// registry chart cannot be affected by a change to this repository, and a
+// path-based source belonging to another repository would render from the wrong tree.
+func anchoredLegSkipReason(app *models.Application, originURL string) (string, error) {
+	if app == nil {
+		return "", nil
+	}
+
+	target := Target{App: *app}
+	if err := target.ClassifySources(); err != nil {
+		return "", err
+	}
+	if !target.PathBased() {
+		return "its source is a registry chart, which a change to this repository cannot affect", nil
+	}
+	for _, source := range target.pathSources() {
+		if source == nil || repoIdentityMatches(source.RepoURL, originURL) {
+			continue
+		}
+		return fmt.Sprintf("its source repository %q is not this one, so this repository's tree cannot render it",
+			redactRepo(source.RepoURL)), nil
+	}
+
+	return "", nil
+}
+
+// firstNonEmpty returns the first non-empty string, or "" when both are empty.
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+
+	return b
+}
+
+// expandAnchoredApplicationSet expands appSet against one comparison leg's
+// tree, naming the leg if expansion fails.
+func expandAnchoredApplicationSet(appSet *models.ApplicationSet, tree *object.Tree, ref anchor.ApplicationRef, leg string) ([]models.Application, error) {
+	apps, err := appset.Expand(appSet, gitTree{tree: tree})
+	if err != nil {
+		return nil, fmt.Errorf("expand anchored ApplicationSet %s for %s leg: %w", anchorRefDisplay(ref), leg, err)
+	}
+
+	return apps, nil
+}
+
+// processAnchoredApplication renders, diffs, and validates the Application that
+// the anchor points to. tmpDir is created fresh per group and cleaned up at end.
+func (a *App) processAnchoredApplication(ctx context.Context, repo *GitRepo, group AnchorGroup, app models.Application, repoRoot, originURL string) (validationFailed bool, err error) {
 	classifyTarget := Target{App: app}
 	if classifyErr := classifyTarget.ClassifySources(); classifyErr != nil {
 		return false, classifyErr
@@ -295,10 +476,7 @@ func (a *App) applicationFetcher() ports.ApplicationFetcher {
 		return a.fetcher
 	}
 	return &RealApplicationFetcher{
-		FS:          a.fs,
 		FileReader:  a.fileReader,
-		CmdRunner:   a.cmdRunner,
-		Log:         a.logger,
 		GitUsername: a.cfg.GitUsername,
 		GitToken:    a.cfg.GitToken,
 	}

@@ -116,6 +116,10 @@ output**, and that leaves the ApplicationSet manifest untouched. So
 generators and compares any whose patterns cover a directory or file your
 change touched.
 
+That scan covers only this repository. To reach an ApplicationSet that lives in
+another one, point a `.argo-compare.yml` at it — see
+[Anchoring an ApplicationSet](anchored-repositories.md#anchoring-an-applicationset).
+
 ### repoURL must be this repository
 
 A generator reading another repository is skipped with a warning. Both sides of

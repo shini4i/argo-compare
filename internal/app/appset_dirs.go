@@ -21,7 +21,7 @@ func assertGitGeneratorsComparable(appSet *models.ApplicationSet, originURL, tar
 
 		if !repoIdentityMatches(generator.Git.RepoURL, originURL) {
 			return fmt.Errorf("%w: git generator repoURL %q is not this repository (%q); only same-repository generators are supported",
-				models.ErrUnsupportedAppConfiguration, generator.Git.RepoURL, originURL)
+				models.ErrUnsupportedAppConfiguration, redactRepo(generator.Git.RepoURL), redactRepo(originURL))
 		}
 
 		// A pinned revision keeps ArgoCD generating from a fixed tree, so a

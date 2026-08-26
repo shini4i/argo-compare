@@ -1,6 +1,6 @@
 # Anchored repositories (path-based sources)
 
-The default flow assumes the modified file in a PR _is_ the Application YAML. Some repositories split things up: the ArgoCD Application points at a chart directory inside the same repo (`spec.source.path`), or lives in a different repo that consumes a chart from this one. In both cases a PR typically touches chart values rather than the Application itself, so there is no `kind: Application` in the diff and the default flow finds nothing to compare.
+The default flow assumes the modified file in a PR _is_ the Application YAML. Some repositories split things up: the ArgoCD Application points at a chart directory inside the same repo (`spec.source.path`), or lives in a different repo that consumes a chart from this one. In both cases a PR typically touches chart values rather than the Application itself, so there is no `kind: Application` in the diff and the default flow finds nothing to compare. The same is true when an ApplicationSet stands in for the Application.
 
 To bridge that gap, drop a `.argo-compare.yml` file into any directory that holds chart content. Argo Compare walks up from each changed file (excluding the anchor file itself), picks the nearest enclosing anchor, and uses it to find the Application affected by the change:
 
@@ -10,7 +10,7 @@ application:
   # Optional. Omit when the Application lives in this same repo.
   # Prefer https:// so the same anchor works in CI (PAT auth — see below).
   repo: https://example.com/group/apps.git
-  # Required. Path to the Application YAML inside that repo.
+  # Required. Path to the Application or ApplicationSet YAML inside that repo.
   path: cluster-state/myapp/myapp.yaml
   # Optional. Defaults to the remote's default branch.
   branch: main
@@ -22,10 +22,26 @@ Changes that only touch `.argo-compare.yml` — adding the marker during onboard
 
 Two layouts work out of the box:
 
-- **Same-repo / all-in-one** — Application and chart live in the same repo. Drop a `.argo-compare.yml` next to the chart, omit `repo`, and point `path` at the Application YAML inside this repo.
-- **Manifest-only repo** — chart content lives here, Application lives elsewhere. Drop a `.argo-compare.yml` next to the chart, set `repo` to the apps repo, and point `path` at the Application YAML inside it.
+- **Same-repo / all-in-one** — Application and chart live in the same repo. Drop a `.argo-compare.yml` next to the chart, omit `repo`, and point `path` at the Application or ApplicationSet YAML inside this repo.
+- **Manifest-only repo** — chart content lives here, Application lives elsewhere. Drop a `.argo-compare.yml` next to the chart, set `repo` to the apps repo, and point `path` at the Application or ApplicationSet YAML inside it.
 
 A worked example lives under [`examples/anchor/`](../examples/anchor).
+
+## Anchoring an ApplicationSet
+
+`path` may name an ApplicationSet instead of an Application. Argo Compare then expands it into the Applications it generates and compares each one, exactly as the [ApplicationSet flow](applicationsets.md) does for a changed manifest — added and removed Applications included.
+
+The manifest is read once, at the anchor's branch tip: an anchor exists because the *chart* changed, not the manifest. Each comparison leg still expands that manifest against its own tree, so a directory a git generator picks up — or a file it takes parameters from — is read from this branch for one leg and from the merge-base for the other.
+
+This matters most for a cross-repo anchor. Argo Compare scans the local repository for ApplicationSets whose git generators cover a changed directory, but it cannot scan a repository it does not have; an anchor is the only way to reach an ApplicationSet that lives elsewhere.
+
+Because expansion reads the two local branch legs, a git generator must name the repository being compared. One pointing anywhere else is a hard error rather than a skip — an anchor is an explicit pointer, so ignoring it would leave the change it names uncompared with nothing said.
+
+Only the generated Applications that render a chart from this repository are compared. One with a registry chart, or with a `spec.source.path` belonging to a different repository, is skipped with the reason named: neither can be affected by the change under the anchor, and rendering the latter would diff this repository's content against another repository's Application. If no generated Application qualifies, that is an error for the same reason a foreign generator is.
+
+Each branch is judged separately. An Application that moves into this repository on your branch — say from a registry chart to a local path — is still compared on the side that reads the chart here, and reported as added or removed accordingly.
+
+Several chart directories may share one anchored manifest. It is compared once, not once per anchor.
 
 ## Limits in this version
 
@@ -38,8 +54,9 @@ A worked example lives under [`examples/anchor/`](../examples/anchor).
 - A multi-source Application must use one kind consistently; mixing `chart` and `path` entries is rejected.
 - The anchored Application is read at the configured branch tip; commit-pinning is not supported.
 - **Cross-repo anchors cannot see an unmerged Application change.** For a cross-repo anchor (`repo:` set), the chart is read from the pull request's working tree while the Application — including its `spec.source.helm.valueFiles` list — is read from the anchored repo's branch tip. If the same change set restructures the files the Application points at (for example, splitting one `values.yaml` into several), the two halves are out of sync: the working tree has the new layout, but the Application still references the old one. This is inherent — the corrected `valueFiles` list lives in a separate, not-yet-merged change in the anchored repo, which argo-compare cannot see from this repo's PR. When a referenced values file is missing from the working tree, argo-compare fails with an explicit error naming the mismatch rather than an opaque Helm error. **Workaround:** land the Application's `valueFiles` update in the anchored repo first (or in lockstep), so the branch tip and the chart layout agree. Same-repo anchors are unaffected — they read both the chart and the Application from the working tree.
-- If the anchored chart directory does not exist in the target branch (it was added for the first time on the current branch), the Application is treated as new rather than failing: the comparison is skipped, or with `--print-added-manifests` the current branch's manifests render as all-added. This mirrors the standard flow's handling of a newly added Application file.
-- Any other failure to fetch, parse, or validate an anchored Application is a hard error — partial output would silently hide a broken configuration.
+- If the anchored chart directory does not exist in the target branch (it was added for the first time on the current branch), the Application is treated as new rather than failing: the comparison is skipped, or with `--print-added-manifests` the current branch's manifests render as all-added. This mirrors the standard flow's handling of a newly added Application file, and applies to a generated Application the same way.
+- An anchored ApplicationSet is subject to every limit in [ApplicationSets](applicationsets.md): `goTemplate: true` only, `list` and `git` generators only, and no generator-level template overrides.
+- Any other failure to fetch, parse, or validate an anchored Application or ApplicationSet is a hard error — partial output would silently hide a broken configuration.
 
 ## Configuration
 
