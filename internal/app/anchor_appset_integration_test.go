@@ -10,6 +10,8 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
+	"github.com/shini4i/argo-compare/internal/anchor"
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/stretchr/testify/assert"
@@ -574,4 +576,149 @@ func TestAppRunAnchoredApplicationSet_ForeignSource(t *testing.T) {
 	assert.Contains(t, err.Error(), "generates no Application rendering a chart from this repository")
 	assert.Contains(t, runner.log.String(), "is not this one, so this repository's tree cannot render it")
 	assert.Zero(t, runner.helm.callCount("RenderAppSource"))
+}
+
+// pathApp builds a single-source path-based Application for the scope tests.
+func pathApp(name, repoURL string) *models.Application {
+	app := &models.Application{Kind: models.KindApplication}
+	app.Metadata.Name = name
+	app.Spec.Source = &models.Source{RepoURL: repoURL, Path: "charts/demo"}
+
+	return app
+}
+
+func TestAnchoredPairsInScope(t *testing.T) {
+	const origin = "https://git.example.com/group/repo.git"
+	ref := anchor.ApplicationRef{Path: "apps/appset.yaml"}
+
+	mixed := &models.Application{Kind: models.KindApplication}
+	mixed.Metadata.Name = "mixed"
+	mixed.Spec.Sources = []*models.Source{
+		{RepoURL: origin, Path: "charts/demo"},
+		{RepoURL: "https://charts.example.com", Chart: "demo"},
+	}
+	mixed.Spec.MultiSource = true
+
+	registry := &models.Application{Kind: models.KindApplication}
+	registry.Metadata.Name = "registry"
+	registry.Spec.Source = &models.Source{RepoURL: "https://charts.example.com", Chart: "demo"}
+
+	cases := []struct {
+		name      string
+		originURL string
+		pairs     []generatedPair
+		wantNames []string
+		wantErr   string
+	}{
+		{
+			name:      "keeps a source in this repository",
+			originURL: origin,
+			pairs: []generatedPair{
+				{name: "keep", src: pathApp("keep", origin), dst: pathApp("keep", origin)},
+				{name: "registry", src: registry},
+			},
+			wantNames: []string{"keep"},
+		},
+		{
+			name:      "an ssh spelling of the same repository still matches",
+			originURL: origin,
+			pairs:     []generatedPair{{name: "keep", src: pathApp("keep", "ssh://git@git.example.com:1022/group/repo.git")}},
+			wantNames: []string{"keep"},
+		},
+		{
+			name:      "no origin is a hard error",
+			originURL: "",
+			pairs:     []generatedPair{{name: "keep", src: pathApp("keep", origin)}},
+			wantErr:   "no origin remote configured",
+		},
+		{
+			name:      "nothing in scope is a hard error",
+			originURL: origin,
+			pairs:     []generatedPair{{name: "elsewhere", src: pathApp("elsewhere", "https://other.example.com/group/other.git")}},
+			wantErr:   "generates no Application rendering a chart from this repository",
+		},
+		{
+			name:      "mixed multi-source sources are rejected, not skipped",
+			originURL: origin,
+			pairs:     []generatedPair{{name: "mixed", src: mixed}},
+			wantErr:   ErrMixedMultiSource.Error(),
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			app := &App{cfg: Config{TargetBranch: "main"}, logger: logger.New("scope-test")}
+
+			inScope, err := app.anchoredPairsInScope(ref, c.pairs, c.originURL)
+			if c.wantErr != "" {
+				require.ErrorContains(t, err, c.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			names := make([]string, 0, len(inScope))
+			for _, pair := range inScope {
+				names = append(names, pair.name)
+			}
+			assert.Equal(t, c.wantNames, names)
+		})
+	}
+}
+
+// emptyManifestFetcher violates the AnchoredManifest contract by resolving to
+// neither kind, which a hand-written or generated test double can do.
+type emptyManifestFetcher struct{}
+
+func (emptyManifestFetcher) Fetch(_ context.Context, _ anchor.ApplicationRef, _ string) (ports.AnchoredManifest, error) {
+	return ports.AnchoredManifest{}, nil
+}
+
+func TestProcessAnchorGroupRejectsEmptyManifest(t *testing.T) {
+	app := &App{cfg: Config{TargetBranch: "main"}, logger: logger.New("empty-manifest-test")}
+	group := AnchorGroup{Dir: "charts/demo", Anchor: anchor.Anchor{Application: anchor.ApplicationRef{Path: "apps/appset.yaml"}}}
+
+	_, err := app.processAnchorGroup(context.Background(), nil, group, emptyManifestFetcher{}, "", "")
+
+	require.ErrorContains(t, err, "resolved apps/appset.yaml (local) to no manifest")
+}
+
+// TestExpandAnchoredApplicationSetNamesTheLeg covers an expansion failure the
+// manifest's own validation cannot catch: a template that names two generated
+// Applications identically. A list generator never reads the tree, so none is
+// needed here.
+func TestExpandAnchoredApplicationSetNamesTheLeg(t *testing.T) {
+	const duplicateNames = `apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: demo
+  namespace: argocd
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+          - cluster: prod
+  template:
+    metadata:
+      name: same-name
+      namespace: argocd
+    spec:
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: demo
+      source:
+        repoURL: https://git.example.com/group/repo.git
+        path: charts/demo
+        targetRevision: HEAD
+`
+
+	appSet, err := parseApplicationSetContent([]byte(duplicateNames))
+	require.NoError(t, err)
+
+	_, err = expandAnchoredApplicationSet(appSet, nil, anchor.ApplicationRef{Path: "apps/appset.yaml"}, TargetTypeSource)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "apps/appset.yaml (local)")
+	assert.Contains(t, err.Error(), "for src leg")
 }

@@ -111,12 +111,20 @@ func (a *App) processAnchoredApplicationSet(ctx context.Context, repo *GitRepo, 
 		return false, fmt.Errorf("anchored ApplicationSet %s: %w", anchorRefDisplay(ref), err)
 	}
 
-	srcApps, err := a.expandAnchoredApplicationSet(repo, appSet, ref, TargetTypeSource)
+	headTree, err := repo.HeadTree()
+	if err != nil {
+		return false, err
+	}
+	srcApps, err := expandAnchoredApplicationSet(appSet, headTree, ref, TargetTypeSource)
 	if err != nil {
 		return false, err
 	}
 
-	dstApps, err := a.expandAnchoredApplicationSet(repo, appSet, ref, TargetTypeDestination)
+	baseTree, err := repo.MergeBaseTreeFor(a.cfg.TargetBranch)
+	if err != nil {
+		return false, err
+	}
+	dstApps, err := expandAnchoredApplicationSet(appSet, baseTree, ref, TargetTypeDestination)
 	if err != nil {
 		return false, err
 	}
@@ -205,26 +213,9 @@ func anchoredPairSkipReason(pair generatedPair, originURL string) (string, error
 	return "", nil
 }
 
-// expandAnchoredApplicationSet expands appSet against the tree one comparison
-// leg stands for: this branch's HEAD for the source leg, the merge-base with
-// the target branch for the destination leg.
-func (a *App) expandAnchoredApplicationSet(repo *GitRepo, appSet *models.ApplicationSet, ref anchor.ApplicationRef, leg string) ([]models.Application, error) {
-	var (
-		tree *object.Tree
-		err  error
-	)
-	switch leg {
-	case TargetTypeSource:
-		tree, err = repo.HeadTree()
-	case TargetTypeDestination:
-		tree, err = repo.MergeBaseTreeFor(a.cfg.TargetBranch)
-	default:
-		return nil, fmt.Errorf("unknown render leg %q", leg)
-	}
-	if err != nil {
-		return nil, err
-	}
-
+// expandAnchoredApplicationSet expands appSet against one comparison leg's
+// tree, naming the leg if expansion fails.
+func expandAnchoredApplicationSet(appSet *models.ApplicationSet, tree *object.Tree, ref anchor.ApplicationRef, leg string) ([]models.Application, error) {
 	apps, err := appset.Expand(appSet, gitTree{tree: tree})
 	if err != nil {
 		return nil, fmt.Errorf("expand anchored ApplicationSet %s for %s leg: %w", anchorRefDisplay(ref), leg, err)
