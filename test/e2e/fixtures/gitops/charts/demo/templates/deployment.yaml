@@ -13,6 +13,15 @@ spec:
       labels:
         app: {{ .Release.Name }}
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: app
           image: traefik/whoami:{{ .Values.image.tag }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+              ephemeral-storage: 16Mi
+            limits:
+              memory: 64Mi
+              ephemeral-storage: 32Mi

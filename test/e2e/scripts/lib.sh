@@ -28,7 +28,10 @@ ORIGIN_URL="${ORIGIN_URL:-http://gitea-http.${NS_GITEA}.svc.cluster.local:3000/$
 TARGET_BRANCH="${TARGET_BRANCH:-main}"
 FEATURE_BRANCH="${FEATURE_BRANCH:-feature}"
 
-kc() { kubectl --context "$KCTX" "$@"; }
+kc() {
+  kubectl --context "$KCTX" "$@"
+  return
+}
 
 E2E_FAILS=0
 
@@ -148,6 +151,7 @@ wait_appset() {
 }
 
 test_appset_count() {
-  [[ "$(appset_count "$1")" -eq "$2" ]]
+  local appset="$1" want="$2"
+  [[ "$(appset_count "$appset")" -eq "$want" ]]
   return
 }
