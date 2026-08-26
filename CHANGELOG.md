@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- ApplicationSet support. A changed ApplicationSet manifest is expanded into the Applications it generates on both branches, and each generated Application is compared individually, so an Application the change adds or removes is reported as such (gated by `--print-added-manifests` / `--print-removed-manifests`). Covers manifests using `goTemplate: true` with the `list` generator; every other generator and legacy fasttemplate substitution are skipped with a warning naming the reason. See [ApplicationSets](docs/applicationsets.md).
+
 ### Changed
 
+- Manifests skipped for an unsupported configuration now log why they were skipped, instead of only naming the file.
 - Cross-repo anchored Applications now fail with a clear, actionable error when the pull request restructures a chart's values files (for example splitting one `values.yaml` into several) but the Application — read from the anchored repo's branch tip — still references the old layout. Previously this surfaced as an opaque `helm template` "no such file" error. See `docs/anchored-repositories.md` for the workaround.
 
 ## [0.9.2] - 2026-07-08
@@ -21,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Registry credentials are no longer passed to Helm as command-line arguments, keeping them out of the process argument list where they could be observed by other users on the same host.
+- Updated `go-git` to 5.19.2, which fixes arbitrary file read and write through symbolic link resolution (CVE-2026-71556). `argo-compare` uses `go-git` to read repository trees.
+- Updated `golang.org/x/text` and `golang.org/x/net`, fixing denial of service on invalid UTF-8 input and on invalid DNS record parsing.
+- Builds now use the Go 1.26.7 toolchain, picking up the standard library fixes released in 1.26.6.
 
 [Unreleased]: https://github.com/shini4i/argo-compare/compare/v0.9.2...HEAD
 [0.9.2]: https://github.com/shini4i/argo-compare/compare/v0.9.1...v0.9.2

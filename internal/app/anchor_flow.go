@@ -128,13 +128,7 @@ func (a *App) processAnchorGroup(ctx context.Context, repo *GitRepo, group Ancho
 		return false, err
 	}
 
-	for _, r := range validationResults {
-		if !r.Valid {
-			validationFailed = true
-			break
-		}
-	}
-	return validationFailed, nil
+	return anyValidationFailed(validationResults), nil
 }
 
 // anchorLegContext carries the per-group state shared by both render legs

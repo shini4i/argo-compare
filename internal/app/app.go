@@ -317,6 +317,14 @@ const (
 // processChangedFile orchestrates comparison for a single manifest, optionally skipping targets.
 // Returns a flag indicating whether any validation result for this application was non-Valid.
 func (a *App) processChangedFile(ctx context.Context, repo *GitRepo, file string) (validationFailed bool, err error) {
+	appSet, err := a.applicationSetFor(file)
+	if err != nil {
+		return false, err
+	}
+	if appSet != nil {
+		return a.processChangedApplicationSet(ctx, repo, file, appSet)
+	}
+
 	a.logger.Infof("===> Processing changed application: [%s]", ui.Cyan(file))
 
 	tmpDir, err := afero.TempDir(a.fs, a.cfg.TempDirBase, "argo-compare-")
@@ -356,13 +364,31 @@ func (a *App) processChangedFile(ctx context.Context, repo *GitRepo, file string
 		return false, err
 	}
 
-	for _, r := range validationResults {
-		if !r.Valid {
-			validationFailed = true
-			break
+	return anyValidationFailed(validationResults), nil
+}
+
+// applicationSetFor returns the ApplicationSet held in file, or nil when the
+// manifest is a plain Application that the single-Application flow handles.
+func (a *App) applicationSetFor(file string) (*models.ApplicationSet, error) {
+	appSet, err := parseApplicationSet(a.fileReader, file)
+	switch {
+	case err == nil:
+		return appSet, nil
+	case errors.Is(err, models.ErrNotApplicationSet):
+		return nil, nil
+	default:
+		return nil, err
+	}
+}
+
+// anyValidationFailed reports whether any recorded leg failed schema validation.
+func anyValidationFailed(results map[string]ports.ValidationResult) bool {
+	for _, result := range results {
+		if !result.Valid {
+			return true
 		}
 	}
-	return validationFailed, nil
+	return false
 }
 
 // resolveTargetApplication retrieves the target branch manifest and determines follow-up actions.
@@ -458,6 +484,13 @@ func (a *App) processFile(ctx context.Context, repo *GitRepo, fileName, fileType
 		}
 	}
 
+	return a.renderTarget(ctx, repo, &target, fileType, validationResults)
+}
+
+// renderTarget drives the shared Helm pipeline for a target whose Application
+// is already resolved: classify sources, materialize the chart, render, and
+// validate the result.
+func (a *App) renderTarget(ctx context.Context, repo *GitRepo, target *Target, fileType string, validationResults map[string]ports.ValidationResult) error {
 	if err := target.ClassifySources(); err != nil {
 		return err
 	}
@@ -466,7 +499,7 @@ func (a *App) processFile(ctx context.Context, repo *GitRepo, fileName, fileType
 		return err
 	}
 
-	if err := a.prepareChart(ctx, repo, &target, fileType); err != nil {
+	if err := a.prepareChart(ctx, repo, target, fileType); err != nil {
 		return err
 	}
 
@@ -474,7 +507,7 @@ func (a *App) processFile(ctx context.Context, repo *GitRepo, fileName, fileType
 		return err
 	}
 
-	a.runManifestValidation(ctx, fileType, tmpDir, validationResults)
+	a.runManifestValidation(ctx, fileType, target.TmpDir, validationResults)
 	return nil
 }
 
