@@ -35,6 +35,10 @@ Each is one bats test in `phases.bats`, in this order:
 driver, so it exercises the **production** `gitTree` adapter. A shell
 reimplementation of tree listing would test the reimplementation, not the product.
 
+Compiling that package's tests needs the generated mocks, which are gitignored,
+so `phases` and `appset-parity` depend on the root Taskfile's `mocks` task. A
+checkout that has never run `task test` has none, which is the state CI starts in.
+
 It compares a projection of each generated Application — name, source
 repoURL/path/chart/targetRevision, and the rendered `helm.releaseName` and
 `helm.values` — because ArgoCD also stamps ownership, finalizers and status that
@@ -110,7 +114,7 @@ remote never has to be fetchable.
 ## Prerequisites
 
 `kind`, `kubectl` and `helm` on `PATH`, with **podman or docker** as the kind
-provider. `go`, `bats`, `shellcheck`, `jq`, `yq`, `argocd` and `task` come from the devshell
+provider. `go`, `bats`, `shellcheck`, `jq`, `yq`, `mockgen`, `argocd` and `task` come from the devshell
 (`nix develop`); the cluster tools deliberately do not, since the lab is a
 per-release gate rather than part of the everyday shell.
 
