@@ -90,6 +90,11 @@ tasks:
     cmds:
       - ./scripts/render-parity.sh
 
+  generated-parity:
+    desc: "Assert a generated Application's diff matches what ArgoCD renders"
+    cmds:
+      - ./scripts/generated-parity.sh
+
   lint:
     desc: "shellcheck plus the offline bats suite (no cluster needed)"
     cmds:

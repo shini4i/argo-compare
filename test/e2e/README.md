@@ -27,6 +27,7 @@ Each is one bats test in `phases.bats`, in this order:
 | `smoke` | The real binary, over a real Gitea clone, renders a real chart with real helm and reports the diff. The assertion is the rendered `replicas` value on both sides — a stub cannot produce it. |
 | `appset-parity` | argo-compare's expansion matches what the real ArgoCD ApplicationSet controller generated from the same manifest at the same commit, across all three supported generators. |
 | `render-parity` | argo-compare's reported **diff** matches what ArgoCD itself renders, in both directions: every change ArgoCD sees appears in the diff, and the diff invents none. |
+| `generated-parity` | the same, for each Application an **ApplicationSet** generates, reached through an anchor. Covers the ApplicationSet flow's own output, which `render-parity` does not. |
 
 `appset-parity` runs its comparison as a Go test
 (`internal/app/e2e_parity_test.go`, behind `//go:build e2e`) rather than a shell
@@ -57,6 +58,13 @@ That is why the fixture has two Applications:
 `charts/addon/` carries a `.argo-compare.yml`, because a chart-only change with
 no anchor and no manifest change is invisible to argo-compare by design. So this
 phase also happens to be the strictest test of the anchor flow.
+
+`generated-parity` applies the same reasoning one level further: `charts/generated`
+is anchored to an **ApplicationSet**, so a change to that chart reaches
+argo-compare through the anchor and is compared per generated Application. Each
+element renders a banner carrying its own name, so the two diffs are distinct and
+attributing one Application's diff to the other fails rather than passing on an
+identical change.
 
 The two renderers format YAML differently: ArgoCD parses rendered manifests into
 its object model and re-serialises them, so helm's `message: "hello"` comes back
@@ -106,6 +114,7 @@ task phases              # re-run every phase against a lab already up
 task smoke               # one phase directly
 task appset-parity
 task render-parity
+task generated-parity
 task lint                # shellcheck, no cluster needed
 task down                # destroy the cluster
 bats --filter parity phases.bats          # one phase by name

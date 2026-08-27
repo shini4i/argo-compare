@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-banner
+  namespace: {{ .Release.Namespace }}
+data:
+  banner: {{ printf "%s-%s" .Values.banner .Values.env }}

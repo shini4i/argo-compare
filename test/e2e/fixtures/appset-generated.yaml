@@ -1,0 +1,34 @@
+# An ANCHORED ApplicationSet: the manifest is identical on both branches, and
+# charts/generated carries a .argo-compare.yml pointing here, so a change to the
+# chart reaches argo-compare through the anchor and is compared per generated
+# Application. Each element renders a different value, so mixing two up shows.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: e2e-generated
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - list:
+        elements:
+          - env: dev
+          - env: prod
+  template:
+    metadata:
+      name: 'gen-{{ .env }}'
+      namespace: argocd
+    spec:
+      project: default
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: 'gen-{{ .env }}'
+      source:
+        repoURL: REPO_URL
+        path: charts/generated
+        targetRevision: main
+        helm:
+          releaseName: 'gen-{{ .env }}'
+          values: |
+            env: {{ .env }}
