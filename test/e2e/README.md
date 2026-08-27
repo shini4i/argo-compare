@@ -39,6 +39,23 @@ Compiling that package's tests needs the generated mocks, which are gitignored,
 so `phases` and `appset-parity` depend on the root Taskfile's `mocks` task. A
 checkout that has never run `task test` has none, which is the state CI starts in.
 
+Two of its fixtures exist for the parts of expansion that are pure
+reimplementation, where a self-consistent unit test proves nothing:
+
+- `appset-funcs.yaml` drives the template functions argo-compare copies from
+  ArgoCD's own map — `slugify`, `normalize`, `toYaml`, `fromYaml` and
+  `fromYamlArray`. Each result lands in a compared field: `slugify` in the name
+  and release name, the rest in the values block. Its three `slugify` call sites
+  pin all of the argument forms: a length short enough to truncate, the same
+  length with the smart-truncate flag off, and one with no arguments at all
+  against a name long enough that the default 50-character cap shows. `nindent`
+  is plumbing only — the comparison re-marshals the values block, so indent
+  cannot diverge.
+- `appset-git-values.yaml` drives the git generator's `values:` block, which
+  ArgoCD renders against the generator's parameters and hands back under a
+  `.values` prefix. Both entries reach compared fields, so dropping the block or
+  the prefix fails rather than producing a quietly different name.
+
 It compares a projection of each generated Application — name, source
 repoURL/path/chart/targetRevision, and the rendered `helm.releaseName` and
 `helm.values` — because ArgoCD also stamps ownership, finalizers and status that

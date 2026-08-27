@@ -1,0 +1,38 @@
+# The git generator's own `values:` block, which ArgoCD renders against the
+# generator's parameters and exposes back under a `.values` prefix. Both entries
+# reach compared fields, so a generator that skipped the block or dropped the
+# prefix would fail the phase rather than quietly producing a different name.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: e2e-git-values
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: REPO_URL
+        revision: main
+        directories:
+          - path: clusters/*
+        values:
+          cluster: '{{ .path.basename }}'
+          release: 'gv-{{ .path.basenameNormalized }}'
+  template:
+    metadata:
+      name: '{{ .values.release }}'
+      namespace: argocd
+    spec:
+      project: default
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .values.cluster }}'
+      source:
+        repoURL: REPO_URL
+        path: charts/demo
+        targetRevision: main
+        helm:
+          releaseName: '{{ .values.release }}'
+          values: |
+            cluster: "{{ .values.cluster }}"

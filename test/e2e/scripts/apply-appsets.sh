@@ -18,6 +18,8 @@ declare -A want=(
   [e2e-generated]=2
   # Applied so the controller vouches for the baseline the lifecycle phase uses.
   [e2e-lifecycle]=2
+  [e2e-funcs]=2
+  [e2e-git-values]=2
 )
 
 for name in "${!want[@]}"; do
