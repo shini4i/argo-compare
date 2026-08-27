@@ -8,14 +8,16 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./lib.sh
 . "${here}/lib.sh"
 
-# Each fixture and the count it must generate from the seeded `main` tree:
-# list is fixed at two elements; the git generators see clusters/dev and
-# clusters/staging (clusters/prod exists only on the feature branch).
+# Each fixture and the count it must generate from the seeded `main` tree: the
+# list generators are fixed at two elements; the git generators see clusters/dev
+# and clusters/staging (clusters/prod exists only on the feature branch).
 declare -A want=(
   [e2e-list]=2
   [e2e-git-dir]=2
   [e2e-git-file]=2
   [e2e-generated]=2
+  # Applied so the controller vouches for the baseline the lifecycle phase uses.
+  [e2e-lifecycle]=2
 )
 
 for name in "${!want[@]}"; do

@@ -25,11 +25,21 @@ E2E_REPO_DIR="${work}/gitops" \
 
 assert_grep "$out" '^ok[[:space:]]' "expansion matches the ArgoCD controller"
 
-# Each generator is asserted separately, so one passing subtest cannot stand in
-# for the other two.
-for name in e2e-list e2e-git-dir e2e-git-file; do
+# Each ApplicationSet is asserted separately, so one passing subtest cannot stand
+# in for the others.
+fixtures=(e2e-list e2e-git-dir e2e-git-file e2e-lifecycle)
+for name in "${fixtures[@]}"; do
   assert_grep "$out" "^[[:space:]]+--- PASS: TestE2EApplicationSetParity/${name}" \
     "${name} parity"
 done
+
+# This list is a second copy of the Go test's; without a count, a fixture added
+# there but not here would silently stop being asserted.
+passed="$(grep -cE '^[[:space:]]+--- PASS: TestE2EApplicationSetParity/' "$out")"
+if [[ "$passed" -eq "${#fixtures[@]}" ]]; then
+  ok "every fixture the Go test covers is asserted here"
+else
+  bad "the Go test reported ${passed} subtest(s), this phase asserts ${#fixtures[@]}"
+fi
 
 phase_end appset-parity

@@ -1,0 +1,36 @@
+# The ApplicationSet whose generated set CHANGES between branches: `main` holds
+# keep + drop, the feature branch holds keep + add. The manifest itself differs,
+# so argo-compare reaches it through the changed-file path, and the one-sided
+# Applications are what the print flags gate.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: e2e-lifecycle
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - list:
+        elements:
+          - name: keep
+            replicas: "7"
+          - name: drop
+            replicas: "2"
+  template:
+    metadata:
+      name: 'life-{{ .name }}'
+      namespace: argocd
+    spec:
+      project: default
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: 'life-{{ .name }}'
+      source:
+        repoURL: REPO_URL
+        path: charts/demo
+        targetRevision: main
+        helm:
+          releaseName: 'life-{{ .name }}'
+          values: |
+            replicaCount: {{ .replicas }}

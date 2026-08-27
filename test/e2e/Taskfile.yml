@@ -95,6 +95,11 @@ tasks:
     cmds:
       - ./scripts/generated-parity.sh
 
+  lifecycle:
+    desc: "Assert added and removed generated Applications are gated by the print flags"
+    cmds:
+      - ./scripts/lifecycle.sh
+
   lint:
     desc: "shellcheck plus the offline bats suite (no cluster needed)"
     cmds:
