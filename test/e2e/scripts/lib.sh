@@ -119,6 +119,77 @@ build_compare() {
   return
 }
 
+ARGOCD_URL="${ARGOCD_URL:-localhost:30081}"
+
+# argocd_login: authenticate the CLI against the lab's ArgoCD. Plaintext because
+# the lab server runs with server.insecure and is published on loopback only.
+# Retried: on a freshly booted lab the API answers before it serves sessions,
+# and a one-shot login would fail the phase for startup timing.
+argocd_login() {
+  local pw
+  pw="$(kc -n "$NS_ARGOCD" get secret argocd-initial-admin-secret \
+    -o jsonpath='{.data.password}' | base64 -d)"
+  [[ -n "$pw" ]] || return 1
+  retry 30 2 argocd login "$ARGOCD_URL" --username admin --password "$pw" \
+    --plaintext --grpc-web
+  return
+}
+
+# argocd_manifests <app> <revision>: what ArgoCD itself renders for <app> at
+# <revision>. This varies chart content only — the Application spec comes from
+# the cluster — so it cannot model a change to the manifest itself. Retried
+# because the server may not have observed a just-applied Application yet.
+argocd_manifests() {
+  local app="$1" revision="$2" out
+  out="$(mktemp)"
+  if retry 30 2 argocd_manifests_once "$app" "$revision" "$out"; then
+    cat "$out"
+    rm -f "$out"
+    return 0
+  fi
+  rm -f "$out"
+  return 1
+}
+
+# argocd_manifests_once: one render attempt, written to <file> so a partial
+# failure never reaches the caller as if it were the full output.
+argocd_manifests_once() {
+  local app="$1" revision="$2" file="$3"
+  argocd app manifests "$app" --revision "$revision" \
+    --plaintext --grpc-web >"$file" 2>/dev/null || return 1
+  [[ -s "$file" ]]
+  return
+}
+
+# normalize_diff: read changed diff lines, emit them comparable across the two
+# renderers. ArgoCD parses rendered manifests into its object model and
+# re-serialises them, so `message: "hello"` from helm comes back as
+# `message: hello`; the quoting differs without the meaning differing.
+normalize_diff() {
+  sed -E 's/^([+-])[[:space:]]*/\1/; s/^([+-][^:]*): "(.*)"$/\1: \2/' | sort -u
+  return
+}
+
+# diff_body <a> <b>: the changed lines of a unified diff, as a comparable set.
+diff_body() {
+  local a="$1" b="$2"
+  diff -u "$a" "$b" | grep -E '^[+-][^+-]' | normalize_diff
+  return
+}
+
+# section_diff <output> <marker>: the changed lines of one Application's section
+# of an argo-compare run, which reports every Application in one stream. Bounded
+# by the next `===>` heading, so a section that is not the last one does not
+# collect its successors' diffs.
+section_diff() {
+  local output="$1" marker="$2"
+  awk -v m="$marker" '
+    /^===>/ { inside = index($0, m) ? 1 : 0; next }
+    inside && /^[+-][^+-]/ { print }
+  ' "$output" | normalize_diff
+  return
+}
+
 # appset_apps <appset>: names of the Applications the real controller generated.
 # Selected by ownerReference, not by a label: the controller stamps no
 # application-set-name label on what it generates, so a label selector silently

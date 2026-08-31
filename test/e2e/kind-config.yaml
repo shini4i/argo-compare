@@ -13,3 +13,8 @@ nodes:
         # Loopback keeps Gitea's throwaway admin credentials off the network.
         listenAddress: "127.0.0.1"
         protocol: TCP
+      # ArgoCD API: the render-parity phase asks it what it renders.
+      - containerPort: 30081
+        hostPort: 30081
+        listenAddress: "127.0.0.1"
+        protocol: TCP

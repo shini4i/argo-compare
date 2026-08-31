@@ -46,6 +46,8 @@ tasks:
         --version {{.ARGOCD_CHART_VERSION}} -n argocd -f values/argocd.yaml
       - kubectl --context {{.KCTX}} -n argocd rollout status deploy/argocd-applicationset-controller --timeout=300s
       - kubectl --context {{.KCTX}} -n argocd rollout status deploy/argocd-repo-server --timeout=300s
+      # render-parity talks to the API, so the server has to be up before phases.
+      - kubectl --context {{.KCTX}} -n argocd rollout status deploy/argocd-server --timeout=300s
 
   gitea:
     desc: "Install Gitea, the git remote both sides read"
@@ -83,10 +85,16 @@ tasks:
     cmds:
       - ./scripts/appset-parity.sh
 
+  render-parity:
+    desc: "Assert argo-compare's diff matches what ArgoCD itself renders"
+    cmds:
+      - ./scripts/render-parity.sh
+
   lint:
-    desc: "shellcheck the phase scripts (no cluster needed)"
+    desc: "shellcheck plus the offline bats suite (no cluster needed)"
     cmds:
       - shellcheck scripts/*.sh
+      - bats lib.bats
 
   down:
     desc: "Destroy the cluster"

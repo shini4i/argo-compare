@@ -26,6 +26,7 @@ Each is one bats test in `phases.bats`, in this order:
 |---|---|
 | `smoke` | The real binary, over a real Gitea clone, renders a real chart with real helm and reports the diff. The assertion is the rendered `replicas` value on both sides — a stub cannot produce it. |
 | `appset-parity` | argo-compare's expansion matches what the real ArgoCD ApplicationSet controller generated from the same manifest at the same commit, across all three supported generators. |
+| `render-parity` | argo-compare's reported **diff** matches what ArgoCD itself renders, in both directions: every change ArgoCD sees appears in the diff, and the diff invents none. |
 
 `appset-parity` runs its comparison as a Go test
 (`internal/app/e2e_parity_test.go`, behind `//go:build e2e`) rather than a shell
@@ -37,6 +38,30 @@ repoURL/path/chart/targetRevision, and the rendered `helm.releaseName` and
 `helm.values` — because ArgoCD also stamps ownership, finalizers and status that
 argo-compare never produces. Values are re-marshalled before comparison so the
 result is about content, not the indentation each side's templating emitted.
+
+## What render-parity can and cannot compare
+
+`argocd app manifests <app> --revision <sha>` renders the chart **at that
+revision using the Application spec stored in the cluster**. It therefore cannot
+model a change to the Application manifest itself — asked for two revisions that
+differ only in the manifest's inline values, ArgoCD returns identical output.
+
+That is why the fixture has two Applications:
+
+- `demo` changes its own manifest between branches. The `smoke` phase covers it,
+  and ArgoCD cannot be used as an oracle for it.
+- `addon` has an **identical manifest on both branches** and no inline values, so
+  the only thing that can change its render is chart content — which is exactly
+  what `--revision` varies. That makes the comparison two-directional.
+
+`charts/addon/` carries a `.argo-compare.yml`, because a chart-only change with
+no anchor and no manifest change is invisible to argo-compare by design. So this
+phase also happens to be the strictest test of the anchor flow.
+
+The two renderers format YAML differently: ArgoCD parses rendered manifests into
+its object model and re-serialises them, so helm's `message: "hello"` comes back
+as `message: hello`. `normalize_diff` in `lib.sh` strips that quoting before the
+sets are compared — the quoting differs without the meaning differing.
 
 ## The two repo URLs
 
@@ -57,7 +82,7 @@ remote never has to be fetchable.
 ## Prerequisites
 
 `kind`, `kubectl` and `helm` on `PATH`, with **podman or docker** as the kind
-provider. `go`, `bats`, `shellcheck`, `jq` and `task` come from the devshell
+provider. `go`, `bats`, `shellcheck`, `jq`, `argocd` and `task` come from the devshell
 (`nix develop`); the cluster tools deliberately do not, since the lab is a
 per-release gate rather than part of the everyday shell.
 
@@ -80,6 +105,7 @@ task up                  # boot the lab only (idempotent)
 task phases              # re-run every phase against a lab already up
 task smoke               # one phase directly
 task appset-parity
+task render-parity
 task lint                # shellcheck, no cluster needed
 task down                # destroy the cluster
 bats --filter parity phases.bats          # one phase by name
