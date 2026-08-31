@@ -37,6 +37,11 @@ done
 sed "s|REPO_URL|${ORIGIN_URL}|g" "${E2E_DIR}/fixtures/appset-generated.yaml" \
   >"${work}/apps/generated-appset.yaml"
 
+# The lifecycle ApplicationSet reaches argo-compare through the changed-file
+# path, so its manifest has to be in the repo on both branches.
+sed "s|REPO_URL|${ORIGIN_URL}|g" "${E2E_DIR}/fixtures/appset-lifecycle.yaml" \
+  >"${work}/apps/lifecycle-appset.yaml"
+
 git -C "$work" add -A
 git -C "$work" commit -qm "seed gitops fixtures"
 
@@ -62,6 +67,17 @@ grep -qx 'message: world' "${work}/charts/addon/values.yaml" ||
 sed -i -E 's/^banner: first$/banner: second/' "${work}/charts/generated/values.yaml"
 grep -qx 'banner: second' "${work}/charts/generated/values.yaml" ||
   die "the feature-branch generated chart change did not apply"
+
+# The lifecycle ApplicationSet generates a different SET on this branch: keep
+# survives with new values, drop disappears, add arrives. Those last two are the
+# one-sided Applications the print flags gate.
+lifecycle="${work}/apps/lifecycle-appset.yaml"
+yq -i '.spec.generators[0].list.elements =
+  [{"name": "keep", "replicas": "9"}, {"name": "add", "replicas": "5"}]' "$lifecycle"
+swapped="$(yq -r '[.spec.generators[0].list.elements[] | .name + "=" + .replicas] | join(",")' "$lifecycle")"
+if [[ "$swapped" != "keep=9,add=5" ]]; then
+  die "the feature-branch lifecycle element swap did not apply"
+fi
 
 mkdir -p "${work}/clusters/prod"
 printf 'cluster: prod\nreplicas: 4\n' >"${work}/clusters/prod/config.yaml"

@@ -35,10 +35,14 @@ assert_grep "$out" 'Processing changed application: \[apps/demo\.yaml\]' \
   "processed the changed Application"
 
 # The rendered replica count is the assertion a stubbed helm cannot satisfy:
-# seeing both sides proves real templating ran against both trees.
-assert_grep "$out" '^\+[[:space:]]+replicas: 3$' "rendered the branch's replica count"
-assert_grep "$out" '^-[[:space:]]+replicas: 1$' "rendered the target branch's replica count"
+# seeing both sides proves real templating ran against both trees. Read from the
+# demo section alone, so another fixture rendering the same chart cannot stand in
+# for it and leave a broken standard flow passing.
+section_lines "$out" 'apps/demo.yaml' >"${work}/demo.section"
+section_diff "$out" 'apps/demo.yaml' >"${work}/demo.diff"
+assert_grep "${work}/demo.diff" '^\+replicas: 3$' "rendered the branch's replica count"
+assert_grep "${work}/demo.diff" '^-replicas: 1$' "rendered the target branch's replica count"
 
-assert_grep "$out" '1 file would be changed' "reported one changed file"
+assert_grep "${work}/demo.section" '1 file would be changed' "reported one changed file"
 
 phase_end smoke

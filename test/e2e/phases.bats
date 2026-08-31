@@ -33,18 +33,26 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-# render-parity last: it is the strictest, and reaching it means expansion and
-# rendering are already known good.
+# render-parity: the strictest of the manifest comparisons, and reaching it means
+# expansion and rendering are already known good.
 @test "render-parity: the reported diff matches what ArgoCD renders" {
   run ./scripts/render-parity.sh
   echo "$output"
   [ "$status" -eq 0 ]
 }
 
-# generated-parity last: it needs everything the others prove, and covers the
+# generated-parity: it needs everything the others prove, and covers the
 # ApplicationSet flow's own output through an anchored manifest.
 @test "generated-parity: a generated Application's diff matches what ArgoCD renders" {
   run ./scripts/generated-parity.sh
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
+
+# lifecycle last: the only phase where the two branches generate different SETS
+# of Applications, so it reads on top of expansion already being trusted.
+@test "lifecycle: added and removed generated Applications are gated by the print flags" {
+  run ./scripts/lifecycle.sh
   echo "$output"
   [ "$status" -eq 0 ]
 }

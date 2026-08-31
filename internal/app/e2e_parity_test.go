@@ -47,7 +47,7 @@ func TestE2EApplicationSetParity(t *testing.T) {
 
 	tree := branchTree(t, repoDir, branch)
 
-	for _, name := range []string{"e2e-list", "e2e-git-dir", "e2e-git-file"} {
+	for _, name := range []string{"e2e-list", "e2e-git-dir", "e2e-git-file", "e2e-lifecycle"} {
 		t.Run(name, func(t *testing.T) {
 			manifest := filepath.Join(fixturesDir, strings.Replace(name, "e2e-", "appset-", 1)+".yaml")
 			raw, err := os.ReadFile(manifest) // #nosec G304 -- a lab fixture path

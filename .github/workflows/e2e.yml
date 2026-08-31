@@ -22,8 +22,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # go, bats, shellcheck and jq come from the devshell, the same versions a
-      # local run gets. Only the cluster tools are fetched separately.
+      # go, bats, shellcheck, jq and yq come from the devshell, the same versions
+      # a local run gets. Only the cluster tools are fetched separately.
       - uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
 
       - name: Install kind, kubectl, helm

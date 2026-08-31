@@ -100,6 +100,66 @@ EOF
   [ "${lines[0]}" = "-message: hello" ]
 }
 
+# The gating phase asserts on lines that must be ABSENT, so the negative
+# assertion needs the same reported form as the positive one.
+@test "assert_no_grep passes when the pattern is absent" {
+  printf 'hello\n' >"${BATS_TEST_TMPDIR}/out.txt"
+  run assert_no_grep "${BATS_TEST_TMPDIR}/out.txt" 'goodbye' "no goodbye"
+  [ "$status" -eq 0 ]
+  [ "$output" = "  OK   no goodbye" ]
+}
+
+@test "assert_no_grep reports a failure when the pattern is present" {
+  printf 'hello\n' >"${BATS_TEST_TMPDIR}/out.txt"
+  run assert_no_grep "${BATS_TEST_TMPDIR}/out.txt" 'hello' "no hello"
+  [ "$output" = "  FAIL no hello" ]
+}
+
+@test "assert_no_grep reports a failure when the file is missing" {
+  run assert_no_grep "${BATS_TEST_TMPDIR}/absent.txt" 'hello' "no hello"
+  [[ "$output" == "  FAIL no hello (no such file: "*"/absent.txt)" ]]
+}
+
+# grep exits 2 on a pattern it cannot compile. Treating that as "absent" would
+# turn a mistyped escape into a negative assertion that can never fail.
+@test "assert_no_grep reports a failure when the pattern will not compile" {
+  printf 'hello\n' >"${BATS_TEST_TMPDIR}/out.txt"
+  run assert_no_grep "${BATS_TEST_TMPDIR}/out.txt" 'a[' "bad pattern"
+  # grep also writes its own diagnostic to stderr, which `run` folds into $output.
+  [[ "$output" == *"FAIL bad pattern (grep exit "* ]]
+}
+
+# phase_end reads only E2E_FAILS, so a bad() that printed but did not count would
+# leave every phase reporting failures and still exiting 0.
+@test "a failed assertion increments the phase's failure count" {
+  printf 'hello\n' >"${BATS_TEST_TMPDIR}/out.txt"
+  [ "$E2E_FAILS" -eq 0 ]
+  assert_grep "${BATS_TEST_TMPDIR}/out.txt" 'goodbye' "absent" >/dev/null
+  [ "$E2E_FAILS" -eq 1 ]
+  assert_no_grep "${BATS_TEST_TMPDIR}/out.txt" 'hello' "present" >/dev/null
+  [ "$E2E_FAILS" -eq 2 ]
+}
+
+@test "assert_grep passes when the pattern is present" {
+  printf 'hello\n' >"${BATS_TEST_TMPDIR}/out.txt"
+  run assert_grep "${BATS_TEST_TMPDIR}/out.txt" 'hello' "found hello"
+  [ "$output" = "  OK   found hello" ]
+}
+
+@test "section_lines keeps a section's summary lines, not only its diff" {
+  cat >"${BATS_TEST_TMPDIR}/out.txt" <<'EOF'
+===> Processing changed application: [apps/demo.yaml]
+The following 1 file would be changed:
+-  replicas: 1
+===> Processing anchored chart in [/tmp/x/charts/addon]
+The following 1 file would be changed:
+EOF
+  run section_lines "${BATS_TEST_TMPDIR}/out.txt" 'apps/demo.yaml'
+  [ "${#lines[@]}" -eq 2 ]
+  [ "${lines[0]}" = "The following 1 file would be changed:" ]
+  [ "${lines[1]}" = "-  replicas: 1" ]
+}
+
 @test "diff_body reports only what differs between two files" {
   printf 'a: 1\nb: 2\n' >"${BATS_TEST_TMPDIR}/one.yaml"
   printf 'a: 1\nb: 3\n' >"${BATS_TEST_TMPDIR}/two.yaml"

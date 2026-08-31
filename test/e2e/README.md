@@ -25,14 +25,19 @@ Each is one bats test in `phases.bats`, in this order:
 | Phase | What it proves |
 |---|---|
 | `smoke` | The real binary, over a real Gitea clone, renders a real chart with real helm and reports the diff. The assertion is the rendered `replicas` value on both sides — a stub cannot produce it. |
-| `appset-parity` | argo-compare's expansion matches what the real ArgoCD ApplicationSet controller generated from the same manifest at the same commit, across all three supported generators. |
+| `appset-parity` | argo-compare's expansion matches what the real ArgoCD ApplicationSet controller generated from the same manifest at the same commit, for every fixture ApplicationSet and all three supported generators. |
 | `render-parity` | argo-compare's reported **diff** matches what ArgoCD itself renders, in both directions: every change ArgoCD sees appears in the diff, and the diff invents none. |
 | `generated-parity` | the same, for each Application an **ApplicationSet** generates, reached through an anchor. Covers the ApplicationSet flow's own output, which `render-parity` does not. |
+| `lifecycle` | an ApplicationSet whose generated **set** differs between branches: one Application is added, one is removed, and `--print-added-manifests` / `--print-removed-manifests` gate each independently. |
 
 `appset-parity` runs its comparison as a Go test
 (`internal/app/e2e_parity_test.go`, behind `//go:build e2e`) rather than a shell
 driver, so it exercises the **production** `gitTree` adapter. A shell
 reimplementation of tree listing would test the reimplementation, not the product.
+
+Compiling that package's tests needs the generated mocks, which are gitignored,
+so `phases` and `appset-parity` depend on the root Taskfile's `mocks` task. A
+checkout that has never run `task test` has none, which is the state CI starts in.
 
 It compares a projection of each generated Application — name, source
 repoURL/path/chart/targetRevision, and the rendered `helm.releaseName` and
@@ -71,6 +76,25 @@ its object model and re-serialises them, so helm's `message: "hello"` comes back
 as `message: hello`. `normalize_diff` in `lib.sh` strips that quoting before the
 sets are compared — the quoting differs without the meaning differing.
 
+## What lifecycle covers, and why ArgoCD is not its oracle
+
+`apps/lifecycle-appset.yaml` is a list-generator ApplicationSet whose elements
+change between branches: `main` generates `life-keep` and `life-drop`, the
+feature branch generates `life-keep` and `life-add`. The manifest itself differs,
+so argo-compare reaches it through the changed-file path rather than an anchor.
+
+Added and removed generated Applications are argo-compare's own classification
+over two git revisions. ArgoCD has no equivalent — its controller only ever knows
+one revision at a time — so there is no rendering to compare against. The phase
+asserts behaviour instead: `life-keep` is compared on both sides regardless of
+flags, while `life-add` and `life-drop` are skipped with a named reason until the
+matching print flag is set. Each flag is checked in isolation, so a run where
+both happened to be on would not pass.
+
+The ApplicationSet is also applied to the cluster and included in `appset-parity`,
+so the real controller vouches for the names, path and values of the two
+Applications this phase treats as its `main`-side baseline.
+
 ## The two repo URLs
 
 `scripts/lib.sh` defines two URLs for one repository, and the difference is
@@ -90,7 +114,7 @@ remote never has to be fetchable.
 ## Prerequisites
 
 `kind`, `kubectl` and `helm` on `PATH`, with **podman or docker** as the kind
-provider. `go`, `bats`, `shellcheck`, `jq`, `argocd` and `task` come from the devshell
+provider. `go`, `bats`, `shellcheck`, `jq`, `yq`, `mockgen`, `argocd` and `task` come from the devshell
 (`nix develop`); the cluster tools deliberately do not, since the lab is a
 per-release gate rather than part of the everyday shell.
 
@@ -115,6 +139,7 @@ task smoke               # one phase directly
 task appset-parity
 task render-parity
 task generated-parity
+task lifecycle
 task lint                # shellcheck, no cluster needed
 task down                # destroy the cluster
 bats --filter parity phases.bats          # one phase by name

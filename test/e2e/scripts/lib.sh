@@ -52,6 +52,25 @@ assert_grep() {
   return
 }
 
+# assert_no_grep <file> <pattern> <message>: the negative form, for a line that
+# must NOT appear — a flag that suppressed output, or a skip that did not happen.
+# Only grep's exit 1 counts as absent: exit 2 means it could not answer (missing
+# file, malformed pattern) and would otherwise report a silent pass.
+assert_no_grep() {
+  local file="$1" pattern="$2" message="$3" code=0
+  if [[ ! -f "$file" ]]; then
+    bad "${message} (no such file: ${file})"
+    return
+  fi
+  grep -qE "$pattern" "$file" || code=$?
+  case "$code" in
+    0) bad "$message" ;;
+    1) ok "$message" ;;
+    *) bad "${message} (grep exit ${code}; check the pattern)" ;;
+  esac
+  return
+}
+
 # phase_end <PHASE>: print the verdict, exit non-zero if any bad() fired.
 phase_end() {
   local name="$1" code=0
@@ -174,6 +193,19 @@ normalize_diff() {
 diff_body() {
   local a="$1" b="$2"
   diff -u "$a" "$b" | grep -E '^[+-][^+-]' | normalize_diff
+  return
+}
+
+# section_lines <output> <marker>: every line of one section, diff lines
+# included. section_diff keeps only the +/- lines, so an assertion about a
+# summary line ("1 file would be changed") needs this instead — grepping the
+# whole run would let another Application's identical summary stand in.
+section_lines() {
+  local output="$1" marker="$2"
+  awk -v m="$marker" '
+    /^===>/ { inside = index($0, m) ? 1 : 0; next }
+    inside { print }
+  ' "$output"
   return
 }
 

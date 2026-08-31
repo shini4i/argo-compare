@@ -4,6 +4,13 @@
 version: '3'
 silent: true
 
+# appset-parity compiles internal/app's tests, which import the generated mocks
+# package. It is gitignored, so a fresh checkout has none and the build fails.
+includes:
+  root:
+    taskfile: ../../Taskfile.yml
+    dir: ../..
+
 vars:
   CLUSTER: ac-e2e
   KCTX: kind-ac-e2e
@@ -69,6 +76,7 @@ tasks:
 
   phases:
     desc: "Run every phase against a lab that is already up"
+    deps: [root:mocks]
     cmds:
       - mkdir -p {{.REPORT_DIR}}
       # --report-formatter writes the file; --formatter would only replace the
@@ -82,6 +90,7 @@ tasks:
 
   appset-parity:
     desc: "Assert argo-compare's expansion matches the real ArgoCD controller"
+    deps: [root:mocks]
     cmds:
       - ./scripts/appset-parity.sh
 
@@ -94,6 +103,11 @@ tasks:
     desc: "Assert a generated Application's diff matches what ArgoCD renders"
     cmds:
       - ./scripts/generated-parity.sh
+
+  lifecycle:
+    desc: "Assert added and removed generated Applications are gated by the print flags"
+    cmds:
+      - ./scripts/lifecycle.sh
 
   lint:
     desc: "shellcheck plus the offline bats suite (no cluster needed)"
