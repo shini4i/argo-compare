@@ -1,0 +1,51 @@
+# The template functions argo-compare reimplements from ArgoCD's own map, each
+# landing in a field appset-parity compares: slugify in the name and release
+# name, and normalize, toYaml, fromYaml and fromYamlArray in the values block.
+# nindent is plumbing here — canonicalYAML re-marshals, so indent cannot differ.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: e2e-funcs
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - list:
+        elements:
+          - team: "Platform Engineering & Site Reliability Enablement Guild"
+            config: |
+              replicaCount: 2
+              image:
+                tag: "1.0.0"
+            extras: '["alpha", "beta"]'
+          - team: "Data / ML Crew"
+            config: |
+              replicaCount: 4
+              image:
+                tag: "1.0.0"
+            extras: '["gamma"]'
+  template:
+    metadata:
+      name: 'fn-{{ slugify 12 .team }}'
+      namespace: argocd
+    spec:
+      project: default
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: 'fn-{{ slugify 12 .team }}'
+      source:
+        repoURL: REPO_URL
+        path: charts/demo
+        targetRevision: main
+        helm:
+          releaseName: 'fn-{{ slugify 12 false .team }}'
+          # Built as one map and emitted once: interleaving nindent output with
+          # literal lines puts them at different indents, and the result parses
+          # as two documents whose second half is silently dropped.
+          values: |
+            {{- $v := fromYaml .config -}}
+            {{- $_ := set $v "team" (normalize .team) -}}
+            {{- $_ := set $v "extras" (fromYamlArray .extras) -}}
+            {{- $_ := set $v "defaultSlug" (slugify .team) -}}
+            {{- toYaml $v | nindent 12 }}

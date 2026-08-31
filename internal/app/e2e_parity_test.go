@@ -4,6 +4,7 @@ package app
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,7 +48,7 @@ func TestE2EApplicationSetParity(t *testing.T) {
 
 	tree := branchTree(t, repoDir, branch)
 
-	for _, name := range []string{"e2e-list", "e2e-git-dir", "e2e-git-file", "e2e-lifecycle"} {
+	for _, name := range []string{"e2e-list", "e2e-git-dir", "e2e-git-file", "e2e-lifecycle", "e2e-funcs", "e2e-git-values"} {
 		t.Run(name, func(t *testing.T) {
 			manifest := filepath.Join(fixturesDir, strings.Replace(name, "e2e-", "appset-", 1)+".yaml")
 			raw, err := os.ReadFile(manifest) // #nosec G304 -- a lab fixture path
@@ -161,7 +162,8 @@ func normalizeGenerated(t *testing.T, apps []models.Application) []generatedApp 
 }
 
 // canonicalYAML re-marshals a values block so the comparison is about content
-// rather than the indentation each side's templating happened to emit.
+// rather than the indentation each side's templating happened to emit. It fails
+// the test if the block is not exactly one YAML document.
 func canonicalYAML(t *testing.T, values string) string {
 	t.Helper()
 
@@ -169,8 +171,15 @@ func canonicalYAML(t *testing.T, values string) string {
 		return ""
 	}
 
+	// A decoder rather than Unmarshal: a values block whose indentation breaks
+	// mid-way parses as two documents, and Unmarshal returns the first without
+	// complaint, so half the block would silently drop out of the comparison.
+	decoder := yaml.NewDecoder(strings.NewReader(values))
+
 	var parsed any
-	require.NoError(t, yaml.Unmarshal([]byte(values), &parsed), "values is not YAML: %q", values)
+	require.NoError(t, decoder.Decode(&parsed), "values is not YAML: %q", values)
+	require.ErrorIs(t, decoder.Decode(new(any)), io.EOF, "values is more than one YAML document: %q", values)
+
 	out, err := yaml.Marshal(parsed)
 	require.NoError(t, err)
 

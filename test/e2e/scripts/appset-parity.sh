@@ -27,7 +27,7 @@ assert_grep "$out" '^ok[[:space:]]' "expansion matches the ArgoCD controller"
 
 # Each ApplicationSet is asserted separately, so one passing subtest cannot stand
 # in for the others.
-fixtures=(e2e-list e2e-git-dir e2e-git-file e2e-lifecycle)
+fixtures=(e2e-list e2e-git-dir e2e-git-file e2e-lifecycle e2e-funcs e2e-git-values)
 for name in "${fixtures[@]}"; do
   assert_grep "$out" "^[[:space:]]+--- PASS: TestE2EApplicationSetParity/${name}" \
     "${name} parity"
