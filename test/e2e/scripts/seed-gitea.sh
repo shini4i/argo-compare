@@ -31,6 +31,12 @@ for app in demo addon; do
     >"${work}/apps/${app}.yaml"
 done
 
+# The anchored ApplicationSet has to live in the repo as well as in the cluster:
+# charts/generated's anchor resolves it by repo path, and a missing file there
+# surfaces as the confusing "file is empty".
+sed "s|REPO_URL|${ORIGIN_URL}|g" "${E2E_DIR}/fixtures/appset-generated.yaml" \
+  >"${work}/apps/generated-appset.yaml"
+
 git -C "$work" add -A
 git -C "$work" commit -qm "seed gitops fixtures"
 
@@ -50,6 +56,12 @@ grep -qE '^[[:space:]]*replicaCount: 3$' "${work}/apps/demo.yaml" ||
 sed -i -E 's/^message: hello$/message: world/' "${work}/charts/addon/values.yaml"
 grep -qx 'message: world' "${work}/charts/addon/values.yaml" ||
   die "the feature-branch addon chart change did not apply"
+
+# The anchored ApplicationSet's chart changes while its manifest stays put, so
+# the change reaches argo-compare only through charts/generated's anchor.
+sed -i -E 's/^banner: first$/banner: second/' "${work}/charts/generated/values.yaml"
+grep -qx 'banner: second' "${work}/charts/generated/values.yaml" ||
+  die "the feature-branch generated chart change did not apply"
 
 mkdir -p "${work}/clusters/prod"
 printf 'cluster: prod\nreplicas: 4\n' >"${work}/clusters/prod/config.yaml"

@@ -15,6 +15,7 @@ declare -A want=(
   [e2e-list]=2
   [e2e-git-dir]=2
   [e2e-git-file]=2
+  [e2e-generated]=2
 )
 
 for name in "${!want[@]}"; do

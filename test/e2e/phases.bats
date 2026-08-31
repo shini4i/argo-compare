@@ -40,3 +40,11 @@ teardown() {
   echo "$output"
   [ "$status" -eq 0 ]
 }
+
+# generated-parity last: it needs everything the others prove, and covers the
+# ApplicationSet flow's own output through an anchored manifest.
+@test "generated-parity: a generated Application's diff matches what ArgoCD renders" {
+  run ./scripts/generated-parity.sh
+  echo "$output"
+  [ "$status" -eq 0 ]
+}
