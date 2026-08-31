@@ -37,10 +37,20 @@
           trivy
           trufflehog
         ];
+
+        # Enough for `task lint` and `task phases` in test/e2e. The cluster tools
+        # (kind, kubectl, helm) are deliberately absent: they are heavy, and the
+        # lab is a per-release gate rather than part of the everyday shell.
+        e2eTools = with pkgs; [
+          bats
+          shellcheck
+          yq-go
+          jq
+        ];
       in
       {
         devShells.default = pkgs.mkShell {
-          packages = goToolchain ++ preCommitTools ++ securityTools;
+          packages = goToolchain ++ preCommitTools ++ securityTools ++ e2eTools;
           shellHook = ''
             export GOPATH="$PWD/.go"
             export GOMODCACHE="$PWD/.gomod"

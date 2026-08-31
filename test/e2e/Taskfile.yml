@@ -1,0 +1,94 @@
+# Orchestrator for the argo-compare e2e lab: a disposable kind cluster running
+# REAL ArgoCD and Gitea, against which the real argo-compare binary and the real
+# helm binary are driven. See README.md for what each phase proves.
+version: '3'
+silent: true
+
+vars:
+  CLUSTER: ac-e2e
+  KCTX: kind-ac-e2e
+  # bats writes the per-phase JUnit report here (gitignored).
+  REPORT_DIR: reports
+  # Pinned for reproducibility: a parity failure must mean argo-compare drifted,
+  # not that ArgoCD changed under us. Bump deliberately.
+  ARGOCD_CHART_VERSION: 10.4.0
+  GITEA_CHART_VERSION: 12.6.0
+
+tasks:
+  e2e:
+    desc: "One-shot run: boot the lab, run every phase, tear it down"
+    cmds:
+      - task: up
+      - task: phases
+      - task: down
+
+  up:
+    desc: "Boot the full lab (idempotent)"
+    cmds:
+      - task: cluster
+      - task: argocd
+      - task: gitea
+      - task: seed
+      - task: appsets
+
+  cluster:
+    desc: "Create the kind cluster if it does not exist"
+    status:
+      - kind get clusters | grep -qx {{.CLUSTER}}
+    cmds:
+      - kind create cluster --name {{.CLUSTER}} --config kind-config.yaml
+
+  argocd:
+    desc: "Install ArgoCD, including the ApplicationSet controller"
+    cmds:
+      - kubectl --context {{.KCTX}} create namespace argocd --dry-run=client -o yaml | kubectl --context {{.KCTX}} apply -f -
+      - helm --kube-context {{.KCTX}} upgrade --install argocd oci://ghcr.io/argoproj/argo-helm/argo-cd
+        --version {{.ARGOCD_CHART_VERSION}} -n argocd -f values/argocd.yaml
+      - kubectl --context {{.KCTX}} -n argocd rollout status deploy/argocd-applicationset-controller --timeout=300s
+      - kubectl --context {{.KCTX}} -n argocd rollout status deploy/argocd-repo-server --timeout=300s
+
+  gitea:
+    desc: "Install Gitea, the git remote both sides read"
+    cmds:
+      - kubectl --context {{.KCTX}} create namespace gitea --dry-run=client -o yaml | kubectl --context {{.KCTX}} apply -f -
+      - helm --kube-context {{.KCTX}} upgrade --install gitea gitea --repo https://dl.gitea.com/charts/
+        --version {{.GITEA_CHART_VERSION}} -n gitea -f values/gitea.yaml
+      - kubectl --context {{.KCTX}} -n gitea rollout status deploy/gitea --timeout=300s
+
+  seed:
+    desc: "Seed Gitea with the fixture gitops repo (main + feature)"
+    cmds:
+      - ./scripts/seed-gitea.sh
+
+  appsets:
+    desc: "Apply the fixture ApplicationSets and wait for ArgoCD to generate"
+    cmds:
+      - ./scripts/apply-appsets.sh
+
+  phases:
+    desc: "Run every phase against a lab that is already up"
+    cmds:
+      - mkdir -p {{.REPORT_DIR}}
+      # --report-formatter writes the file; --formatter would only replace the
+      # readable stdout with XML and leave {{.REPORT_DIR}} empty.
+      - bats --report-formatter junit --output {{.REPORT_DIR}} phases.bats
+
+  smoke:
+    desc: "Assert the real binary renders a real chart and reports the diff"
+    cmds:
+      - ./scripts/smoke.sh
+
+  appset-parity:
+    desc: "Assert argo-compare's expansion matches the real ArgoCD controller"
+    cmds:
+      - ./scripts/appset-parity.sh
+
+  lint:
+    desc: "shellcheck the phase scripts (no cluster needed)"
+    cmds:
+      - shellcheck scripts/*.sh
+
+  down:
+    desc: "Destroy the cluster"
+    cmds:
+      - kind delete cluster --name {{.CLUSTER}}

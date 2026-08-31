@@ -25,6 +25,11 @@ tasks:
     cmds:
       - go tool cover -html=coverage.out -o coverage.html
 
+  e2e:
+    desc: Run the end-to-end lab (real ArgoCD + Gitea on kind; see test/e2e/README.md)
+    cmds:
+      - task -d test/e2e e2e
+
   build:
     desc: Build the binary
     cmds:

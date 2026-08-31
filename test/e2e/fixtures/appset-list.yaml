@@ -1,0 +1,37 @@
+# List generator: the simplest expansion, and the only one that reads no tree.
+# REPO_URL is substituted by scripts/seed-gitea.sh with the in-cluster Gitea URL,
+# which is also what the local clone's origin is rewritten to, so argo-compare's
+# same-repository check on the source agrees with ArgoCD's view.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: e2e-list
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+            tag: "1.0.0"
+          - cluster: prod
+            tag: "1.1.0"
+  template:
+    metadata:
+      name: 'list-{{ .cluster }}'
+      namespace: argocd
+    spec:
+      project: default
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .cluster }}'
+      source:
+        repoURL: REPO_URL
+        path: charts/demo
+        targetRevision: main
+        helm:
+          releaseName: 'list-{{ .cluster }}'
+          values: |
+            image:
+              tag: "{{ .tag }}"

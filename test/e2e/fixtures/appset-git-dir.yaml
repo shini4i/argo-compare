@@ -1,0 +1,35 @@
+# Git directory generator: one Application per directory under clusters/, with
+# the path parameters ArgoCD exposes. This is the generator whose output depends
+# on the tree, so it is the one that catches a divergence in how argo-compare
+# lists directories versus how the real controller does.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: e2e-git-dir
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: REPO_URL
+        revision: main
+        directories:
+          - path: clusters/*
+  template:
+    metadata:
+      name: 'dir-{{ .path.basenameNormalized }}'
+      namespace: argocd
+    spec:
+      project: default
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .path.basename }}'
+      source:
+        repoURL: REPO_URL
+        path: charts/demo
+        targetRevision: main
+        helm:
+          releaseName: 'dir-{{ .path.basename }}'
+          values: |
+            cluster: "{{ .path.path }}"

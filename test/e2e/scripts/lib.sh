@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# Shared helpers for the argo-compare e2e lab. Source it, never run it. Sets no
+# shell options on purpose: sourcing must not change the caller's mode.
+# shellcheck disable=SC2034  # a library defines variables for its callers
+
+E2E_SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+E2E_DIR="$(cd "${E2E_SCRIPTS}/.." && pwd)"
+E2E_ROOT="$(cd "${E2E_DIR}/../.." && pwd)"
+
+KCTX="${KCTX:-kind-ac-e2e}"
+NS_ARGOCD="${NS_ARGOCD:-argocd}"
+NS_GITEA="${NS_GITEA:-gitea}"
+
+# Fixed NodePort from kind-config.yaml, so the clone URL survives a pod restart.
+GITEA_URL="${GITEA_URL:-http://localhost:30300}"
+GITEA_API="${GITEA_URL}/api/v1"
+GITEA_ADMIN="${GITEA_ADMIN:-gitea_admin}"
+GITEA_PW="${GITEA_PW:-gitea_admin_pw1}"
+GITEA_ORG="${GITEA_ORG:-e2e}"
+GITEA_REPO="${GITEA_REPO:-gitops}"
+
+# Two URLs for one repo, and the difference is load-bearing: CLONE_URL is
+# host-reachable, ORIGIN_URL is what ArgoCD resolves in-cluster and what the
+# manifests carry. See README.md.
+CLONE_URL="${CLONE_URL:-http://${GITEA_ADMIN}:${GITEA_PW}@localhost:30300/${GITEA_ORG}/${GITEA_REPO}.git}"
+ORIGIN_URL="${ORIGIN_URL:-http://gitea-http.${NS_GITEA}.svc.cluster.local:3000/${GITEA_ORG}/${GITEA_REPO}.git}"
+
+TARGET_BRANCH="${TARGET_BRANCH:-main}"
+FEATURE_BRANCH="${FEATURE_BRANCH:-feature}"
+
+kc() {
+  kubectl --context "$KCTX" "$@"
+  return
+}
+
+E2E_FAILS=0
+
+ok() { echo "  OK   $*"; return; }
+bad() { echo "  FAIL $*"; E2E_FAILS=$((E2E_FAILS + 1)); return; }
+note() { echo "  NOTE $*"; return; }
+
+# assert_grep <file> <pattern> <message>: one reported grep assertion. An
+# if/then/else rather than `grep && ok || bad`, where a failing ok() would also
+# run bad() and report a passing assertion as failed.
+assert_grep() {
+  local file="$1" pattern="$2" message="$3"
+  if grep -qE "$pattern" "$file"; then
+    ok "$message"
+  else
+    bad "$message"
+  fi
+  return
+}
+
+# phase_end <PHASE>: print the verdict, exit non-zero if any bad() fired.
+phase_end() {
+  local name="$1" code=0
+  if [[ "$E2E_FAILS" -eq 0 ]]; then
+    echo "${name}: PASS"
+  else
+    echo "${name}: FAIL (${E2E_FAILS} failed assertion(s))"
+    code=1
+  fi
+  exit "$code"
+  # Unreachable: SonarCloud wants a return, shellcheck calls it dead.
+  # shellcheck disable=SC2317
+  return
+}
+
+# die <message...>: abort on a precondition, as opposed to a failed assertion.
+# shellcheck disable=SC2317
+die() {
+  echo "FAIL: $*" >&2
+  exit 1
+  return
+}
+
+# retry <attempts> <delay> <cmd...>: run cmd until it succeeds. Locals are
+# underscore-prefixed because cmd runs in THIS shell and may hold the same names.
+retry() {
+  local _attempts="$1" _delay="$2" _i
+  shift 2
+  for ((_i = 1; _i <= _attempts; _i++)); do
+    "$@" && return 0
+    [[ "$_i" -lt "$_attempts" ]] && sleep "$_delay"
+  done
+  return 1
+}
+
+gitea_ready() {
+  curl -sf -m 3 -u "${GITEA_ADMIN}:${GITEA_PW}" "${GITEA_API}/version" >/dev/null 2>&1
+  return
+}
+
+# gapi <curl-args...>: an authenticated Gitea API call.
+gapi() {
+  curl -sf -m 10 -u "${GITEA_ADMIN}:${GITEA_PW}" -H 'Content-Type: application/json' "$@"
+  return
+}
+
+# clone_gitops <dir>: clone the seeded repo, pointing origin at the in-cluster
+# URL. argo-compare reads trees locally and never fetches, so the rewritten
+# remote only has to match what the manifests name.
+clone_gitops() {
+  local dir="$1"
+  git clone -q "$CLONE_URL" "$dir" || die "gitops clone failed"
+  git -C "$dir" remote set-url origin "$ORIGIN_URL"
+  git -C "$dir" fetch -q "$CLONE_URL" "+refs/heads/*:refs/remotes/origin/*" ||
+    die "gitops fetch failed"
+  return
+}
+
+# build_compare <dir>: build the real argo-compare binary, setting COMPARE_BIN.
+build_compare() {
+  local dir="$1"
+  COMPARE_BIN="${dir}/argo-compare"
+  (cd "$E2E_ROOT" && go build -o "$COMPARE_BIN" ./cmd/argo-compare) ||
+    die "argo-compare build failed"
+  return
+}
+
+# appset_apps <appset>: names of the Applications the real controller generated.
+# Selected by ownerReference, not by a label: the controller stamps no
+# application-set-name label on what it generates, so a label selector silently
+# matches nothing and every count built on it reads as zero.
+appset_apps() {
+  local appset="$1"
+  kc -n "$NS_ARGOCD" get applications -o json 2>/dev/null |
+    jq -r --arg name "$appset" \
+      '.items[]
+       | select(.metadata.ownerReferences // []
+           | any(.kind == "ApplicationSet" and .name == $name))
+       | .metadata.name' |
+    sort
+  return
+}
+
+# appset_count <appset>: how many Applications exist for <appset> right now.
+appset_count() {
+  local appset="$1"
+  appset_apps "$appset" | grep -c . || true
+  return
+}
+
+# wait_appset <appset> <count> [attempts]: block until the controller has
+# generated <count> Applications for <appset>.
+wait_appset() {
+  local appset="$1" count="$2" attempts="${3:-30}"
+  retry "$attempts" 2 test_appset_count "$appset" "$count"
+  return
+}
+
+test_appset_count() {
+  local appset="$1" want="$2"
+  [[ "$(appset_count "$appset")" -eq "$want" ]]
+  return
+}
