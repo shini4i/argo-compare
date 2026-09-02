@@ -6,10 +6,12 @@ generates. The reference for the behaviour itself is
 [`docs/applicationsets.md`](../../docs/applicationsets.md); this directory is
 the shape a repository has to take for that behaviour to fire.
 
-The two ApplicationSets are named after the two shapes a git generator can
-take: `by-directory` generates one Application per directory and reads only the
-path, while `by-file` generates one per matching file and takes that file's
-contents as parameters.
+Two generators are supported, and there is one ApplicationSet here for each.
+`list` writes its elements into the manifest and reads no tree at all. `git`
+derives them from the repository — this example uses its `directories` shape,
+one Application per directory; the `files` shape works the same way but takes
+each matching file's contents as parameters instead
+([docs](../../docs/applicationsets.md#files)).
 
 These files are a structural reference, not a runnable repository. The chart
 directories hold only the metadata that makes them charts — bring your own
@@ -21,20 +23,17 @@ templates — and the `repoURL` values are placeholders.
 .
 ├── apps/
 │   ├── by-directory-appset.yaml   # git generator, directories + values
-│   └── by-file-appset.yaml        # git generator, files
+│   └── list-appset.yaml           # list generator
 ├── charts/
 │   ├── demo/                      # rendered by by-directory-appset
 │   │   ├── .argo-compare.yml      # anchor -> apps/by-directory-appset.yaml
 │   │   ├── Chart.yaml
 │   │   └── values.yaml
-│   └── addon/                     # rendered by by-file-appset
-│       ├── .argo-compare.yml      # anchor -> apps/by-file-appset.yaml
+│   └── generated/                 # rendered by list-appset
+│       ├── .argo-compare.yml      # anchor -> apps/list-appset.yaml
 │       ├── Chart.yaml
 │       └── values.yaml
-├── by-directory/                  # one directory here, one Application
-│   ├── app1/config.yaml
-│   └── app2/config.yaml
-└── by-file/                       # one file here, one Application
+└── by-directory/                  # one directory here, one Application
     ├── app1/config.yaml
     └── app2/config.yaml
 ```
@@ -58,12 +57,14 @@ is an explicit pointer, so a gate it misses fails the run.
 
 1. **`goTemplate: true`** — the legacy fasttemplate engine is not implemented.
    Pair it with `goTemplateOptions: ["missingkey=error"]`.
-2. **The generator's `repoURL` is this repository.** The two branches being
+2. **A git generator's `repoURL` is this repository.** The two branches being
    compared are the two trees the generator reads; one pointing elsewhere would
    read the same external tree twice.
-3. **`revision` is `HEAD` or the branch you compare against.** A tag or an
-   unrelated branch means ArgoCD keeps generating from a fixed tree, so a
-   directory your branch adds changes nothing.
+3. **A git generator's `revision` is `HEAD` or the branch you compare against.**
+   A tag or an unrelated branch means ArgoCD keeps generating from a fixed tree,
+   so a directory your branch adds changes nothing.
+
+Gates 2 and 3 do not apply to a `list` generator, which reads no repository.
 
 The template's `spec.source.repoURL` is a fourth thing to get right, though it
 is not checked the same way. A `path`-based source is always rendered from the
@@ -76,10 +77,9 @@ with a log line naming the reason, and the run fails if that leaves nothing to
 compare. Both example charts are anchored, so a registry chart in their
 templates would fail rather than be ignored.
 
-Both `repoURL` fields here read
-`https://github.com/you/your-gitops-repo.git`. Replace them with your own
-origin URL — the value `git remote get-url origin` prints — or nothing will
-match.
+Every `repoURL` here reads `https://github.com/you/your-gitops-repo.git`.
+Replace them with your own origin URL — the value `git remote get-url origin`
+prints — or nothing will match.
 
 ## What triggers a comparison
 
@@ -88,17 +88,18 @@ to your change is usually the missing piece:
 
 | Your change | How it is found |
 |---|---|
-| `apps/by-directory-appset.yaml` edited | It is a changed file in the diff — the ordinary flow. |
+| `apps/list-appset.yaml` edited | It is a changed file in the diff — the ordinary flow. |
 | anything under `by-directory/app3/` added or deleted | Repository scan: a git generator whose `directories` pattern covers a touched directory. |
-| `by-file/app1/config.yaml` edited | The same scan, matching a `files` pattern. |
 | `charts/demo/values.yaml` edited | The `.argo-compare.yml` anchor in that directory. |
 
 The last row is the one that surprises people. A chart-only change touches no
 directory a generator matches and does not touch the manifest, so without an
 anchor nothing routes it to the ApplicationSet and the change goes uncompared.
-That is why both charts here carry one. An anchor names exactly one path, so a
-chart shared by two ApplicationSets can only be routed to one of them — give
-each ApplicationSet its own chart directory, as this example does.
+That is why both charts here carry one — and for the `list` generator, which
+has no patterns at all, an anchor is the *only* way a chart change is ever
+compared. An anchor names exactly one path, so a chart shared by two
+ApplicationSets can only be routed to one of them; give each ApplicationSet its
+own chart directory, as this example does.
 
 An anchor also works across repositories, which is the only way to reach an
 ApplicationSet that does not live in the repository being compared. See
@@ -108,13 +109,18 @@ ApplicationSet that does not live in the repository being compared. See
 ## Trying it out
 
 Adopt the layout in a repository of your own — real chart templates included,
-`repoURL` pointing at that repository's origin — and the two changes below are
-the ones worth running first, one per discovery path:
+`repoURL` pointing at that repository's origin — and the changes below are the
+ones worth running first, one per discovery path:
 
 ```bash
 # A new directory: found by the repository scan, adds dir-app3
 mkdir -p by-directory/app3 && printf 'app: app3\n' > by-directory/app3/config.yaml
 git add by-directory/app3 && git commit -m 'add app3'
+argo-compare branch main --print-added-manifests
+
+# A new list element: found as a changed file, adds list-app3
+vim apps/list-appset.yaml     # append an element
+git commit -am 'add app3 to the list'
 argo-compare branch main --print-added-manifests
 
 # A chart-only change: found through the anchor, diffs both Applications
@@ -123,13 +129,11 @@ git commit -am 'bump demo values'
 argo-compare branch main
 ```
 
-The first needs `--print-added-manifests` to print anything, because an
+The first two need `--print-added-manifests` to print anything, because an
 Application only one branch generates has nothing to be diffed against.
 
-## Generators other than `git`
+## Unsupported generators
 
-A `list` generator needs no repository layout at all — its elements are in the
-manifest, and editing it is a changed file like any other. It still needs an
-anchor for chart-only changes, exactly as above. `matrix`, `merge`, `clusters`,
-`scmProvider` and `pullRequest` are not supported and are skipped with a
-warning.
+`matrix`, `merge`, `clusters`, `scmProvider` and `pullRequest` need cluster or
+forge access this tool deliberately does not have. A manifest using one is
+skipped with a warning naming the reason.

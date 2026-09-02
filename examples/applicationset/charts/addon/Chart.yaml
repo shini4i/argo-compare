@@ -1,5 +1,0 @@
-apiVersion: v2
-name: addon
-description: Chart rendered by apps/by-file-appset.yaml; add your own templates.
-type: application
-version: 0.1.0

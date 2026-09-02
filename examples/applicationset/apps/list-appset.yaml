@@ -1,23 +1,24 @@
-# One Application per matching file, with that file's own contents as
-# parameters: by-file/app1/config.yaml holds `app: app1`, so the template reads
-# {{ .app }}. `**` recurses in a files pattern (it does not in a directories one).
+# One Application per element, with the elements written out here. A list
+# generator reads no tree at all, so editing this file is the only change that
+# alters which Applications exist.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: by-file
+  name: list
   namespace: argocd
 spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
   generators:
-    - git:
-        repoURL: https://github.com/you/your-gitops-repo.git
-        revision: HEAD
-        files:
-          - path: "by-file/**/config.yaml"
+    - list:
+        elements:
+          - app: app1
+            tier: standard
+          - app: app2
+            tier: premium
   template:
     metadata:
-      name: 'file-{{ .app }}'
+      name: 'list-{{ .app }}'
       namespace: argocd
     spec:
       project: default
@@ -26,10 +27,10 @@ spec:
         namespace: '{{ .app }}'
       source:
         repoURL: https://github.com/you/your-gitops-repo.git
-        path: charts/addon
+        path: charts/generated
         targetRevision: main
         helm:
-          releaseName: 'file-{{ .app }}'
+          releaseName: 'list-{{ .app }}'
           values: |
             app: {{ .app }}
             tier: {{ .tier }}
