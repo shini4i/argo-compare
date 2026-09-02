@@ -1,0 +1,4 @@
+# A directories generator reads the directory path, never this file's contents,
+# but git stores no empty directory, so each cluster dir needs a file.
+cluster: dev
+replicas: 1

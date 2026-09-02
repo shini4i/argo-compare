@@ -1,0 +1,4 @@
+cluster: unset
+replicaCount: 1
+image:
+  tag: "1.0.0"

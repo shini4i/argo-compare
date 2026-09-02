@@ -1,0 +1,36 @@
+# One Application per matching file, with that file's own contents as
+# parameters: tenants/acme/tenant.yaml holds `name: acme`, so the template
+# reads {{ .name }}. `**` recurses in a files pattern (it does not in a
+# directories one).
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: tenants
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/you/your-gitops-repo.git
+        revision: HEAD
+        files:
+          - path: "tenants/**/tenant.yaml"
+  template:
+    metadata:
+      name: 'tenant-{{ .name }}'
+      namespace: argocd
+    spec:
+      project: default
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: 'tenant-{{ .name }}'
+      source:
+        repoURL: https://github.com/you/your-gitops-repo.git
+        path: charts/tenant
+        targetRevision: main
+        helm:
+          releaseName: 'tenant-{{ .name }}'
+          values: |
+            tenant: {{ .name }}
+            tier: {{ .tier }}
