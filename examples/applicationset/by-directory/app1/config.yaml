@@ -1,0 +1,3 @@
+# A directories generator reads the directory path, never this file's contents,
+# but git stores no empty directory, so each app dir needs a file.
+app: app1

@@ -1,0 +1,36 @@
+# One Application per directory under by-directory/. Both repoURL values name
+# THIS repository, and both are placeholders: replace them with your origin URL.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: by-directory
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/you/your-gitops-repo.git
+        revision: HEAD
+        directories:
+          - path: by-directory/*
+        # Rendered against the path parameters and exposed back as .values.*
+        values:
+          app: '{{ .path.basename }}'
+  template:
+    metadata:
+      name: 'dir-{{ .path.basenameNormalized }}'
+      namespace: argocd
+    spec:
+      project: default
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .values.app }}'
+      source:
+        repoURL: https://github.com/you/your-gitops-repo.git
+        path: charts/demo
+        targetRevision: main
+        helm:
+          releaseName: 'dir-{{ .path.basenameNormalized }}'
+          values: |
+            app: {{ .values.app }}

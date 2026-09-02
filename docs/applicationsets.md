@@ -5,6 +5,10 @@ it generates, on your branch and on the target branch, then compares each
 generated Application. No cluster connection is needed and the ArgoCD control
 plane is never contacted.
 
+A reference repository layout — which manifests go where, and which change
+reaches which ApplicationSet — lives under
+[`examples/applicationset/`](../examples/applicationset).
+
 ## What is supported
 
 | Feature | Status |

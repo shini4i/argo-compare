@@ -1,0 +1,4 @@
+# A chart-only change matches no generator pattern, so this anchor is what
+# routes it to apps/by-directory-appset.yaml, which renders this chart.
+application:
+  path: apps/by-directory-appset.yaml

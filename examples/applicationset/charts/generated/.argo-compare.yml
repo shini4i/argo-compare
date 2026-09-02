@@ -1,0 +1,4 @@
+# Without this anchor a change to the chart would reach nothing: a list
+# generator has no pattern that a chart path could match.
+application:
+  path: apps/list-appset.yaml

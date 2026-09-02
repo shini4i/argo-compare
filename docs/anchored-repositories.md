@@ -43,6 +43,8 @@ Each branch is judged separately. An Application that moves into this repository
 
 Several chart directories may share one anchored manifest. It is compared once, not once per anchor.
 
+[`examples/applicationset/`](../examples/applicationset) is a worked layout where a chart-only change reaches an ApplicationSet through this anchor.
+
 ## Limits in this version
 
 - Only Helm sources are supported (`spec.source.chart` or `spec.source.path`). Kustomize / plain-YAML sources are not handled.
