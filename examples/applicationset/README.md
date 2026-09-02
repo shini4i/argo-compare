@@ -6,6 +6,11 @@ generates. The reference for the behaviour itself is
 [`docs/applicationsets.md`](../../docs/applicationsets.md); this directory is
 the shape a repository has to take for that behaviour to fire.
 
+The two ApplicationSets are named after the two shapes a git generator can
+take: `by-directory` generates one Application per directory and reads only the
+path, while `by-file` generates one per matching file and takes that file's
+contents as parameters.
+
 These files are a structural reference, not a runnable repository. The chart
 directories hold only the metadata that makes them charts — bring your own
 templates — and the `repoURL` values are placeholders.
@@ -15,23 +20,23 @@ templates — and the `repoURL` values are placeholders.
 ```
 .
 ├── apps/
-│   ├── clusters-appset.yaml         # git generator, directories + values
-│   └── tenants-appset.yaml          # git generator, files
+│   ├── by-directory-appset.yaml   # git generator, directories + values
+│   └── by-file-appset.yaml        # git generator, files
 ├── charts/
-│   ├── demo/                        # rendered by clusters-appset
-│   │   ├── .argo-compare.yml        # anchor -> apps/clusters-appset.yaml
+│   ├── demo/                      # rendered by by-directory-appset
+│   │   ├── .argo-compare.yml      # anchor -> apps/by-directory-appset.yaml
 │   │   ├── Chart.yaml
 │   │   └── values.yaml
-│   └── tenant/                      # rendered by tenants-appset
-│       ├── .argo-compare.yml        # anchor -> apps/tenants-appset.yaml
+│   └── addon/                     # rendered by by-file-appset
+│       ├── .argo-compare.yml      # anchor -> apps/by-file-appset.yaml
 │       ├── Chart.yaml
 │       └── values.yaml
-├── clusters/                        # one directory per generated Application
-│   ├── dev/config.yaml
-│   └── staging/config.yaml
-└── tenants/                         # one file per generated Application
-    ├── acme/tenant.yaml
-    └── globex/tenant.yaml
+├── by-directory/                  # one directory here, one Application
+│   ├── app1/config.yaml
+│   └── app2/config.yaml
+└── by-file/                       # one file here, one Application
+    ├── app1/config.yaml
+    └── app2/config.yaml
 ```
 
 `apps/` is not a magic name — an ApplicationSet is picked up wherever it lives.
@@ -83,9 +88,9 @@ to your change is usually the missing piece:
 
 | Your change | How it is found |
 |---|---|
-| `apps/clusters-appset.yaml` edited | It is a changed file in the diff — the ordinary flow. |
-| anything under `clusters/prod/` added or deleted | Repository scan: a git generator whose `directories` pattern covers a touched directory. |
-| `tenants/acme/tenant.yaml` edited | The same scan, matching a `files` pattern. |
+| `apps/by-directory-appset.yaml` edited | It is a changed file in the diff — the ordinary flow. |
+| anything under `by-directory/app3/` added or deleted | Repository scan: a git generator whose `directories` pattern covers a touched directory. |
+| `by-file/app1/config.yaml` edited | The same scan, matching a `files` pattern. |
 | `charts/demo/values.yaml` edited | The `.argo-compare.yml` anchor in that directory. |
 
 The last row is the one that surprises people. A chart-only change touches no
@@ -107,14 +112,14 @@ Adopt the layout in a repository of your own — real chart templates included,
 the ones worth running first, one per discovery path:
 
 ```bash
-# A new cluster directory: found by the repository scan, adds demo-prod
-mkdir -p clusters/prod && printf 'cluster: prod\n' > clusters/prod/config.yaml
-git add clusters/prod && git commit -m 'add prod cluster'
+# A new directory: found by the repository scan, adds dir-app3
+mkdir -p by-directory/app3 && printf 'app: app3\n' > by-directory/app3/config.yaml
+git add by-directory/app3 && git commit -m 'add app3'
 argo-compare branch main --print-added-manifests
 
 # A chart-only change: found through the anchor, diffs both Applications
 vim charts/demo/values.yaml   # bump a value
-git commit -am 'bump demo replicas'
+git commit -am 'bump demo values'
 argo-compare branch main
 ```
 

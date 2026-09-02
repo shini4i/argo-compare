@@ -1,11 +1,10 @@
 # One Application per matching file, with that file's own contents as
-# parameters: tenants/acme/tenant.yaml holds `name: acme`, so the template
-# reads {{ .name }}. `**` recurses in a files pattern (it does not in a
-# directories one).
+# parameters: by-file/app1/config.yaml holds `app: app1`, so the template reads
+# {{ .app }}. `**` recurses in a files pattern (it does not in a directories one).
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: tenants
+  name: by-file
   namespace: argocd
 spec:
   goTemplate: true
@@ -15,22 +14,22 @@ spec:
         repoURL: https://github.com/you/your-gitops-repo.git
         revision: HEAD
         files:
-          - path: "tenants/**/tenant.yaml"
+          - path: "by-file/**/config.yaml"
   template:
     metadata:
-      name: 'tenant-{{ .name }}'
+      name: 'file-{{ .app }}'
       namespace: argocd
     spec:
       project: default
       destination:
         server: https://kubernetes.default.svc
-        namespace: 'tenant-{{ .name }}'
+        namespace: '{{ .app }}'
       source:
         repoURL: https://github.com/you/your-gitops-repo.git
-        path: charts/tenant
+        path: charts/addon
         targetRevision: main
         helm:
-          releaseName: 'tenant-{{ .name }}'
+          releaseName: 'file-{{ .app }}'
           values: |
-            tenant: {{ .name }}
+            app: {{ .app }}
             tier: {{ .tier }}

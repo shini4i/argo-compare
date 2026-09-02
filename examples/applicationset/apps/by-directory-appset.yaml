@@ -1,9 +1,9 @@
-# One Application per directory under clusters/. Both repoURL values name THIS
-# repository, and both are placeholders: replace them with your own origin URL.
+# One Application per directory under by-directory/. Both repoURL values name
+# THIS repository, and both are placeholders: replace them with your origin URL.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: clusters
+  name: by-directory
   namespace: argocd
 spec:
   goTemplate: true
@@ -13,24 +13,24 @@ spec:
         repoURL: https://github.com/you/your-gitops-repo.git
         revision: HEAD
         directories:
-          - path: clusters/*
+          - path: by-directory/*
         # Rendered against the path parameters and exposed back as .values.*
         values:
-          cluster: '{{ .path.basename }}'
+          app: '{{ .path.basename }}'
   template:
     metadata:
-      name: 'demo-{{ .path.basenameNormalized }}'
+      name: 'dir-{{ .path.basenameNormalized }}'
       namespace: argocd
     spec:
       project: default
       destination:
         server: https://kubernetes.default.svc
-        namespace: '{{ .values.cluster }}'
+        namespace: '{{ .values.app }}'
       source:
         repoURL: https://github.com/you/your-gitops-repo.git
         path: charts/demo
         targetRevision: main
         helm:
-          releaseName: 'demo-{{ .path.basenameNormalized }}'
+          releaseName: 'dir-{{ .path.basenameNormalized }}'
           values: |
-            cluster: {{ .values.cluster }}
+            app: {{ .values.app }}
