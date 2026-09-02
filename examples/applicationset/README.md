@@ -101,36 +101,14 @@ compared. An anchor names exactly one path, so a chart shared by two
 ApplicationSets can only be routed to one of them; give each ApplicationSet its
 own chart directory, as this example does.
 
+A change that adds or drops an Application rather than altering one needs
+`--print-added-manifests` or `--print-removed-manifests` to print anything: an
+Application only one branch generates has nothing to be diffed against.
+
 An anchor also works across repositories, which is the only way to reach an
 ApplicationSet that does not live in the repository being compared. See
 [`docs/anchored-repositories.md`](../../docs/anchored-repositories.md) and
 [`examples/anchor/`](../anchor).
-
-## Trying it out
-
-Adopt the layout in a repository of your own — real chart templates included,
-`repoURL` pointing at that repository's origin — and the changes below are the
-ones worth running first, one per discovery path:
-
-```bash
-# A new directory: found by the repository scan, adds dir-app3
-mkdir -p by-directory/app3 && printf 'app: app3\n' > by-directory/app3/config.yaml
-git add by-directory/app3 && git commit -m 'add app3'
-argo-compare branch main --print-added-manifests
-
-# A new list element: found as a changed file, adds list-app3
-vim apps/list-appset.yaml     # append an element
-git commit -am 'add app3 to the list'
-argo-compare branch main --print-added-manifests
-
-# A chart-only change: found through the anchor, diffs both Applications
-vim charts/demo/values.yaml   # bump a value
-git commit -am 'bump demo values'
-argo-compare branch main
-```
-
-The first two need `--print-added-manifests` to print anything, because an
-Application only one branch generates has nothing to be diffed against.
 
 ## Unsupported generators
 
