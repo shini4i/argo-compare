@@ -18,6 +18,7 @@ import (
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/shini4i/argo-compare/internal/ui"
 	"github.com/spf13/afero"
+	"gopkg.in/yaml.v3"
 )
 
 // GitRepo wraps interactions with the current repository for diff analysis.
@@ -375,10 +376,32 @@ func (g *GitRepo) printChangeFile(addedFiles, removed []string) {
 	}
 }
 
-// argoKindMarker is the cheap pre-filter that keeps changed-file sorting from
-// parsing every YAML the diff touched. It matches both Application and
-// ApplicationSet.
+// argoKindMarker is the last-resort textual check for a manifest too malformed
+// to decode. It matches both Application and ApplicationSet.
 var argoKindMarker = []byte("Application")
+
+// claimsArgoKind reports whether content declares a kind argo-compare handles.
+// The kind is read through the YAML parser, so a quoted or escaped spelling
+// counts. Content too malformed to decode falls back to a textual check, which
+// keeps a broken manifest reportable instead of silently skipped (issue #153).
+func claimsArgoKind(content []byte) bool {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		return bytes.Contains(content, argoKindMarker)
+	}
+
+	var probe struct {
+		Kind string `yaml:"kind"`
+	}
+
+	// A well-formed document that is not a mapping — an Ansible playbook is a
+	// sequence — declares no kind, whatever words it contains.
+	if err := doc.Decode(&probe); err != nil {
+		return false
+	}
+
+	return probe.Kind == models.KindApplication || probe.Kind == models.KindApplicationSet
+}
 
 // isYAMLFile reports whether name carries a YAML extension. ArgoCD accepts
 // both `.yaml` and `.yml`, so gating on one alone drops the other silently
@@ -468,15 +491,14 @@ func isHelmTemplate(fs afero.Fs, repoRoot, relFile string) (bool, error) {
 func (g *GitRepo) classifyManifest(file string) (string, error) {
 	g.log.Debugf("===> Checking if [%s] is an Application", ui.Cyan(file))
 
-	// A file that never names an ArgoCD kind is not a manifest this run wants,
-	// and parsing one would fail the run on a decode error alone. The check is
-	// textual: a non-manifest YAML that does contain the word is still parsed,
-	// and still reported invalid when it cannot decode.
+	// A file that declares no ArgoCD kind is not a manifest this run wants, and
+	// parsing one would fail the run on a decode error alone — the diff of a
+	// GitOps repository is full of unrelated YAML.
 	content, err := readManifest(g.fileReader, file)
 	if err != nil {
 		return "", err
 	}
-	if !bytes.Contains(content, argoKindMarker) {
+	if !claimsArgoKind(content) {
 		return "", models.ErrNotApplication
 	}
 
