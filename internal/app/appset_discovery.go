@@ -219,7 +219,7 @@ func mergePaths(base, extra []string) []string {
 // used. The caller reports that rather than failing, so a single broken
 // manifest does not stop a run it may have nothing to do with.
 func readApplicationSet(fileReader ports.FileReader, fullPath, rel string) (*models.ApplicationSet, error) {
-	if ext := path.Ext(rel); ext != ".yaml" && ext != ".yml" {
+	if !isYAMLFile(rel) {
 		return nil, nil
 	}
 
