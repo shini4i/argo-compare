@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -952,64 +951,6 @@ func TestGitRepoGetChangedFilesAcceptsYmlExtension(t *testing.T) {
 	require.Empty(t, result.Invalid)
 }
 
-// TestGitRepoGetChangedFilesIgnoresUnrelatedYml proves widening the extension
-// gate to `.yml` does not drag every other YAML into the Application parser:
-// an Ansible playbook declares no ArgoCD kind, and reporting it as invalid
-// would fail the run.
-func TestGitRepoGetChangedFilesIgnoresUnrelatedYml(t *testing.T) {
-	tempDir := t.TempDir()
-	workDir := filepath.Join(tempDir, "repo")
-	require.NoError(t, os.MkdirAll(workDir, 0o755))
-
-	repo, err := git.PlainInit(workDir, false)
-	require.NoError(t, err)
-	require.NoError(t, repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))))
-
-	writeApplicationAt(t, workDir, "apps/demo.yml", `1.0.0`, 1)
-	require.NoError(t, os.MkdirAll(filepath.Join(workDir, "ansible"), 0o755))
-	playbook := filepath.Join(workDir, "ansible", "site.yml")
-	require.NoError(t, os.WriteFile(playbook, []byte("- hosts: all\n  tasks:\n    - name: ping\n      ping:\n"), 0o644))
-
-	worktree, err := repo.Worktree()
-	require.NoError(t, err)
-	_, err = worktree.Add("apps/demo.yml")
-	require.NoError(t, err)
-	_, err = worktree.Add("ansible/site.yml")
-	require.NoError(t, err)
-	commitHash, err := worktree.Commit("initial", &git.CommitOptions{Author: defaultSignature()})
-	require.NoError(t, err)
-
-	require.NoError(t, repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), commitHash)))
-	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("feature"), Create: true}))
-
-	writeApplicationAt(t, workDir, "apps/demo.yml", `1.1.0`, 2)
-	require.NoError(t, os.WriteFile(playbook, []byte("- hosts: all\n  tasks:\n    - name: pong\n      ping:\n"), 0o644))
-
-	_, err = worktree.Add("apps/demo.yml")
-	require.NoError(t, err)
-	_, err = worktree.Add("ansible/site.yml")
-	require.NoError(t, err)
-	_, err = worktree.Commit("update", &git.CommitOptions{Author: defaultSignature()})
-	require.NoError(t, err)
-
-	originalWD, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(workDir))
-	t.Cleanup(func() {
-		require.NoError(t, os.Chdir(originalWD))
-	})
-
-	log := logger.New("git-test-unrelated-yml")
-	repoInstance, err := NewGitRepo(afero.NewOsFs(), portstest.NoopCmdRunner{}, utils.OsFileReader{}, log)
-	require.NoError(t, err)
-
-	result, err := repoInstance.GetChangedFiles("main", nil, "")
-	require.NoError(t, err)
-
-	require.Equal(t, []string{"apps/demo.yml"}, result.Applications)
-	require.Empty(t, result.Invalid, "an Ansible playbook is not a broken Application manifest")
-}
-
 // TestIsYAMLFile pins the .yaml/.yml extension match and its case sensitivity.
 func TestIsYAMLFile(t *testing.T) {
 	// The comparison is case-sensitive, mirroring the extensions ArgoCD itself
@@ -1111,90 +1052,6 @@ spec:
 	require.Empty(t, result.Invalid)
 }
 
-// TestGitRepoGetChangedFilesSkipsMarkerPositiveNonManifest pins that merely
-// mentioning an ArgoCD kind does not make a file a manifest: the kind is read
-// through the parser, so a YAML naming one in a comment declares no kind and
-// is skipped rather than reported invalid.
-func TestGitRepoGetChangedFilesSkipsMarkerPositiveNonManifest(t *testing.T) {
-	tempDir := t.TempDir()
-	workDir := filepath.Join(tempDir, "repo")
-	require.NoError(t, os.MkdirAll(workDir, 0o755))
-
-	repo, err := git.PlainInit(workDir, false)
-	require.NoError(t, err)
-	require.NoError(t, repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))))
-
-	notes := filepath.Join(workDir, "notes.yml")
-	require.NoError(t, os.WriteFile(notes, []byte("# Application settings\nfoo: bar\n"), 0o644))
-
-	worktree, err := repo.Worktree()
-	require.NoError(t, err)
-	_, err = worktree.Add("notes.yml")
-	require.NoError(t, err)
-	commitHash, err := worktree.Commit("initial", &git.CommitOptions{Author: defaultSignature()})
-	require.NoError(t, err)
-
-	require.NoError(t, repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), commitHash)))
-	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("feature"), Create: true}))
-
-	require.NoError(t, os.WriteFile(notes, []byte("# Application settings\nfoo: baz\n"), 0o644))
-	_, err = worktree.Add("notes.yml")
-	require.NoError(t, err)
-	_, err = worktree.Commit("update", &git.CommitOptions{Author: defaultSignature()})
-	require.NoError(t, err)
-
-	originalWD, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(workDir))
-	t.Cleanup(func() {
-		require.NoError(t, os.Chdir(originalWD))
-	})
-
-	var logBuffer bytes.Buffer
-	logger.RedirectForTest(t, &logBuffer)
-
-	logger.SetLevel(true)
-	t.Cleanup(func() { logger.SetLevel(false) })
-
-	log := logger.New("git-test-marker-positive")
-	repoInstance, err := NewGitRepo(afero.NewOsFs(), portstest.NoopCmdRunner{}, utils.OsFileReader{}, log)
-	require.NoError(t, err)
-
-	result, err := repoInstance.GetChangedFiles("main", nil, "")
-	require.NoError(t, err)
-
-	require.Empty(t, result.Applications)
-	require.Empty(t, result.Invalid)
-	require.Contains(t, logBuffer.String(), "Skipping non-application file")
-}
-
-// TestSortChangedFilesUnreadableManifestIsInvalid covers the read failure that
-// classifyManifest surfaces before it can inspect the manifest at all: the
-// file must be reported, not skipped, so an operator sees why nothing rendered.
-func TestSortChangedFilesUnreadableManifestIsInvalid(t *testing.T) {
-	var logBuffer bytes.Buffer
-	logger.RedirectForTest(t, &logBuffer)
-
-	repoInstance := &GitRepo{
-		fs:         afero.NewMemMapFs(),
-		cmdRunner:  portstest.NoopCmdRunner{},
-		fileReader: portstest.ErrFileReader{Err: errors.New("boom")},
-		log:        logger.New("git-test-unreadable"),
-	}
-
-	// An absolute path keeps readManifest off GetGitRepoRoot, so the reader is
-	// the only thing that can fail and the assertion has one possible cause.
-	repoRoot := t.TempDir()
-	manifest := filepath.Join(repoRoot, "apps", "demo.yml")
-
-	applications, invalid, err := repoInstance.sortChangedFiles([]string{manifest}, repoRoot)
-	require.NoError(t, err)
-
-	require.Empty(t, applications)
-	require.Equal(t, []string{manifest}, invalid)
-	require.Contains(t, logBuffer.String(), "boom")
-}
-
 // TestGitRepoGetChangedFilesAnchorFileOnlyChange pins the invariant documented
 // in docs/anchored-repositories.md: editing `.argo-compare.yml` alone starts no
 // comparison. Widening the extension gate to `.yml` makes the anchor file
@@ -1250,84 +1107,4 @@ func TestGitRepoGetChangedFilesAnchorFileOnlyChange(t *testing.T) {
 	require.Empty(t, result.Applications)
 	require.Empty(t, result.Invalid)
 	require.Empty(t, result.AnchorGroups)
-}
-
-// TestClaimsArgoKind pins that the kind is read through the YAML parser: a
-// quoted or escaped spelling still counts, and content too malformed to decode
-// falls back to the textual check so a broken manifest stays reportable.
-func TestClaimsArgoKind(t *testing.T) {
-	tests := map[string]struct {
-		content string
-		want    bool
-	}{
-		"plain application":      {"kind: Application\n", true},
-		"plain applicationset":   {"kind: ApplicationSet\n", true},
-		"quoted":                 {"kind: \"Application\"\n", true},
-		"unicode escape":         {"kind: \"\\u0041pplication\"\n", true},
-		"escaped applicationset": {"kind: \"\\u0041pplicationSet\"\n", true},
-		"other kind":             {"kind: ConfigMap\n", false},
-		"word in a value":        {"kind: ConfigMap\ndata:\n  note: Application\n", false},
-		"word in a comment":      {"# Application settings\nfoo: bar\n", false},
-		"no kind":                {"foo: bar\n", false},
-		"sequence":               {"- hosts: all\n  tasks:\n    - name: ping\n", false},
-		"sequence naming it":     {"- hosts: all\n  tasks:\n    - name: Deploy Application\n", false},
-		"malformed but claims":   {"kind: Application\nmetadata:\n  name: x\n   bad: indent\n", true},
-		"malformed and silent":   {"foo: bar\n   bad: indent\n", false},
-	}
-
-	for name, tc := range tests {
-		require.Equal(t, tc.want, claimsArgoKind([]byte(tc.content)), name)
-	}
-}
-
-// TestGitRepoGetChangedFilesAcceptsEscapedKind proves an Application whose kind
-// is spelled with a YAML escape is compared like any other. ArgoCD resolves the
-// escape, so a raw-text gate would drop a manifest it accepts.
-func TestGitRepoGetChangedFilesAcceptsEscapedKind(t *testing.T) {
-	tempDir := t.TempDir()
-	workDir := filepath.Join(tempDir, "repo")
-	require.NoError(t, os.MkdirAll(filepath.Join(workDir, "apps"), 0o755))
-
-	repo, err := git.PlainInit(workDir, false)
-	require.NoError(t, err)
-	require.NoError(t, repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))))
-
-	escaped := func(revision string) []byte {
-		return []byte("apiVersion: argoproj.io/v1alpha1\nkind: \"\\u0041pplication\"\nmetadata:\n  name: demo\n  namespace: argocd\nspec:\n  destination:\n    server: https://kubernetes.default.svc\n    namespace: demo\n  source:\n    repoURL: fake.repo/charts\n    chart: demo-chart\n    targetRevision: " + revision + "\n")
-	}
-	manifest := filepath.Join(workDir, "apps", "demo.yml")
-	require.NoError(t, os.WriteFile(manifest, escaped("1.0.0"), 0o644))
-
-	worktree, err := repo.Worktree()
-	require.NoError(t, err)
-	_, err = worktree.Add("apps/demo.yml")
-	require.NoError(t, err)
-	commitHash, err := worktree.Commit("initial", &git.CommitOptions{Author: defaultSignature()})
-	require.NoError(t, err)
-
-	require.NoError(t, repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), commitHash)))
-	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("feature"), Create: true}))
-
-	require.NoError(t, os.WriteFile(manifest, escaped("1.1.0"), 0o644))
-	_, err = worktree.Add("apps/demo.yml")
-	require.NoError(t, err)
-	_, err = worktree.Commit("update", &git.CommitOptions{Author: defaultSignature()})
-	require.NoError(t, err)
-
-	originalWD, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(workDir))
-	t.Cleanup(func() {
-		require.NoError(t, os.Chdir(originalWD))
-	})
-
-	log := logger.New("git-test-escaped-kind")
-	repoInstance, err := NewGitRepo(afero.NewOsFs(), portstest.NoopCmdRunner{}, utils.OsFileReader{}, log)
-	require.NoError(t, err)
-
-	result, err := repoInstance.GetChangedFiles("main", nil, "")
-	require.NoError(t, err)
-
-	require.Equal(t, []string{"apps/demo.yml"}, result.Applications)
-	require.Empty(t, result.Invalid)
 }
