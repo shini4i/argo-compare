@@ -143,6 +143,14 @@ func TestAppRunIntegration(t *testing.T) {
 func writeApplication(t *testing.T, repoDir, version string, replicas int) {
 	t.Helper()
 
+	writeApplicationAt(t, repoDir, "apps/demo.yaml", version, replicas)
+}
+
+// writeApplicationAt writes the demo Application to relPath, a repo-relative
+// slash-separated path, creating the parent directories as needed.
+func writeApplicationAt(t *testing.T, repoDir, relPath, version string, replicas int) {
+	t.Helper()
+
 	content := []byte(`apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -162,9 +170,9 @@ spec:
         replicaCount: ` + fmt.Sprintf("%d", replicas) + `
 `)
 
-	appPath := filepath.Join(repoDir, "apps")
-	require.NoError(t, os.MkdirAll(appPath, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(appPath, "demo.yaml"), content, 0o644))
+	appFile := filepath.Join(repoDir, filepath.FromSlash(relPath))
+	require.NoError(t, os.MkdirAll(filepath.Dir(appFile), 0o755))
+	require.NoError(t, os.WriteFile(appFile, content, 0o644))
 }
 
 func defaultSignature() *object.Signature {

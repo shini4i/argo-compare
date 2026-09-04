@@ -32,9 +32,9 @@ type GitRepo struct {
 // manifests, and anchor groups discovered from changed files that fall under
 // a directory containing an anchor file (default `.argo-compare.yml`).
 //
-// Applications and Invalid are unchanged from the original contract: every
-// changed *.yaml that parses as a valid ArgoCD Application (kind: Application)
-// appears in Applications; manifests that fail to parse appear in Invalid.
+// Every changed *.yaml or *.yml that parses as a valid ArgoCD Application
+// (kind: Application) appears in Applications; manifests that fail to parse
+// appear in Invalid.
 //
 // AnchorGroups is populated in addition to Applications, not instead of it.
 // A single PR can touch both an Application file and a chart directory that
@@ -374,14 +374,22 @@ func (g *GitRepo) printChangeFile(addedFiles, removed []string) {
 	}
 }
 
+// isYAMLFile reports whether name carries a YAML extension. ArgoCD accepts
+// both `.yaml` and `.yml`, so gating on one alone drops the other silently
+// (issue #176).
+func isYAMLFile(name string) bool {
+	ext := filepath.Ext(name)
+
+	return ext == ".yaml" || ext == ".yml"
+}
+
 // sortChangedFiles filters diff results to include only valid Application
-// manifests. Helm chart templates are excluded up front: a file under a
-// chart's `templates/` directory is a template by Helm's own definition, and
-// its `{{ }}` actions are not valid YAML — parsing it as an Application would
-// misreport it as an invalid manifest and fail the run (issue #153).
+// manifests. Helm chart templates are excluded up front: their `{{ }}` actions
+// are not valid YAML, so parsing one as an Application would misreport it as
+// invalid and fail the run (issue #153).
 func (g *GitRepo) sortChangedFiles(files []string, repoRoot string) (applications []string, invalid []string, err error) {
 	for _, file := range files {
-		if filepath.Ext(file) != ".yaml" {
+		if !isYAMLFile(file) {
 			continue
 		}
 

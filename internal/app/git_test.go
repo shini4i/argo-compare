@@ -800,8 +800,8 @@ spec:
 `
 	require.NoError(t, os.WriteFile(filepath.Join(workDir, "apps", "guestbook.yaml"), []byte(goTemplateSet), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(workDir, "apps", "legacy.yaml"), []byte(legacySet), 0o644))
-	// Neither an Application nor an ApplicationSet: must fold back to the
-	// original ErrNotApplication and be skipped, not flagged invalid.
+	// Neither an Application nor an ApplicationSet: must be skipped, not
+	// flagged invalid.
 	require.NoError(t, os.WriteFile(filepath.Join(workDir, "apps", "configmap.yaml"),
 		[]byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: demo\ndata: {}\n"), 0o644))
 
@@ -899,4 +899,212 @@ spec:
 	require.Empty(t, result.Applications)
 
 	require.Contains(t, logBuffer.String(), `generator "matrix" is not supported`)
+}
+
+// TestGitRepoGetChangedFilesAcceptsYmlExtension proves an Application named
+// `*.yml` is discovered like a `*.yaml` one: ArgoCD accepts both extensions,
+// so filtering the diff by a single one would silently drop the manifest
+// (issue #176).
+func TestGitRepoGetChangedFilesAcceptsYmlExtension(t *testing.T) {
+	tempDir := t.TempDir()
+	workDir := filepath.Join(tempDir, "repo")
+	require.NoError(t, os.MkdirAll(workDir, 0o755))
+
+	repo, err := git.PlainInit(workDir, false)
+	require.NoError(t, err)
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))))
+
+	writeApplicationAt(t, workDir, "apps/demo.yml", `1.0.0`, 1)
+
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+	_, err = worktree.Add("apps/demo.yml")
+	require.NoError(t, err)
+	commitHash, err := worktree.Commit("initial", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), commitHash)))
+	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("feature"), Create: true}))
+
+	writeApplicationAt(t, workDir, "apps/demo.yml", `1.1.0`, 2)
+
+	_, err = worktree.Add("apps/demo.yml")
+	require.NoError(t, err)
+	_, err = worktree.Commit("update", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	originalWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(workDir))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(originalWD))
+	})
+
+	log := logger.New("git-test-yml-extension")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), portstest.NoopCmdRunner{}, utils.OsFileReader{}, log)
+	require.NoError(t, err)
+
+	result, err := repoInstance.GetChangedFiles("main", nil, "")
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"apps/demo.yml"}, result.Applications)
+	require.Empty(t, result.Invalid)
+}
+
+// TestIsYAMLFile pins the .yaml/.yml extension match and its case sensitivity.
+func TestIsYAMLFile(t *testing.T) {
+	// The comparison is case-sensitive, mirroring the extensions ArgoCD itself
+	// looks for. Accepting `.YAML` would be a widening, not a bug fix.
+	tests := map[string]bool{
+		"apps/demo.yaml": true,
+		"apps/demo.yml":  true,
+		".yaml":          true,
+		"apps/demo.YAML": false,
+		"apps/demo.YML":  false,
+		"apps/demo.json": false,
+		"apps/demo":      false,
+		"apps/yaml":      false,
+	}
+
+	for name, want := range tests {
+		require.Equal(t, want, isYAMLFile(name), name)
+	}
+}
+
+// TestGitRepoGetChangedFilesAcceptsYmlApplicationSet covers the other half of
+// issue #176: an ApplicationSet reaches the flow through classifyManifest's
+// second parse, so a `.yaml`-only extension gate dropped it just as silently
+// as it dropped an Application.
+func TestGitRepoGetChangedFilesAcceptsYmlApplicationSet(t *testing.T) {
+	tempDir := t.TempDir()
+	workDir := filepath.Join(tempDir, "repo")
+	require.NoError(t, os.MkdirAll(filepath.Join(workDir, "apps"), 0o755))
+
+	repo, err := git.PlainInit(workDir, false)
+	require.NoError(t, err)
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))))
+
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "README.md"), []byte("seed\n"), 0o644))
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+	_, err = worktree.Add("README.md")
+	require.NoError(t, err)
+	commitHash, err := worktree.Commit("initial", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	// A real origin, because GetChangedFiles resolves the origin URL before it
+	// scans for git generators; an empty URL turns that scan into a no-op.
+	remotePath := filepath.Join(tempDir, "origin.git")
+	_, err = git.PlainInit(remotePath, true)
+	require.NoError(t, err)
+	_, err = repo.CreateRemote(&config.RemoteConfig{Name: "origin", URLs: []string{remotePath}})
+	require.NoError(t, err)
+	require.NoError(t, repo.Push(&git.PushOptions{RemoteName: "origin", RefSpecs: []config.RefSpec{"refs/heads/main:refs/heads/main"}}))
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), commitHash)))
+
+	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("feature"), Create: true}))
+
+	goTemplateSet := `apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: guestbook
+  namespace: argocd
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+  template:
+    metadata:
+      name: '{{.cluster}}-guestbook'
+    spec:
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: guestbook
+      source:
+        repoURL: fake.repo/charts
+        chart: guestbook
+        targetRevision: 1.0.0
+`
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "apps", "guestbook.yml"), []byte(goTemplateSet), 0o644))
+
+	_, err = worktree.Add("apps/guestbook.yml")
+	require.NoError(t, err)
+	_, err = worktree.Commit("add application set", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	originalWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(workDir))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(originalWD))
+	})
+
+	log := logger.New("git-test-yml-appset")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), portstest.NoopCmdRunner{}, utils.OsFileReader{}, log)
+	require.NoError(t, err)
+
+	result, err := repoInstance.GetChangedFiles("main", nil, "")
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"apps/guestbook.yml"}, result.Applications)
+	require.Empty(t, result.Invalid)
+}
+
+// TestGitRepoGetChangedFilesAnchorFileOnlyChange pins the invariant documented
+// in docs/anchored-repositories.md: editing `.argo-compare.yml` alone starts no
+// comparison. Widening the extension gate to `.yml` makes the anchor file
+// itself reach the Application classifier for the first time.
+func TestGitRepoGetChangedFilesAnchorFileOnlyChange(t *testing.T) {
+	tempDir := t.TempDir()
+	workDir := filepath.Join(tempDir, "repo")
+	chartDir := filepath.Join(workDir, "charts", "foo")
+	require.NoError(t, os.MkdirAll(chartDir, 0o755))
+
+	repo, err := git.PlainInit(workDir, false)
+	require.NoError(t, err)
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))))
+
+	writeApplicationAt(t, workDir, "apps/demo.yaml", `1.0.0`, 1)
+	require.NoError(t, os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte("apiVersion: v2\nname: foo\nversion: 0.0.1\n"), 0o644))
+	anchorFile := filepath.Join(chartDir, DefaultAnchorFileName)
+	require.NoError(t, os.WriteFile(anchorFile, []byte("application:\n  path: apps/demo.yaml\n"), 0o644))
+
+	worktree, err := repo.Worktree()
+	require.NoError(t, err)
+	for _, file := range []string{"apps/demo.yaml", "charts/foo/Chart.yaml", "charts/foo/" + DefaultAnchorFileName} {
+		_, err = worktree.Add(file)
+		require.NoError(t, err)
+	}
+	commitHash, err := worktree.Commit("initial", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	require.NoError(t, repo.Storer.SetReference(plumbing.NewHashReference(plumbing.ReferenceName("refs/remotes/origin/main"), commitHash)))
+	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("feature"), Create: true}))
+
+	// The only change on the branch: the anchor file's own contents.
+	require.NoError(t, os.WriteFile(anchorFile, []byte("application:\n  path: apps/demo.yaml\n  branch: main\n"), 0o644))
+	_, err = worktree.Add("charts/foo/" + DefaultAnchorFileName)
+	require.NoError(t, err)
+	_, err = worktree.Commit("edit anchor", &git.CommitOptions{Author: defaultSignature()})
+	require.NoError(t, err)
+
+	originalWD, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(workDir))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(originalWD))
+	})
+
+	log := logger.New("git-test-anchor-only")
+	repoInstance, err := NewGitRepo(afero.NewOsFs(), portstest.NoopCmdRunner{}, utils.OsFileReader{}, log)
+	require.NoError(t, err)
+
+	result, err := repoInstance.GetChangedFiles("main", nil, DefaultAnchorFileName)
+	require.NoError(t, err)
+
+	require.Empty(t, result.Applications)
+	require.Empty(t, result.Invalid)
+	require.Empty(t, result.AnchorGroups)
 }

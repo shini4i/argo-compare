@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Applications and ApplicationSets committed as `*.yml` are now compared. Only `*.yaml` was picked up before, so editing a `*.yml` manifest reported nothing and exited clean, with no log line to explain why.
 - Several chart directories anchored to the same Application are now compared once rather than once per anchor, which previously repeated the whole diff and posted a duplicate merge request comment for it.
 
 ## [0.9.2] - 2026-07-08
