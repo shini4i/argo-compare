@@ -66,7 +66,8 @@ spec:
 
 // seedDiscoveryTree writes the manifests a scan should find, alongside files it
 // must ignore: a list-generator ApplicationSet, a plain Application, an
-// unparseable manifest, and one inside a dot directory.
+// unparseable manifest, one in a dot directory, two that merely mention the
+// kind, and one that declares it but cannot be expanded.
 func seedDiscoveryTree(t *testing.T) (afero.Fs, string) {
 	t.Helper()
 
@@ -103,6 +104,31 @@ spec:
 	write("apps/broken.yaml", "kind: ApplicationSet\nmetadata:\n   bad: indent\n  worse\n")
 	write("apps/notes.txt", "kind: ApplicationSet\n")
 	write(".hidden/addons.yaml", discoverableAppSet)
+
+	// Files that merely mention the word: a chart description and another kind.
+	write("charts/demo/Chart.yaml", "apiVersion: v2\nname: demo\ndescription: An ApplicationSet example\nversion: 0.1.0\n")
+	write("apps/configmap.yaml", "kind: ConfigMap\nmetadata:\n  name: notes\ndata:\n  hint: ApplicationSet\n")
+
+	// Declares the kind and fails validation, so the scan must still report it.
+	write("apps/legacy.yaml", `apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: legacy
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+  template:
+    metadata:
+      name: '{{ cluster }}'
+    spec:
+      source:
+        repoURL: https://charts.example.com
+        chart: demo
+        targetRevision: 1.0.0
+`)
 
 	return filesystem, root
 }
@@ -193,9 +219,36 @@ func TestDiscoverApplicationSetsReportsUnparseableManifests(t *testing.T) {
 		root, discoveryOrigin, "main", []string{"clusters/dev/values.yaml"})
 
 	require.NoError(t, err)
-	require.Len(t, unusable, 1)
+	require.Len(t, unusable, 2)
 	assert.Contains(t, unusable[0], "apps/broken.yaml")
 	assert.Contains(t, unusable[0], "did not find expected key")
+
+	// The other half of the contract: a manifest that declares the kind and
+	// fails validation is still worth a word.
+	assert.Contains(t, unusable[1], "apps/legacy.yaml")
+	assert.Contains(t, unusable[1], "goTemplate: true")
+}
+
+// TestDiscoverApplicationSetsIgnoresIncidentalMentions keeps a file that merely
+// contains the word out of the unusable list: it never claimed to be a manifest.
+func TestDiscoverApplicationSetsIgnoresIncidentalMentions(t *testing.T) {
+	filesystem, root := seedDiscoveryTree(t)
+
+	matched, unusable, err := DiscoverApplicationSets(filesystem, utils.OsFileReader{},
+		root, discoveryOrigin, "main", []string{"clusters/dev/values.yaml"})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"apps/addons.yaml"}, matched)
+
+	// An exact set, so the assertion cannot pass on an empty scan.
+	require.Len(t, unusable, 2)
+	assert.Contains(t, unusable[0], "apps/broken.yaml")
+	assert.Contains(t, unusable[1], "apps/legacy.yaml")
+
+	// Named, so dropping either fixture fails here instead of passing quietly.
+	joined := strings.Join(unusable, "\n")
+	assert.NotContains(t, joined, "Chart.yaml")
+	assert.NotContains(t, joined, "configmap.yaml")
 }
 
 // discoverableFileAppSet reads parameters out of matched files, including one

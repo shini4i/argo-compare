@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
@@ -215,9 +216,9 @@ func mergePaths(base, extra []string) []string {
 }
 
 // readApplicationSet returns the expandable ApplicationSet at fullPath, nil when
-// the file is not one, or an error when a file that looks like one cannot be
-// used. The caller reports that rather than failing, so a single broken
-// manifest does not stop a run it may have nothing to do with.
+// the file is not one, or an error when the file cannot be read or declares the
+// kind without being usable. The caller reports that rather than failing, so a
+// single broken manifest does not stop a run it may have nothing to do with.
 func readApplicationSet(fileReader ports.FileReader, fullPath, rel string) (*models.ApplicationSet, error) {
 	if !isYAMLFile(rel) {
 		return nil, nil
@@ -235,7 +236,12 @@ func readApplicationSet(fileReader ports.FileReader, fullPath, rel string) (*mod
 	}
 
 	appSet, err := parseApplicationSetContent(content)
-	if err != nil {
+	switch {
+	// The word appeared in prose or in another kind's manifest, so the file
+	// never claimed to be an ApplicationSet and warning about it is noise.
+	case errors.Is(err, models.ErrEmptyFile), errors.Is(err, models.ErrNotApplicationSet):
+		return nil, nil
+	case err != nil:
 		return nil, err
 	}
 
