@@ -1,0 +1,6 @@
+# A chart change here reaches the ApplicationSet in the apps repository only
+# through this anchor.
+application:
+  repo: https://git.example.com/platform/apps.git
+  path: appsets/platform.yaml
+  branch: main

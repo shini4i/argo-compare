@@ -1,0 +1,3 @@
+cluster:
+  name: prod
+  server: https://prod.k8s.example.com

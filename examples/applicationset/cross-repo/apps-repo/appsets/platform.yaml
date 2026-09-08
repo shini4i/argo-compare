@@ -1,0 +1,36 @@
+# The generator reads THIS repository (the anchored one); the template renders
+# from the gitops repository. Both URLs are placeholders.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: platform
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://git.example.com/platform/apps.git
+        revision: HEAD
+        files:
+          - path: clusters/*/config.yaml
+  template:
+    metadata:
+      name: 'platform-{{ .cluster.name }}'
+      namespace: argocd
+    spec:
+      project: default
+      destination:
+        server: '{{ .cluster.server }}'
+        namespace: platform
+      sources:
+        - repoURL: https://git.example.com/platform/gitops.git
+          path: charts/platform
+          targetRevision: main
+          helm:
+            releaseName: platform
+            valueFiles:
+              - '$values/values/{{ .cluster.name }}.yaml'
+        - repoURL: https://git.example.com/platform/gitops.git
+          targetRevision: main
+          ref: values

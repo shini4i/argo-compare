@@ -1,0 +1,4 @@
+replicaCount: 1
+image:
+  repository: registry.example.com/platform
+  tag: 1.0.0

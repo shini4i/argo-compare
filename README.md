@@ -39,7 +39,8 @@ See [Installation](docs/installation.md) and [Usage](docs/usage.md) for the full
 - [Usage](docs/usage.md) — CLI flags, output modes, external diff tools.
 - [How it works](docs/how-it-works.md) — the comparison pipeline.
 - [Architecture](docs/architecture.md) — package map, dependency direction, entry flows.
-- [ApplicationSets](docs/applicationsets.md) — expanding `goTemplate` ApplicationSets into the Applications they generate.
+- [Setting up ApplicationSets](docs/applicationset-setup.md) — which layout you have, where the anchor goes, and how a change reaches the ApplicationSet.
+- [ApplicationSets](docs/applicationsets.md) — reference for `goTemplate` expansion: generators, parameters, template functions, limits.
 - [Anchored repositories](docs/anchored-repositories.md) — path-based sources and chart-only repos via `.argo-compare.yml`.
 - [Manifest validation](docs/manifest-validation.md) — schema validation with `kubeconform`.
 - [Repository credentials](docs/repository-credentials.md) — private Helm repos, OCI registries, AWS ECR.
@@ -48,7 +49,7 @@ See [Installation](docs/installation.md) and [Usage](docs/usage.md) for the full
 ## Current limitations
 
 - The default change-detection flow looks for Application YAMLs in the diff. Repos that store chart content separately from their Application files should use [Anchored repositories](docs/anchored-repositories.md).
-- ApplicationSet support covers `goTemplate: true` manifests using the `list` and `git` generators for the repository being compared; see [ApplicationSets](docs/applicationsets.md).
+- ApplicationSet support covers `goTemplate: true` manifests using the `list` and `git` generators; see [Setting up ApplicationSets](docs/applicationset-setup.md).
 
 ## Contributing
 

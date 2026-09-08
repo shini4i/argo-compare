@@ -1,0 +1,3 @@
+cluster:
+  name: dev
+  server: https://dev.k8s.example.com
