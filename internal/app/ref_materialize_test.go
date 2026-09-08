@@ -545,6 +545,10 @@ func TestMaterializeRefSources_DestinationLegErrors(t *testing.T) {
 				func() (*object.Tree, error) { return nil, sentinel })
 
 		require.ErrorIs(t, err, sentinel)
+		// Wrapped, so the message says which ref file the lookup was for rather
+		// than leaving a bare "no common ancestor" to be traced by hand.
+		assert.Contains(t, err.Error(), "values.yaml")
+		assert.Contains(t, err.Error(), `ref "values"`)
 	})
 }
 

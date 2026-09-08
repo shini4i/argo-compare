@@ -61,27 +61,32 @@ func (a *App) materializeRefSourcesForLeg(ctx context.Context, repo *GitRepo, ta
 	var originURL string
 	if repo != nil {
 		if originURL, err = repo.OriginURL(); err != nil {
-			return err
+			return fmt.Errorf("read origin to classify $ref values sources of %s: %w", target.App.Metadata.Name, err)
 		}
 	}
 
-	// Resolved at most once: the walk is the same for every ref file on this leg,
-	// and an ApplicationSet can ask for many.
+	return a.materializeRefSources(ctx, target, repoRoot, originURL, a.mergeBaseTreeOnce(repo))
+}
+
+// mergeBaseTreeOnce resolves the merge-base tree at most once per leg: the walk
+// is the same for every ref file, and an ApplicationSet can ask for many.
+func (a *App) mergeBaseTreeOnce(repo *GitRepo) mergeBaseTreeFn {
 	var (
-		baseTree *object.Tree
-		baseErr  error
+		tree *object.Tree
+		err  error
 	)
-	mergeBaseTree := func() (*object.Tree, error) {
+	return func() (*object.Tree, error) {
 		if repo == nil {
 			return nil, errors.New("destination leg has no repository to read $ref values files from")
 		}
-		if baseTree == nil && baseErr == nil {
-			baseTree, baseErr = repo.MergeBaseTreeFor(a.cfg.TargetBranch)
+		if tree == nil && err == nil {
+			tree, err = repo.MergeBaseTreeFor(a.cfg.TargetBranch)
+			if err != nil {
+				err = fmt.Errorf("resolve merge-base with %s for $ref values files: %w", a.cfg.TargetBranch, err)
+			}
 		}
-		return baseTree, baseErr
+		return tree, err
 	}
-
-	return a.materializeRefSources(ctx, target, repoRoot, originURL, mergeBaseTree)
 }
 
 // materializeRefSources writes every "$ref/path" values file referenced by the
@@ -144,7 +149,7 @@ func (a *App) refFileContent(ctx context.Context, rf refFile, source *models.Sou
 		}
 		tree, err := mergeBaseTree()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("read ref %q values file %q from the compared revision: %w", rf.Ref, rf.Path, err)
 		}
 		return refFileFromTree(tree, rf, source)
 	default:
