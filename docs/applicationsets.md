@@ -260,9 +260,11 @@ stops. Glob patterns (`$values/envs/*.yaml`) are not expanded.
 One gap is worth knowing: a pull request that **only** changes a `$values` file,
 leaving the ApplicationSet manifest untouched, is not picked up unless a git
 generator's patterns cover that path. The repository scan described above
-matches git-generator patterns, not `$values` paths. For a `list` generator,
-point a `.argo-compare.yml` at the ApplicationSet from the values directory —
+matches git-generator patterns, not `$values` paths. Point a
+`.argo-compare.yml` at the ApplicationSet from the values directory instead —
 see [Anchoring an ApplicationSet](anchored-repositories.md#anchoring-an-applicationset).
+That route works whether the ApplicationSet uses a `list` generator or a git
+generator reading the repository it lives in.
 
 ## Limits
 

@@ -141,6 +141,14 @@ func (f *RealApplicationFetcher) fetchFromRemote(ctx context.Context, ref anchor
 		return ports.AnchoredManifest{}, fmt.Errorf("parse manifest %s from %s: %w", ref.Path, safeRepo, err)
 	}
 
+	// Kept so a git generator can list the repository holding the manifest; the
+	// local branches record none of its directories. Nothing reads the tree of
+	// a plain Application, so it is not handed one.
+	if manifest.ApplicationSet != nil {
+		manifest.Tree = gitTree{tree: tree}
+		manifest.TreeRevision = head.Name().Short()
+	}
+
 	return manifest, nil
 }
 

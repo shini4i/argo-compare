@@ -82,11 +82,16 @@ contains:
    rather than an Application YAML. `argo-compare` walks up to the
    nearest `.argo-compare.yml` and resolves the manifest it references.
    An Application is rendered from the chart twice (working tree vs.
-   merge-base); an ApplicationSet is expanded per leg and handed to the
+   merge-base); an ApplicationSet is expanded and handed to the
    ApplicationSet flow's per-Application comparison. Driver code lives in
    `internal/app/anchor_discovery.go`, `anchor_flow.go`,
    `tree_materialize.go`. The anchor schema itself is in
    `internal/anchor`.
+
+   `anchoredExpansionTrees` picks what an anchored ApplicationSet expands
+   against: the two local branch trees, or — when its git generators read the
+   repository the anchor fetched the manifest from — that repository's clone,
+   carried out of the fetch as `ports.AnchoredManifest.Tree`.
 
 All three converge on the same comparison path in `internal/app/compare.go`.
 

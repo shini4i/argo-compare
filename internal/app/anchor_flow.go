@@ -14,7 +14,6 @@ import (
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/shini4i/argo-compare/internal/ui"
 
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/spf13/afero"
 )
 
@@ -87,7 +86,7 @@ func (a *App) processAnchorGroup(ctx context.Context, repo *GitRepo, group Ancho
 	}
 
 	if manifest.ApplicationSet != nil {
-		return a.processAnchoredApplicationSet(ctx, repo, group, manifest.ApplicationSet, originURL)
+		return a.processAnchoredApplicationSet(ctx, repo, group, manifest, originURL)
 	}
 	if manifest.Application == nil {
 		return false, fmt.Errorf("fetcher resolved %s to no manifest", anchorRefDisplay(group.Anchor.Application))
@@ -98,33 +97,23 @@ func (a *App) processAnchorGroup(ctx context.Context, repo *GitRepo, group Ancho
 
 // processAnchoredApplicationSet compares every Application an anchored
 // ApplicationSet generates. The manifest is read once — an anchor exists
-// because the chart changed, not the manifest — while each leg expands it
-// against its own tree, so a directory the change adds or drops is reported.
-func (a *App) processAnchoredApplicationSet(ctx context.Context, repo *GitRepo, group AnchorGroup, appSet *models.ApplicationSet, originURL string) (bool, error) {
+// because the chart changed, not the manifest — while anchoredExpansionTrees
+// decides which tree each leg expands it against.
+func (a *App) processAnchoredApplicationSet(ctx context.Context, repo *GitRepo, group AnchorGroup, manifest ports.AnchoredManifest, originURL string) (bool, error) {
 	ref := group.Anchor.Application
+	appSet := manifest.ApplicationSet
 
-	// Expansion reads the two local branch legs, so a generator naming another
-	// repository has no tree here to expand against. Unlike a manifest found by
-	// scanning the diff, an anchor is an explicit pointer: skipping it silently
-	// would leave the change it names uncompared with nothing said.
-	if err := assertGitGeneratorsComparable(appSet, originURL, a.cfg.TargetBranch); err != nil {
+	srcTree, dstTree, err := a.anchoredExpansionTrees(repo, manifest, ref, originURL)
+	if err != nil {
 		return false, fmt.Errorf("anchored ApplicationSet %s: %w", anchorRefDisplay(ref), err)
 	}
 
-	headTree, err := repo.HeadTree()
-	if err != nil {
-		return false, err
-	}
-	srcApps, err := expandAnchoredApplicationSet(appSet, headTree, ref, TargetTypeSource)
+	srcApps, err := expandAnchoredApplicationSet(appSet, srcTree, ref, TargetTypeSource)
 	if err != nil {
 		return false, err
 	}
 
-	baseTree, err := repo.MergeBaseTreeFor(a.cfg.TargetBranch)
-	if err != nil {
-		return false, err
-	}
-	dstApps, err := expandAnchoredApplicationSet(appSet, baseTree, ref, TargetTypeDestination)
+	dstApps, err := expandAnchoredApplicationSet(appSet, dstTree, ref, TargetTypeDestination)
 	if err != nil {
 		return false, err
 	}
@@ -258,10 +247,112 @@ func firstNonEmpty(a, b string) string {
 	return b
 }
 
+// anchoredExpansionTrees returns the trees the two comparison legs expand an
+// anchored ApplicationSet against: the local branch legs normally, or the
+// anchored repository's clone for both when that is what its git generators
+// read.
+func (a *App) anchoredExpansionTrees(repo *GitRepo, manifest ports.AnchoredManifest, ref anchor.ApplicationRef, originURL string) (src, dst ports.RepoTree, err error) {
+	remote, err := anchoredGeneratorTree(manifest, ref, originURL, a.cfg.TargetBranch)
+	if err != nil {
+		return nil, nil, err
+	}
+	if remote != nil {
+		return remote, remote, nil
+	}
+
+	headTree, err := repo.HeadTree()
+	if err != nil {
+		return nil, nil, err
+	}
+	baseTree, err := repo.MergeBaseTreeFor(a.cfg.TargetBranch)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return gitTree{tree: headTree}, gitTree{tree: baseTree}, nil
+}
+
+// anchoredGeneratorTree reports the anchored repository's clone when that is
+// what the ApplicationSet's git generators list, and nil when the local branch
+// legs serve — which is the case for a generator naming this repository, and
+// for an ApplicationSet declaring no git generator at all.
+func anchoredGeneratorTree(manifest ports.AnchoredManifest, ref anchor.ApplicationRef, originURL, targetBranch string) (ports.RepoTree, error) {
+	var local, anchored int
+
+	for _, generator := range manifest.ApplicationSet.Spec.Generators {
+		if generator.Git == nil {
+			continue
+		}
+
+		readsAnchored, err := generatorReadsAnchoredRepo(generator.Git, manifest, ref, originURL, targetBranch)
+		if err != nil {
+			return nil, err
+		}
+		if readsAnchored {
+			anchored++
+			continue
+		}
+		local++
+	}
+
+	// Expansion takes one tree, so serving both would drop a generator's
+	// Applications without saying so.
+	if local > 0 && anchored > 0 {
+		return nil, fmt.Errorf("%w: git generators read both this repository and the anchored one; only one repository per ApplicationSet is supported",
+			models.ErrUnsupportedAppConfiguration)
+	}
+	if anchored > 0 {
+		return manifest.Tree, nil
+	}
+
+	return nil, nil
+}
+
+// generatorReadsAnchoredRepo reports whether one git generator reads the
+// repository the anchor fetched the manifest from rather than the repository
+// being compared, and rejects a generator naming neither or a revision the
+// matching tree does not hold.
+func generatorReadsAnchoredRepo(generator *models.GitGenerator, manifest ports.AnchoredManifest, ref anchor.ApplicationRef, originURL, targetBranch string) (bool, error) {
+	if repoIdentityMatches(generator.RepoURL, originURL) {
+		return false, assertGeneratorRevision(generator.Revision, targetBranch, "the compared branch")
+	}
+
+	// A same-repo anchor has no second repository to name, so it gets its own
+	// message rather than one quoting an empty URL.
+	if ref.Repo == "" {
+		return false, fmt.Errorf("%w: git generator repoURL %q is not this repository (%q); no tree of it is available",
+			models.ErrUnsupportedAppConfiguration, redactRepo(generator.RepoURL), redactRepo(originURL))
+	}
+	if !repoIdentityMatches(generator.RepoURL, ref.Repo) {
+		return false, fmt.Errorf("%w: git generator repoURL %q is neither this repository (%q) nor the anchored one (%q); no tree of it is available",
+			models.ErrUnsupportedAppConfiguration, redactRepo(generator.RepoURL), redactRepo(originURL), redactRepo(ref.Repo))
+	}
+
+	if manifest.Tree == nil {
+		return false, fmt.Errorf("%w: git generator reads the anchored repository %q but the fetch supplied no tree of it",
+			models.ErrUnsupportedAppConfiguration, redactRepo(generator.RepoURL))
+	}
+
+	return true, assertGeneratorRevision(generator.Revision, manifest.TreeRevision, "the anchored revision read")
+}
+
+// assertGeneratorRevision requires a git generator's revision to be one the
+// tree standing in for it actually holds. A revision pinned elsewhere keeps
+// ArgoCD generating from a tree nothing here can list, so a directory this
+// comparison sees would change nothing it deploys.
+func assertGeneratorRevision(revision, held, heldDescription string) error {
+	if revision == "" || revision == gitRevisionHEAD || revision == held {
+		return nil
+	}
+
+	return fmt.Errorf("%w: git generator revision %q is neither HEAD nor %s %q, so that tree cannot stand in for it",
+		models.ErrUnsupportedAppConfiguration, revision, heldDescription, held)
+}
+
 // expandAnchoredApplicationSet expands appSet against one comparison leg's
 // tree, naming the leg if expansion fails.
-func expandAnchoredApplicationSet(appSet *models.ApplicationSet, tree *object.Tree, ref anchor.ApplicationRef, leg string) ([]models.Application, error) {
-	apps, err := appset.Expand(appSet, gitTree{tree: tree})
+func expandAnchoredApplicationSet(appSet *models.ApplicationSet, tree ports.RepoTree, ref anchor.ApplicationRef, leg string) ([]models.Application, error) {
+	apps, err := appset.Expand(appSet, tree)
 	if err != nil {
 		return nil, fmt.Errorf("expand anchored ApplicationSet %s for %s leg: %w", anchorRefDisplay(ref), leg, err)
 	}

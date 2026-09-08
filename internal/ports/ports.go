@@ -175,12 +175,27 @@ type ManifestValidator interface {
 	Validate(ctx context.Context, target, manifestDir string) (ValidationResult, error)
 }
 
-// AnchoredManifest is the manifest an anchor resolves to. Exactly one field is
-// non-nil: an anchor may name a single Application, or an ApplicationSet whose
-// generated Applications are then compared one by one.
+// RepoTree lists and reads the files of one Git revision. It is the shape an
+// ApplicationSet's git generator is expanded against.
+type RepoTree interface {
+	Directories() ([]string, error)
+	Files() ([]string, error)
+	ReadFile(path string) ([]byte, error)
+}
+
+// AnchoredManifest is the manifest an anchor resolves to. Exactly one of
+// Application and ApplicationSet is non-nil: an anchor may name a single
+// Application, or an ApplicationSet whose generated Applications are then
+// compared one by one.
 type AnchoredManifest struct {
 	Application    *models.Application
 	ApplicationSet *models.ApplicationSet
+	// Tree is the revision the manifest was read from, set only for a
+	// cross-repo fetch. It lets a git generator naming that repository be
+	// expanded against it, which no local branch can list. TreeRevision is the
+	// branch name it resolved to.
+	Tree         RepoTree
+	TreeRevision string
 }
 
 // ApplicationFetcher resolves an anchor.ApplicationRef to the manifest it names.
