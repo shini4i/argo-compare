@@ -2,8 +2,13 @@ package app
 
 import (
 	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-git/go-git/v5"
@@ -258,4 +263,43 @@ func TestRefTreeResolverHonoursInjection(t *testing.T) {
 	appInstance := &App{refTrees: stub}
 
 	assert.Same(t, stub, appInstance.refTreeResolver(testOriginURL))
+}
+
+// TestRefCloneSendsNoTokenToAlternatePort is the attack a reviewer captured
+// against the first version of the host check: a ref URL on origin's hostname
+// but another port reached a different service, and over plain http it carried
+// the CI token in cleartext. Asserted against a real listener, not the guard.
+func TestRefCloneSendsNoTokenToAlternatePort(t *testing.T) {
+	var mu sync.Mutex
+	var authSeen []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		authSeen = append(authSeen, r.Header.Get("Authorization"))
+		mu.Unlock()
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	// The listener is on 127.0.0.1 with an arbitrary port; origin claims the same
+	// host on the default one, which is exactly the mismatch under test.
+	host, _, err := net.SplitHostPort(strings.TrimPrefix(server.URL, "http://"))
+	require.NoError(t, err)
+
+	fetcher := &gitRefTreeFetcher{
+		username:  "ci",
+		token:     "s3cret",
+		originURL: "https://" + host + "/org/gitops.git",
+		trees:     map[string]*object.Tree{},
+	}
+
+	_, err = fetcher.Tree(context.Background(), server.URL+"/org/values.git", "main")
+	require.Error(t, err, "the clone must fail; what matters is what it sent")
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotEmpty(t, authSeen, "the listener saw no request, so the assertion would be vacuous")
+	for _, header := range authSeen {
+		assert.Empty(t, header, "no Authorization header may reach a non-origin endpoint")
+	}
 }

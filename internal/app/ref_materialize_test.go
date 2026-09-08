@@ -362,6 +362,39 @@ func TestRefCloneAuthOnlyOnOriginHost(t *testing.T) {
 			repoURL:   "https://git.example.com@attacker.tld/x.git",
 			wantAuth:  false,
 		},
+		{
+			// A token must never travel in cleartext, whatever the host.
+			name:      "plaintext http on the origin host",
+			originURL: "https://git.example.com/org/gitops.git",
+			repoURL:   "http://git.example.com/org/value-files.git",
+			wantAuth:  false,
+		},
+		{
+			// Another port on a matching host is another service.
+			name:      "origin host on an unrelated port",
+			originURL: "https://git.example.com/org/gitops.git",
+			repoURL:   "https://git.example.com:9999/org/value-files.git",
+			wantAuth:  false,
+		},
+		{
+			name:      "plaintext http on an unrelated port",
+			originURL: "https://git.example.com/org/gitops.git",
+			repoURL:   "http://git.example.com:9999/org/value-files.git",
+			wantAuth:  false,
+		},
+		{
+			// A forge served on a non-default port is fine when origin says so.
+			name:      "non-default port matching origin",
+			originURL: "https://git.example.com:8443/org/gitops.git",
+			repoURL:   "https://git.example.com:8443/org/value-files.git",
+			wantAuth:  true,
+		},
+		{
+			name:      "non-default origin port does not license the default",
+			originURL: "https://git.example.com:8443/org/gitops.git",
+			repoURL:   "https://git.example.com/org/value-files.git",
+			wantAuth:  false,
+		},
 	}
 
 	for _, tc := range tests {

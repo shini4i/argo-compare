@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -356,10 +357,7 @@ func (f *gitRefTreeFetcher) cloneOptions(repoURL string, refName plumbing.Refere
 		Tags:          git.NoTags,
 		ReferenceName: refName,
 	}
-	// HTTP only: go-git's ssh transport rejects a BasicAuth method outright, so
-	// attaching one to an ssh:// or scp-style URL breaks agent authentication
-	// that would otherwise work.
-	if f.token != "" && isHTTPRepoURL(repoURL) && sameRepoHost(repoURL, f.originURL) {
+	if f.token != "" && sameCredentialEndpoint(repoURL, f.originURL) {
 		username := f.username
 		if username == "" {
 			username = defaultGitUsername
@@ -369,16 +367,31 @@ func (f *gitRefTreeFetcher) cloneOptions(repoURL string, refName plumbing.Refere
 	return opts
 }
 
-// isHTTPRepoURL reports whether a token could travel to this URL at all.
-func isHTTPRepoURL(repoURL string) bool {
-	return strings.HasPrefix(repoURL, "http://") || strings.HasPrefix(repoURL, "https://")
+// sameCredentialEndpoint reports whether repoURL is the same HTTPS endpoint the
+// local origin is served from. A token must never travel in cleartext, and a
+// different port on a matching host is a different service, so the scheme, the
+// host and the port all have to agree before credentials are attached.
+func sameCredentialEndpoint(repoURL, originURL string) bool {
+	parsed, err := url.Parse(repoURL)
+	if err != nil || parsed.Scheme != "https" {
+		return false
+	}
+	host := repoIdentityHost(repoURL)
+	if host == "" || host != repoIdentityHost(originURL) {
+		return false
+	}
+	return parsed.Port() == originHTTPSPort(originURL)
 }
 
-// sameRepoHost reports whether two Git URLs name the same host, comparing the
-// host component of the normalized identity so spelling and port do not matter.
-func sameRepoHost(a, b string) bool {
-	hostA, hostB := repoIdentityHost(a), repoIdentityHost(b)
-	return hostA != "" && hostA == hostB
+// originHTTPSPort is the port origin serves HTTPS on, empty meaning the
+// default. A non-http(s) origin (ssh, scp-style) implies the default, since a
+// token can only ever be sent over HTTPS anyway.
+func originHTTPSPort(originURL string) string {
+	parsed, err := url.Parse(originURL)
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+		return ""
+	}
+	return parsed.Port()
 }
 
 // repoIdentityHost is the host part of normalizeRepoIdentity's host/path key.

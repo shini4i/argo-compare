@@ -248,10 +248,10 @@ Where the file is read from depends on the ref source's `repoURL`:
   and the external repository contributes nothing — there the clone exists only
   so the render succeeds at all.
   `ARGO_COMPARE_GIT_USERNAME` / `ARGO_COMPARE_GIT_TOKEN` are sent only to a
-  repository on the same `http(s)` host as `origin`: a `repoURL` is
-  author-controlled input, so a values repository elsewhere must be readable
-  anonymously rather than have the CI token offered to it. An `ssh://` ref
-  source authenticates through the SSH agent instead.
+  repository on the exact same HTTPS endpoint as `origin` — scheme, host and
+  port all matching. A `repoURL` is author-controlled input, so plain `http`,
+  another port, and another host are all refused; such a values repository must
+  be readable anonymously, and an `ssh://` ref source uses the SSH agent.
 
 A `$name` that no source declares, and a referenced file that is absent, are
 both hard errors: a diff that quietly omits an override is worse than one that
