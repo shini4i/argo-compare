@@ -285,3 +285,93 @@ func TestApplication_Validate(t *testing.T) {
 	err = appWithNilMultiSourceEntry.Validate()
 	assert.ErrorIs(t, err, ErrUnsupportedAppConfiguration, "expected ErrUnsupportedAppConfiguration for nil entry in Sources")
 }
+
+// TestRefSourceUnmarshalAndValidate covers the multi-source `ref` shape from
+// ArgoCD's multiple_sources guide: a Git source carrying only repoURL,
+// targetRevision and ref, referenced as $values in a sibling source's
+// valueFiles.
+func TestRefSourceUnmarshalAndValidate(t *testing.T) {
+	manifest := []byte(`
+kind: Application
+metadata:
+  name: demo
+spec:
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: prometheus
+      targetRevision: 15.7.1
+      helm:
+        valueFiles:
+          - $values/envs/prod/values.yaml
+    - repoURL: https://git.example.com/org/value-files.git
+      targetRevision: dev
+      ref: values
+`)
+
+	var app Application
+	require.NoError(t, yaml.Unmarshal(manifest, &app))
+	require.NoError(t, app.Validate())
+
+	require.Len(t, app.Spec.Sources, 2)
+	assert.True(t, app.Spec.MultiSource)
+
+	chartSource := app.Spec.Sources[0]
+	assert.Empty(t, chartSource.Ref)
+	assert.True(t, chartSource.Renderable())
+	assert.False(t, chartSource.IsRef())
+
+	refSource := app.Spec.Sources[1]
+	assert.Equal(t, "values", refSource.Ref)
+	assert.True(t, refSource.IsRef())
+	assert.False(t, refSource.Renderable(), "a ref source without path generates no resources")
+}
+
+// TestRefSourceWithPathIsRenderable verifies that a source may both declare a
+// ref (so siblings can address its files) and render its own chart from path.
+func TestRefSourceWithPathIsRenderable(t *testing.T) {
+	src := &Source{RepoURL: "https://git.example.com/org/repo.git", Path: "charts/demo", Ref: "self"}
+	assert.True(t, src.IsRef())
+	assert.True(t, src.Renderable())
+	assert.NoError(t, validateSourceShape(src))
+}
+
+// TestRefSourceRejectsChart pins ArgoCD's rule that a source carrying a ref key
+// cannot also declare a chart: Helm charts are not supported as value file
+// sources.
+func TestRefSourceRejectsChart(t *testing.T) {
+	src := &Source{RepoURL: "https://example.com/charts", Chart: "prometheus", Ref: "values"}
+
+	err := validateSourceShape(src)
+
+	require.ErrorIs(t, err, ErrUnsupportedAppConfiguration)
+	assert.Contains(t, err.Error(), "ref")
+	assert.Contains(t, err.Error(), "chart")
+}
+
+// TestValidateRejectsRefOnlyApplication guards against an Application whose
+// every source is a values-only ref: nothing would render, and an empty diff
+// would look like "no changes" rather than a configuration error.
+func TestValidateRejectsRefOnlyApplication(t *testing.T) {
+	app := &Application{Kind: KindApplication}
+	app.Metadata.Name = "demo"
+	app.Spec.Sources = []*Source{
+		{RepoURL: "https://git.example.com/org/value-files.git", TargetRevision: "dev", Ref: "values"},
+	}
+
+	err := app.Validate()
+
+	require.ErrorIs(t, err, ErrUnsupportedAppConfiguration)
+	assert.Contains(t, err.Error(), "no source renders")
+}
+
+// TestSingleRefSourceIsRejected covers spec.source (not sources) carrying only
+// a ref: there is no sibling to reference it, so it cannot be valid.
+func TestSingleRefSourceIsRejected(t *testing.T) {
+	app := &Application{Kind: KindApplication}
+	app.Metadata.Name = "demo"
+	app.Spec.Source = &Source{RepoURL: "https://git.example.com/org/value-files.git", Ref: "values"}
+
+	err := app.Validate()
+
+	require.ErrorIs(t, err, ErrUnsupportedAppConfiguration)
+}

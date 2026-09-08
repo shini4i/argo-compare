@@ -742,3 +742,48 @@ spec:
 		assert.Contains(t, err.Error(), `renders to "dev"`)
 	}
 }
+
+// TestExpandRendersRefSource covers the multi-source ref shape: the ref name
+// and the "$ref"-prefixed valueFiles entry both come out of the template.
+func TestExpandRendersRefSource(t *testing.T) {
+	appSet := mustParse(t, `
+kind: ApplicationSet
+metadata:
+  name: guestbook
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+            valuesRef: shared
+  template:
+    metadata:
+      name: '{{ .cluster }}'
+      namespace: argocd
+    spec:
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .cluster }}'
+      sources:
+        - repoURL: https://charts.example.com
+          chart: guestbook
+          targetRevision: 1.0.0
+          helm:
+            valueFiles:
+              - '${{ .valuesRef }}/envs/{{ .cluster }}/values.yaml'
+        - repoURL: https://git.example.com/values.git
+          targetRevision: main
+          ref: '{{ .valuesRef }}'
+`)
+
+	apps, err := Expand(appSet, nil)
+	require.NoError(t, err)
+	require.Len(t, apps, 1)
+
+	app := apps[0]
+	require.Len(t, app.Spec.Sources, 2)
+	assert.Equal(t, "shared", app.Spec.Sources[1].Ref)
+	assert.Equal(t, []string{"$shared/envs/dev/values.yaml"}, app.Spec.Sources[0].Helm.ValueFiles)
+	require.NoError(t, app.Validate())
+}

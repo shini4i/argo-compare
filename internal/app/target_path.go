@@ -51,21 +51,19 @@ func effectiveChartName(s *models.Source) string {
 }
 
 // PathBased reports whether the Application uses Git path sources. A
-// multi-source Application is path-based if all of its sources are path-based;
+// multi-source Application is path-based if all of its renderable sources are;
 // callers should invoke ClassifySources first to reject mixed configurations.
 func (t *Target) PathBased() bool {
-	if t.App.Spec.MultiSource {
-		if len(t.App.Spec.Sources) == 0 {
+	renderable := t.renderableSources()
+	if len(renderable) == 0 {
+		return false
+	}
+	for _, s := range renderable {
+		if s.Path == "" {
 			return false
 		}
-		for _, s := range t.App.Spec.Sources {
-			if s == nil || s.Path == "" {
-				return false
-			}
-		}
-		return true
 	}
-	return t.App.Spec.Source != nil && t.App.Spec.Source.Path != ""
+	return true
 }
 
 // ClassifySources rejects multi-source Applications that mix registry and
@@ -190,16 +188,17 @@ func (t *Target) BuildChartDependencies(ctx context.Context) error {
 	return nil
 }
 
-// pathSources enumerates the path-based sources for the Application,
-// transparently handling the single-source / multi-source split.
+// pathSources enumerates the sources whose chart is materialized from Git,
+// skipping registry charts and values-only ref sources.
 func (t *Target) pathSources() []*models.Source {
-	if t.App.Spec.MultiSource {
-		return t.App.Spec.Sources
+	sources := t.renderableSources()
+	out := make([]*models.Source, 0, len(sources))
+	for _, s := range sources {
+		if s.Path != "" {
+			out = append(out, s)
+		}
 	}
-	if t.App.Spec.Source == nil {
-		return nil
-	}
-	return []*models.Source{t.App.Spec.Source}
+	return out
 }
 
 // copyDirOnDisk recursively copies the contents of src into dst using dstFs.

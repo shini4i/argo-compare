@@ -20,6 +20,7 @@ reaches which ApplicationSet — lives under
 | git generator `values` | supported |
 | `matrix`, `merge`, `clusters`, `scmProvider`, `pullRequest`, … | not supported — the manifest is skipped |
 | `goTemplateOptions` | supported (`missingkey=default\|invalid\|zero\|error`) |
+| Multi-source templates, including `ref` sources and `$ref` in `valueFiles` | supported — see below |
 | Generator-level `template` overrides, `elementsYaml`, `pathParamPrefix` | not supported — the manifest is skipped |
 
 A skipped manifest is reported at warning level with the reason. It never
@@ -223,6 +224,45 @@ spec:
 
 Bumping `revision` for one element produces a diff for that generated
 Application only.
+
+## Multi-source templates and `ref` sources
+
+A template may declare `spec.sources`, including ArgoCD's values-only `ref`
+source: a Git source with `ref: values` and no `chart`, whose files a sibling
+source addresses as `$values/path/to/file.yaml` in `helm.valueFiles`. Both the
+`ref` name and the `valueFiles` entries are templated per generated
+Application, so `ref: '{{ .team }}-values'` and
+`$values/envs/{{ .cluster }}/values.yaml` both work.
+
+Where the file is read from depends on the ref source's `repoURL`:
+
+- **This repository** — each leg reads its own revision, so a values change in
+  the pull request shows up in the diff. As with a path-based source, the ref
+  source's `targetRevision` is ignored: what is compared is what the pull
+  request proposes.
+- **Another repository** — the file is read from a shallow clone at
+  `targetRevision`, which must name a branch or a tag. One clone is reused for
+  every generated Application sharing that repository and revision. Each leg
+  clones the revision its own side of the manifest names, so bumping that
+  `targetRevision` in the pull request does show up in the diff; leave it alone
+  and the external repository contributes nothing — there the clone exists only
+  so the render succeeds at all.
+  `ARGO_COMPARE_GIT_USERNAME` / `ARGO_COMPARE_GIT_TOKEN` are sent only to a
+  repository on the same `http(s)` host as `origin`: a `repoURL` is
+  author-controlled input, so a values repository elsewhere must be readable
+  anonymously rather than have the CI token offered to it. An `ssh://` ref
+  source authenticates through the SSH agent instead.
+
+A `$name` that no source declares, and a referenced file that is absent, are
+both hard errors: a diff that quietly omits an override is worse than one that
+stops. Glob patterns (`$values/envs/*.yaml`) are not expanded.
+
+One gap is worth knowing: a pull request that **only** changes a `$values` file,
+leaving the ApplicationSet manifest untouched, is not picked up unless a git
+generator's patterns cover that path. The repository scan described above
+matches git-generator patterns, not `$values` paths. For a `list` generator,
+point a `.argo-compare.yml` at the ApplicationSet from the values directory —
+see [Anchoring an ApplicationSet](anchored-repositories.md#anchoring-an-applicationset).
 
 ## Limits
 

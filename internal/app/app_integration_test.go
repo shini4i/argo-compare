@@ -191,6 +191,17 @@ type stubHelmProcessor struct {
 	// renderErrFor fails RenderAppSource for a given release name, so a test can
 	// make one Application of a set fail while the rest render.
 	renderErrFor map[string]error
+	// renders captures what each render was handed, read at call time because
+	// the workspace is deleted when the run ends.
+	renders []stubRender
+}
+
+// stubRender is one RenderAppSource call: which leg it was for, and the values
+// files it resolved to along with their contents.
+type stubRender struct {
+	TargetType  string
+	ReleaseName string
+	ValueFiles  map[string]string
 }
 
 func newStubHelmProcessor(t *testing.T) *stubHelmProcessor {
@@ -246,6 +257,7 @@ func (s *stubHelmProcessor) ExtractHelmChart(_ context.Context, _ ports.HelmDeps
 
 func (s *stubHelmProcessor) RenderAppSource(_ context.Context, _ ports.CmdRunner, req ports.ChartRenderRequest) error {
 	s.record("RenderAppSource", req.TmpDir)
+	s.recordRender(req)
 	if err := s.renderErrFor[req.ReleaseName]; err != nil {
 		return err
 	}
@@ -267,6 +279,35 @@ data:
 func (s *stubHelmProcessor) BuildChartDependencies(_ context.Context, _ ports.HelmDeps, chartDir, _ string) error {
 	s.record("BuildChartDependencies", chartDir)
 	return nil
+}
+
+// recordRender stores the values files a render resolved to, reading each one
+// so its content outlives the workspace.
+func (s *stubHelmProcessor) recordRender(req ports.ChartRenderRequest) {
+	files := make(map[string]string, len(req.ValueFiles))
+	for _, vf := range req.ValueFiles {
+		content, err := os.ReadFile(vf)
+		if err != nil {
+			files[vf] = ""
+			continue
+		}
+		files[vf] = string(content)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.renders = append(s.renders, stubRender{TargetType: req.TargetType, ReleaseName: req.ReleaseName, ValueFiles: files})
+}
+
+// renderFor returns the render recorded for one leg of one release.
+func (s *stubHelmProcessor) renderFor(targetType, releaseName string) (stubRender, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, r := range s.renders {
+		if r.TargetType == targetType && r.ReleaseName == releaseName {
+			return r, true
+		}
+	}
+	return stubRender{}, false
 }
 
 // stubValidator returns the configured result on every call, regardless of inputs.

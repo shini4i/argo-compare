@@ -95,9 +95,9 @@ type ChartExtractRequest struct {
 }
 
 // ChartRenderRequest contains the parameters for rendering a Helm chart.
-// ValueFiles lists paths (relative to the chart directory) supplied via
-// Application.spec.source.helm.valueFiles. They are applied in order, before
-// inline values from Application.spec.source.helm.values / valuesObject.
+// ValueFiles lists absolute, caller-resolved paths from helm.valueFiles, each
+// required to sit inside TmpDir. They are applied in order, before inline
+// values from Application.spec.source.helm.values / valuesObject.
 //
 // Parameters carries the fully-resolved spec.source.helm.parameters (merged
 // with any .argocd-source override files). They render as helm `--set` /

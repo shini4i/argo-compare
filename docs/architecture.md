@@ -90,6 +90,14 @@ contains:
 
 All three converge on the same comparison path in `internal/app/compare.go`.
 
+Before rendering, every flow resolves multi-source `ref` sources: a
+`helm.valueFiles` entry written as `$name/path` is materialized into the leg's
+`refs/` directory by `internal/app/ref_materialize.go` — from the working tree
+or merge-base tree when the ref source points at this repository, and from a
+cached shallow clone when it points elsewhere. `ref_sources.go` turns each entry
+into an absolute path, and the renderer requires every values file to sit inside
+the run's temporary directory.
+
 Comment publication is decoupled from it: a `commentCollector` appends each
 comparison to `App.commentSections`, and `Run` publishes the batch as one
 comment once every comparison has finished (`internal/app/app.go`). The

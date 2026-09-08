@@ -1,0 +1,39 @@
+# A multi-source template using ArgoCD's values-only `ref` source: the chart
+# comes from this repository, the values from a sibling source addressed as
+# $values. Both the ref name and the $values path are templated, so a renderer
+# that skipped either field would fail the phase.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: e2e-ref
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - list:
+        elements:
+          - cluster: dev
+            valuesRef: shared
+          - cluster: staging
+            valuesRef: shared
+  template:
+    metadata:
+      name: 'ref-{{ .cluster }}'
+      namespace: argocd
+    spec:
+      project: default
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .cluster }}'
+      sources:
+        - repoURL: REPO_URL
+          path: charts/demo
+          targetRevision: main
+          helm:
+            releaseName: 'ref-{{ .cluster }}'
+            valueFiles:
+              - '${{ .valuesRef }}/values/{{ .cluster }}.yaml'
+        - repoURL: REPO_URL
+          targetRevision: main
+          ref: '{{ .valuesRef }}'
