@@ -19,6 +19,7 @@ import (
 type recordingHelmProcessor struct {
 	generateValuesCalls int
 	downloadCalls       int
+	downloadRequests    []ports.ChartDownloadRequest
 	extractCalls        int
 	renderCalls         int
 	renderRequests      []ports.ChartRenderRequest
@@ -29,8 +30,9 @@ func (r *recordingHelmProcessor) GenerateValuesFile(chartName, tmpDir, targetTyp
 	return nil
 }
 
-func (r *recordingHelmProcessor) DownloadHelmChart(_ context.Context, _ ports.HelmDeps, _ ports.ChartDownloadRequest) error {
+func (r *recordingHelmProcessor) DownloadHelmChart(_ context.Context, _ ports.HelmDeps, req ports.ChartDownloadRequest) error {
 	r.downloadCalls++
+	r.downloadRequests = append(r.downloadRequests, req)
 	return nil
 }
 
@@ -156,10 +158,10 @@ func TestTargetSkipsValuesGenerationWhenInlineEmpty(t *testing.T) {
 	assert.Equal(t, 0, processor.generateValuesCalls, "no inline values means no values file must be generated")
 }
 
-// TestTargetPropagatesValueFiles verifies that helm.valueFiles entries flow
-// through to ChartRenderRequest.ValueFiles in declared order. This is the
-// hand-off point between target.go and helm_chart_processor.go for the
-// valueFiles flag.
+// TestTargetPropagatesValueFiles verifies that helm.valueFiles entries reach
+// ChartRenderRequest.ValueFiles in declared order, resolved against the chart
+// directory. This is the hand-off point between target.go and
+// helm_chart_processor.go for the valueFiles flag.
 func TestTargetPropagatesValueFiles(t *testing.T) {
 	processor := &recordingHelmProcessor{}
 
@@ -168,6 +170,7 @@ func TestTargetPropagatesValueFiles(t *testing.T) {
 		FileReader:    portstest.NoopFileReader{},
 		HelmProcessor: processor,
 		Log:           logger.New("target-test"),
+		TmpDir:        "/run",
 		Type:          TargetTypeSource,
 		App: models.Application{
 			Spec: struct {
@@ -190,7 +193,12 @@ func TestTargetPropagatesValueFiles(t *testing.T) {
 
 	require.NoError(t, target.renderAppSources(context.Background()))
 	require.Len(t, processor.renderRequests, 1)
-	assert.Equal(t, []string{"values.yaml", "environment.yaml", "worker.yaml"}, processor.renderRequests[0].ValueFiles)
+	chartDir := filepath.Join("/run", "charts", TargetTypeSource, "app")
+	assert.Equal(t, []string{
+		filepath.Join(chartDir, "values.yaml"),
+		filepath.Join(chartDir, "environment.yaml"),
+		filepath.Join(chartDir, "worker.yaml"),
+	}, processor.renderRequests[0].ValueFiles)
 }
 
 // TestTargetPropagatesParameters verifies that a source's inline helm
@@ -383,6 +391,7 @@ func TestTargetMultiSourcePropagatesValueFiles(t *testing.T) {
 		FileReader:    portstest.NoopFileReader{},
 		HelmProcessor: processor,
 		Log:           logger.New("target-test"),
+		TmpDir:        "/run",
 		Type:          TargetTypeSource,
 		App: models.Application{
 			Spec: struct {
@@ -413,6 +422,11 @@ func TestTargetMultiSourcePropagatesValueFiles(t *testing.T) {
 
 	require.NoError(t, target.renderAppSources(context.Background()))
 	require.Len(t, processor.renderRequests, 2)
-	assert.Equal(t, []string{"a-values.yaml"}, processor.renderRequests[0].ValueFiles)
-	assert.Equal(t, []string{"b-values.yaml", "b-env.yaml"}, processor.renderRequests[1].ValueFiles)
+	chartA := filepath.Join("/run", "charts", TargetTypeSource, "chartA")
+	chartB := filepath.Join("/run", "charts", TargetTypeSource, "chartB")
+	assert.Equal(t, []string{filepath.Join(chartA, "a-values.yaml")}, processor.renderRequests[0].ValueFiles)
+	assert.Equal(t, []string{
+		filepath.Join(chartB, "b-values.yaml"),
+		filepath.Join(chartB, "b-env.yaml"),
+	}, processor.renderRequests[1].ValueFiles)
 }

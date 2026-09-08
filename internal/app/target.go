@@ -115,29 +115,15 @@ func parseApplicationSetContent(yamlContent []byte) (*models.ApplicationSet, err
 // omits the corresponding --values flag. This supports Applications that rely
 // solely on helm.valueFiles or on the chart's own defaults.
 func (t *Target) generateValuesFiles() error {
-	if t.App.Spec.MultiSource {
-		for _, source := range t.App.Spec.Sources {
-			if !hasInlineValues(source) {
-				continue
-			}
-			if err := t.HelmProcessor.GenerateValuesFile(effectiveChartName(source), t.TmpDir, t.Type, source.Helm.Values, source.Helm.ValuesObject); err != nil {
-				return err
-			}
+	for _, source := range t.renderableSources() {
+		if !hasInlineValues(source) {
+			continue
 		}
-		return nil
+		if err := t.HelmProcessor.GenerateValuesFile(effectiveChartName(source), t.TmpDir, t.Type, source.Helm.Values, source.Helm.ValuesObject); err != nil {
+			return err
+		}
 	}
-
-	if !hasInlineValues(t.App.Spec.Source) {
-		return nil
-	}
-
-	return t.HelmProcessor.GenerateValuesFile(
-		effectiveChartName(t.App.Spec.Source),
-		t.TmpDir,
-		t.Type,
-		t.App.Spec.Source.Helm.Values,
-		t.App.Spec.Source.Helm.ValuesObject,
-	)
+	return nil
 }
 
 // hasInlineValues reports whether the source carries inline values that must
@@ -164,28 +150,18 @@ func (t *Target) ensureHelmCharts(ctx context.Context) error {
 		CredentialProviders: t.CredentialProviders,
 	}
 
-	if t.App.Spec.MultiSource {
-		for _, source := range t.App.Spec.Sources {
-			req := ports.ChartDownloadRequest{
-				CacheDir:       t.CacheDir,
-				RepoURL:        source.RepoURL,
-				ChartName:      source.Chart,
-				TargetRevision: source.TargetRevision,
-			}
-			if err := t.HelmProcessor.DownloadHelmChart(ctx, deps, req); err != nil {
-				return err
-			}
+	for _, source := range t.renderableSources() {
+		req := ports.ChartDownloadRequest{
+			CacheDir:       t.CacheDir,
+			RepoURL:        source.RepoURL,
+			ChartName:      source.Chart,
+			TargetRevision: source.TargetRevision,
 		}
-		return nil
+		if err := t.HelmProcessor.DownloadHelmChart(ctx, deps, req); err != nil {
+			return err
+		}
 	}
-
-	req := ports.ChartDownloadRequest{
-		CacheDir:       t.CacheDir,
-		RepoURL:        t.App.Spec.Source.RepoURL,
-		ChartName:      t.App.Spec.Source.Chart,
-		TargetRevision: t.App.Spec.Source.TargetRevision,
-	}
-	return t.HelmProcessor.DownloadHelmChart(ctx, deps, req)
+	return nil
 }
 
 // extractCharts unpacks cached Helm charts into the working directories.
@@ -193,86 +169,54 @@ func (t *Target) ensureHelmCharts(ctx context.Context) error {
 func (t *Target) extractCharts(ctx context.Context) error {
 	deps := ports.HelmDeps{CmdRunner: t.CmdRunner, Globber: t.Globber, CredentialProviders: t.CredentialProviders}
 
-	if t.App.Spec.MultiSource {
-		for _, source := range t.App.Spec.Sources {
-			repoURL := strings.TrimPrefix(source.RepoURL, "oci://")
-			req := ports.ChartExtractRequest{
-				ChartName:     source.Chart,
-				ChartVersion:  source.TargetRevision,
-				ChartLocation: fmt.Sprintf("%s/%s", t.CacheDir, repoURL),
-				TmpDir:        t.TmpDir,
-				TargetType:    t.Type,
-			}
-			if err := t.HelmProcessor.ExtractHelmChart(ctx, deps, req); err != nil {
-				return err
-			}
+	for _, source := range t.renderableSources() {
+		repoURL := strings.TrimPrefix(source.RepoURL, "oci://")
+		req := ports.ChartExtractRequest{
+			ChartName:     source.Chart,
+			ChartVersion:  source.TargetRevision,
+			ChartLocation: fmt.Sprintf("%s/%s", t.CacheDir, repoURL),
+			TmpDir:        t.TmpDir,
+			TargetType:    t.Type,
 		}
-		return nil
+		if err := t.HelmProcessor.ExtractHelmChart(ctx, deps, req); err != nil {
+			return err
+		}
 	}
-
-	repoURL := strings.TrimPrefix(t.App.Spec.Source.RepoURL, "oci://")
-	req := ports.ChartExtractRequest{
-		ChartName:     t.App.Spec.Source.Chart,
-		ChartVersion:  t.App.Spec.Source.TargetRevision,
-		ChartLocation: fmt.Sprintf("%s/%s", t.CacheDir, repoURL),
-		TmpDir:        t.TmpDir,
-		TargetType:    t.Type,
-	}
-	return t.HelmProcessor.ExtractHelmChart(ctx, deps, req)
+	return nil
 }
 
-// renderAppSources runs Helm template rendering for each application source.
-// Application.spec.source.helm.valueFiles flow through to the renderer so that
-// charts relying on extra values files (not just inline helm.values) render
-// correctly.
-// The context can be used to cancel rendering or set a timeout.
+// renderAppSources runs Helm template rendering for each renderable source.
+// helm.valueFiles are resolved to absolute paths first, so a "$ref/path" entry
+// reaches Helm as the file materialized for this leg.
 func (t *Target) renderAppSources(ctx context.Context) error {
-	if t.App.Spec.MultiSource {
-		for _, source := range t.App.Spec.Sources {
-			releaseName := t.App.Metadata.Name
-			if source.Helm.ReleaseName != "" {
-				releaseName = source.Helm.ReleaseName
-			}
-			parameters, err := t.resolveSourceParameters(source)
-			if err != nil {
-				return err
-			}
-			req := ports.ChartRenderRequest{
-				ReleaseName:  releaseName,
-				ChartName:    effectiveChartName(source),
-				ChartVersion: source.TargetRevision,
-				TmpDir:       t.TmpDir,
-				TargetType:   t.Type,
-				Namespace:    t.App.Spec.Destination.Namespace,
-				ValueFiles:   source.Helm.ValueFiles,
-				Parameters:   parameters,
-			}
-			if err := t.HelmProcessor.RenderAppSource(ctx, t.CmdRunner, req); err != nil {
-				return err
-			}
+	for _, source := range t.renderableSources() {
+		releaseName := t.App.Metadata.Name
+		if source.Helm.ReleaseName != "" {
+			releaseName = source.Helm.ReleaseName
 		}
-		return nil
+		parameters, err := t.resolveSourceParameters(source)
+		if err != nil {
+			return err
+		}
+		valueFiles, err := t.resolveValueFiles(source)
+		if err != nil {
+			return err
+		}
+		req := ports.ChartRenderRequest{
+			ReleaseName:  releaseName,
+			ChartName:    effectiveChartName(source),
+			ChartVersion: source.TargetRevision,
+			TmpDir:       t.TmpDir,
+			TargetType:   t.Type,
+			Namespace:    t.App.Spec.Destination.Namespace,
+			ValueFiles:   valueFiles,
+			Parameters:   parameters,
+		}
+		if err := t.HelmProcessor.RenderAppSource(ctx, t.CmdRunner, req); err != nil {
+			return err
+		}
 	}
-
-	releaseName := t.App.Metadata.Name
-	if t.App.Spec.Source.Helm.ReleaseName != "" {
-		releaseName = t.App.Spec.Source.Helm.ReleaseName
-	}
-	parameters, err := t.resolveSourceParameters(t.App.Spec.Source)
-	if err != nil {
-		return err
-	}
-	req := ports.ChartRenderRequest{
-		ReleaseName:  releaseName,
-		ChartName:    effectiveChartName(t.App.Spec.Source),
-		ChartVersion: t.App.Spec.Source.TargetRevision,
-		TmpDir:       t.TmpDir,
-		TargetType:   t.Type,
-		Namespace:    t.App.Spec.Destination.Namespace,
-		ValueFiles:   t.App.Spec.Source.Helm.ValueFiles,
-		Parameters:   parameters,
-	}
-	return t.HelmProcessor.RenderAppSource(ctx, t.CmdRunner, req)
+	return nil
 }
 
 // resolveSourceParameters merges a source's inline helm.parameters with any

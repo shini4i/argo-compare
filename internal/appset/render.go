@@ -69,6 +69,7 @@ func (r *renderer) source(source *models.Source) {
 	source.Chart = r.text(source.Chart)
 	source.TargetRevision = r.text(source.TargetRevision)
 	source.Path = r.text(source.Path)
+	source.Ref = r.text(source.Ref)
 
 	source.Helm.ReleaseName = r.text(source.Helm.ReleaseName)
 	source.Helm.Values = r.text(source.Helm.Values)

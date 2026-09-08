@@ -524,6 +524,7 @@ func TestRenderAppSource(t *testing.T) {
 		inlinePath := filepath.Join(tmpDir, "my-chart-values-src.yaml")
 		assert.NoError(t, os.WriteFile(inlinePath, []byte("override: true"), 0o644))
 
+		chartDir := fmt.Sprintf("%s/charts/src/my-chart", tmpDir)
 		req := ports.ChartRenderRequest{
 			ReleaseName:  "my-release",
 			ChartName:    "my-chart",
@@ -531,10 +532,13 @@ func TestRenderAppSource(t *testing.T) {
 			TmpDir:       tmpDir,
 			TargetType:   "src",
 			Namespace:    "my-namespace",
-			ValueFiles:   []string{"values.yaml", "environment.yaml", "worker.yaml"},
+			ValueFiles: []string{
+				fmt.Sprintf("%s/values.yaml", chartDir),
+				fmt.Sprintf("%s/environment.yaml", chartDir),
+				fmt.Sprintf("%s/worker.yaml", chartDir),
+			},
 		}
 
-		chartDir := fmt.Sprintf("%s/charts/src/my-chart", tmpDir)
 		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
 			"template",
 			"--release-name", "my-release",
@@ -556,6 +560,7 @@ func TestRenderAppSource(t *testing.T) {
 		helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
 
 		tmpDir := t.TempDir()
+		chartDir := fmt.Sprintf("%s/charts/src/my-chart", tmpDir)
 		req := ports.ChartRenderRequest{
 			ReleaseName:  "my-release",
 			ChartName:    "my-chart",
@@ -563,16 +568,46 @@ func TestRenderAppSource(t *testing.T) {
 			TmpDir:       tmpDir,
 			TargetType:   "src",
 			Namespace:    "my-namespace",
-			ValueFiles:   []string{"production.yaml"},
+			ValueFiles:   []string{fmt.Sprintf("%s/production.yaml", chartDir)},
 		}
 
-		chartDir := fmt.Sprintf("%s/charts/src/my-chart", tmpDir)
 		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
 			"template",
 			"--release-name", "my-release",
 			chartDir,
 			"--output-dir", fmt.Sprintf("%s/templates/src", tmpDir),
 			"--values", fmt.Sprintf("%s/production.yaml", chartDir),
+			"--namespace", "my-namespace").Return("", "", nil)
+
+		assert.NoError(t, helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req))
+	})
+
+	// A "$ref/path" entry resolves outside the chart directory, so the renderer
+	// must accept any path inside TmpDir, not only chart-relative ones.
+	t.Run("valueFiles from a ref source outside the chart dir", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+		helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+
+		tmpDir := t.TempDir()
+		chartDir := fmt.Sprintf("%s/charts/src/my-chart", tmpDir)
+		refFile := fmt.Sprintf("%s/refs/src/values/envs/prod/values.yaml", tmpDir)
+		req := ports.ChartRenderRequest{
+			ReleaseName: "my-release",
+			ChartName:   "my-chart",
+			TmpDir:      tmpDir,
+			TargetType:  "src",
+			Namespace:   "my-namespace",
+			ValueFiles:  []string{refFile},
+		}
+
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"template",
+			"--release-name", "my-release",
+			chartDir,
+			"--output-dir", fmt.Sprintf("%s/templates/src", tmpDir),
+			"--values", refFile,
 			"--namespace", "my-namespace").Return("", "", nil)
 
 		assert.NoError(t, helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req))
@@ -724,31 +759,39 @@ func TestRenderAppSource(t *testing.T) {
 }
 
 func TestValidateValueFile(t *testing.T) {
-	t.Run("valid relative paths pass", func(t *testing.T) {
-		assert.NoError(t, validateValueFile("values.yaml"))
-		assert.NoError(t, validateValueFile("environment.yaml"))
-		assert.NoError(t, validateValueFile("config/override.yaml"))
+	tmpDir := "/tmp/argo-compare-run"
+
+	t.Run("paths inside the render directory pass", func(t *testing.T) {
+		assert.NoError(t, validateValueFile(tmpDir+"/charts/src/my-chart/values.yaml", tmpDir))
+		assert.NoError(t, validateValueFile(tmpDir+"/refs/src/values/envs/prod.yaml", tmpDir))
 	})
 
 	t.Run("empty path is rejected", func(t *testing.T) {
-		err := validateValueFile("")
+		err := validateValueFile("", tmpDir)
 		assert.ErrorIs(t, err, ErrInvalidValueFile)
 	})
 
-	t.Run("absolute path is rejected", func(t *testing.T) {
-		err := validateValueFile("/etc/passwd")
-		assert.ErrorIs(t, err, ErrInvalidValueFile)
-	})
-
-	t.Run("parent traversal is rejected", func(t *testing.T) {
-		for _, p := range []string{"../escape.yaml", "../../etc/passwd", "../values.yaml"} {
-			err := validateValueFile(p)
+	t.Run("unresolved relative path is rejected", func(t *testing.T) {
+		for _, p := range []string{"values.yaml", "config/override.yaml", "../escape.yaml"} {
+			err := validateValueFile(p, tmpDir)
 			assert.ErrorIs(t, err, ErrInvalidValueFile, "expected ErrInvalidValueFile for %q", p)
 		}
 	})
 
-	t.Run("traversal inside a subpath is rejected", func(t *testing.T) {
-		err := validateValueFile("safe/../../../etc/passwd")
+	t.Run("path outside the render directory is rejected", func(t *testing.T) {
+		for _, p := range []string{"/etc/passwd", tmpDir + "/../../etc/passwd", tmpDir + "-sibling/values.yaml"} {
+			err := validateValueFile(p, tmpDir)
+			assert.ErrorIs(t, err, ErrInvalidValueFile, "expected ErrInvalidValueFile for %q", p)
+		}
+	})
+
+	t.Run("the render directory itself is not a values file", func(t *testing.T) {
+		err := validateValueFile(tmpDir, tmpDir)
+		assert.ErrorIs(t, err, ErrInvalidValueFile)
+	})
+
+	t.Run("an unset render directory fails closed", func(t *testing.T) {
+		err := validateValueFile("/anything/values.yaml", "")
 		assert.ErrorIs(t, err, ErrInvalidValueFile)
 	})
 }

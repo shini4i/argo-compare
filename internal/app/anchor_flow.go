@@ -24,10 +24,10 @@ import (
 // local repo; third-repo chart sources are explicitly out of scope.
 var ErrAnchorRepoMismatch = errors.New("anchored Application spec.source.repoURL does not match the local repository")
 
-// ErrAnchorNotPathBased is returned when an anchored Application uses a
-// registry-based source. The anchor flow exists specifically to render a
-// chart from a Git path; chart-based sources go through the existing
-// changed-Application-file flow.
+// ErrAnchorNotPathBased is returned when an anchored Application renders a
+// registry chart and takes no values from this repository either. Such an
+// Application cannot be affected by a change under the anchor, so it goes
+// through the changed-Application-file flow instead.
 var ErrAnchorNotPathBased = errors.New("anchored Application is not path-based")
 
 // ErrValueFileMissingFromSource is returned when a cross-repo anchored
@@ -229,6 +229,13 @@ func anchoredLegSkipReason(app *models.Application, originURL string) (string, e
 		return "", err
 	}
 	if !target.PathBased() {
+		localRef, err := refsThisRepo(&target, originURL)
+		if err != nil {
+			return "", err
+		}
+		if localRef {
+			return "", nil
+		}
 		return "its source is a registry chart, which a change to this repository cannot affect", nil
 	}
 	for _, source := range target.pathSources() {
@@ -270,7 +277,13 @@ func (a *App) processAnchoredApplication(ctx context.Context, repo *GitRepo, gro
 		return false, classifyErr
 	}
 	if !classifyTarget.PathBased() {
-		return false, fmt.Errorf("%w: %s", ErrAnchorNotPathBased, anchorRefDisplay(group.Anchor.Application))
+		localRef, refErr := refsThisRepo(&classifyTarget, originURL)
+		if refErr != nil {
+			return false, refErr
+		}
+		if !localRef {
+			return false, fmt.Errorf("%w: %s", ErrAnchorNotPathBased, anchorRefDisplay(group.Anchor.Application))
+		}
 	}
 	if mismatchErr := assertSameRepo(app.Spec.Source, app.Spec.Sources, originURL); mismatchErr != nil {
 		return false, fmt.Errorf("%w: %w", ErrAnchorRepoMismatch, mismatchErr)
@@ -386,6 +399,10 @@ func (a *App) renderAnchorLeg(ctx context.Context, lc *anchorLegContext, leg str
 		return err
 	}
 
+	if err := a.materializeRefSourcesForLeg(ctx, lc.repo, &target, lc.repoRoot); err != nil {
+		return err
+	}
+
 	if err := target.generateValuesFiles(); err != nil {
 		return err
 	}
@@ -409,10 +426,18 @@ func (a *App) renderAnchorLeg(ctx context.Context, lc *anchorLegContext, leg str
 	return nil
 }
 
-// materializeChartForLeg checks out the chart sources for one comparison leg
-// into target's TmpDir: the working tree for the source leg, and the merge-base
-// tree against the target branch for the destination leg.
+// materializeChartForLeg checks out one comparison leg's chart into TmpDir: the
+// working tree for the source leg, the merge-base tree for the destination leg.
+// A registry chart is pulled instead, since no tree holds it — reachable here
+// only when its values come from a ref source in this repository.
 func (a *App) materializeChartForLeg(ctx context.Context, target *Target, leg string, repo *GitRepo, repoRoot string) error {
+	if !target.PathBased() {
+		if err := target.ensureHelmCharts(ctx); err != nil {
+			return err
+		}
+		return target.extractCharts(ctx)
+	}
+
 	switch leg {
 	case TargetTypeSource:
 		return target.MaterializeChartFromWorkingTree(ctx, a.fs, repoRoot)
@@ -427,21 +452,10 @@ func (a *App) materializeChartForLeg(ctx context.Context, target *Target, leg st
 	}
 }
 
-// checkSourceValueFilesPresent verifies that every values file referenced by
-// the anchored Application exists in the chart materialized for the source leg
-// (TmpDir/charts/<Type>/<ChartName>). It is meant for the cross-repo source
-// leg, where the chart is read from the PR working tree while the Application
-// is read from the anchored repo's branch tip; a mismatch there yields
-// ErrValueFileMissingFromSource with guidance rather than an opaque Helm error.
-//
-// Only entries that are literal paths into the chart directory are checked.
-// Two kinds are deliberately deferred to downstream handling:
-//   - Entries validateValueFile would reject (empty, absolute, or "..") are
-//     skipped so its specific validation error is not masked by this preflight.
-//   - ArgoCD `$ref`-prefixed entries (e.g. "$values/env/prod.yaml") reference a
-//     file in another multi-source `ref:` source, not a path in this chart, so
-//     they are not ours to resolve — statting them here would raise a spurious
-//     ErrValueFileMissingFromSource.
+// checkSourceValueFilesPresent reports ErrValueFileMissingFromSource when a
+// cross-repo anchor's Application, read from its branch tip, names a values file
+// the PR's chart no longer has. Only literal chart-relative paths qualify: a
+// "$ref" entry is checked by materializeRefSources against its own ref source.
 func (t *Target) checkSourceValueFilesPresent(fs afero.Fs, ref anchor.ApplicationRef) error {
 	afs := afero.Afero{Fs: fs}
 	for _, src := range t.pathSources() {

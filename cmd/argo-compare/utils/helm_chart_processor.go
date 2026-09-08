@@ -25,23 +25,22 @@ var ErrFailedToDownloadChart = errors.New("failed to download chart")
 // security reasons (empty, absolute path, or parent-directory traversal).
 var ErrInvalidValueFile = errors.New("invalid valueFile path")
 
-// validateValueFile rejects valueFiles entries that could read files outside
-// the chart directory. It enforces three rules that together prevent the
-// Application YAML (an untrusted, PR-author-controlled input) from exfiltrating
-// host secrets through the rendered diff posted to MR comments:
-//   - non-empty (empty paths have no valid use and are a sign of misconfiguration)
-//   - not absolute (absolute paths bypass the chart-dir prefix entirely on POSIX)
-//   - no parent traversal (filepath.Clean("../foo") would escape the chart dir)
-func validateValueFile(vf string) error {
+// validateValueFile requires a values file to sit inside the run's temporary
+// directory, which holds both the materialized charts and the files pulled from
+// multi-source ref sources. The caller resolves each Application-supplied path
+// against one of those roots; this is the last gate before helm's argv.
+func validateValueFile(vf, tmpDir string) error {
 	if vf == "" {
 		return fmt.Errorf("%w: path must not be empty", ErrInvalidValueFile)
 	}
-	if filepath.IsAbs(vf) {
-		return fmt.Errorf("%w: absolute paths are not allowed: %q", ErrInvalidValueFile, vf)
+	if !filepath.IsAbs(vf) {
+		return fmt.Errorf("%w: path must be resolved before rendering: %q", ErrInvalidValueFile, vf)
 	}
-	cleaned := filepath.Clean(vf)
-	if strings.HasPrefix(cleaned, "..") {
-		return fmt.Errorf("%w: path traversal is not allowed: %q", ErrInvalidValueFile, vf)
+	// Strictly inside: the render directory itself is not a values file, and an
+	// unset tmpDir cleans to "." so every absolute path fails closed.
+	root := filepath.Clean(tmpDir)
+	if !strings.HasPrefix(filepath.Clean(vf), root+string(filepath.Separator)) {
+		return fmt.Errorf("%w: %q is not inside the render directory %q", ErrInvalidValueFile, vf, root)
 	}
 	return nil
 }
@@ -633,10 +632,10 @@ func (g RealHelmChartProcessor) RenderAppSource(ctx context.Context, cmdRunner p
 	}
 
 	for _, vf := range req.ValueFiles {
-		if err := validateValueFile(vf); err != nil {
+		if err := validateValueFile(vf, req.TmpDir); err != nil {
 			return err
 		}
-		args = append(args, "--values", filepath.Join(chartDir, vf))
+		args = append(args, "--values", vf)
 	}
 
 	inlineValuesPath := fmt.Sprintf("%s/%s-values-%s.yaml", req.TmpDir, req.ChartName, req.TargetType)

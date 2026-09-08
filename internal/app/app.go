@@ -66,6 +66,7 @@ type App struct {
 	sensitiveDataMasker ports.SensitiveDataMasker // Applied to manifest content prior to diff generation.
 	validator           ports.ManifestValidator   // Optional validator for rendered manifests.
 	fetcher             ports.ApplicationFetcher  // Resolves anchored Applications. Optional; defaults to a real impl.
+	refTrees            refTreeResolver           // Resolves remote ref sources. Optional; defaults to a caching clone fetcher.
 	commentPoster       comment.Poster            // Built on first use and kept; nil until a comparison needs it.
 	commentSections     []commentSection          // One per comparison, published together at the end of the run.
 }
@@ -528,6 +529,10 @@ func (a *App) renderTarget(ctx context.Context, repo *GitRepo, target *Target, f
 	}
 
 	if err := a.prepareChart(ctx, repo, target, fileType); err != nil {
+		return err
+	}
+
+	if err := a.materializeRefSourcesForLeg(ctx, repo, target, ""); err != nil {
 		return err
 	}
 

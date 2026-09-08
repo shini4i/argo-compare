@@ -39,7 +39,7 @@ Compiling that package's tests needs the generated mocks, which are gitignored,
 so `phases` and `appset-parity` depend on the root Taskfile's `mocks` task. A
 checkout that has never run `task test` has none, which is the state CI starts in.
 
-Two of its fixtures exist for the parts of expansion that are pure
+Three of its fixtures exist for the parts of expansion that are pure
 reimplementation, where a self-consistent unit test proves nothing:
 
 - `appset-funcs.yaml` drives the template functions argo-compare copies from
@@ -56,10 +56,16 @@ reimplementation, where a self-consistent unit test proves nothing:
   `.values` prefix. Both entries reach compared fields, so dropping the block or
   the prefix fails rather than producing a quietly different name.
 
+- `appset-ref.yaml` drives a multi-source template using ArgoCD's values-only
+  `ref` source: the chart comes from this repository, the values from a sibling
+  source addressed as `$values`. Both the `ref` name and the `$values` path are
+  templated, so a renderer that skipped either field fails the phase.
+
 It compares a projection of each generated Application — name, source
 repoURL/path/chart/targetRevision, and the rendered `helm.releaseName` and
-`helm.values` — because ArgoCD also stamps ownership, finalizers and status that
-argo-compare never produces. Values are re-marshalled before comparison so the
+`helm.values`, plus the same per entry of `spec.sources` including `ref` and
+`helm.valueFiles` — because ArgoCD also stamps ownership, finalizers and status
+that argo-compare never produces. Values are re-marshalled before comparison so the
 result is about content, not the indentation each side's templating emitted.
 
 ## What render-parity can and cannot compare

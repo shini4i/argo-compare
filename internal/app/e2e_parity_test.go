@@ -34,6 +34,35 @@ type generatedApp struct {
 	TargetRevision string
 	ReleaseName    string
 	Values         string
+	Sources        []generatedSource
+}
+
+// generatedSource is one entry of a multi-source Application's spec.sources,
+// including the ref name and valueFiles that a "$ref" layout depends on.
+type generatedSource struct {
+	RepoURL        string
+	Path           string
+	Chart          string
+	TargetRevision string
+	Ref            string
+	ReleaseName    string
+	ValueFiles     []string
+	Values         string
+}
+
+// clusterSource is one source as the cluster reports it, shared by spec.source
+// and spec.sources.
+type clusterSource struct {
+	RepoURL        string `json:"repoURL"`
+	Path           string `json:"path"`
+	Chart          string `json:"chart"`
+	TargetRevision string `json:"targetRevision"`
+	Ref            string `json:"ref"`
+	Helm           struct {
+		ReleaseName string   `json:"releaseName"`
+		Values      string   `json:"values"`
+		ValueFiles  []string `json:"valueFiles"`
+	} `json:"helm"`
 }
 
 // TestE2EApplicationSetParity compares argo-compare's expansion against the
@@ -48,7 +77,7 @@ func TestE2EApplicationSetParity(t *testing.T) {
 
 	tree := branchTree(t, repoDir, branch)
 
-	for _, name := range []string{"e2e-list", "e2e-git-dir", "e2e-git-file", "e2e-lifecycle", "e2e-funcs", "e2e-git-values"} {
+	for _, name := range []string{"e2e-list", "e2e-git-dir", "e2e-git-file", "e2e-lifecycle", "e2e-funcs", "e2e-git-values", "e2e-ref"} {
 		t.Run(name, func(t *testing.T) {
 			manifest := filepath.Join(fixturesDir, strings.Replace(name, "e2e-", "appset-", 1)+".yaml")
 			raw, err := os.ReadFile(manifest) // #nosec G304 -- a lab fixture path
@@ -87,16 +116,8 @@ func argoGenerated(t *testing.T, appSetName string) []generatedApp {
 				} `json:"ownerReferences"`
 			} `json:"metadata"`
 			Spec struct {
-				Source struct {
-					RepoURL        string `json:"repoURL"`
-					Path           string `json:"path"`
-					Chart          string `json:"chart"`
-					TargetRevision string `json:"targetRevision"`
-					Helm           struct {
-						ReleaseName string `json:"releaseName"`
-						Values      string `json:"values"`
-					} `json:"helm"`
-				} `json:"source"`
+				Source  clusterSource   `json:"source"`
+				Sources []clusterSource `json:"sources"`
 			} `json:"spec"`
 		} `json:"items"`
 	}
@@ -116,6 +137,7 @@ func argoGenerated(t *testing.T, appSetName string) []generatedApp {
 			TargetRevision: src.TargetRevision,
 			ReleaseName:    src.Helm.ReleaseName,
 			Values:         canonicalYAML(t, src.Helm.Values),
+			Sources:        clusterSources(t, item.Spec.Sources),
 		})
 	}
 	require.NotEmpty(t, got, "the controller generated nothing for %s", appSetName)
@@ -144,19 +166,71 @@ func normalizeGenerated(t *testing.T, apps []models.Application) []generatedApp 
 
 	got := make([]generatedApp, 0, len(apps))
 	for i := range apps {
-		src := apps[i].Spec.Source
-		require.NotNil(t, src, "a generated Application has no source")
-		got = append(got, generatedApp{
-			Name:           apps[i].Metadata.Name,
+		app := generatedApp{Name: apps[i].Metadata.Name, Sources: expandedSources(t, apps[i].Spec.Sources)}
+		if src := apps[i].Spec.Source; src != nil {
+			app.RepoURL = src.RepoURL
+			app.Path = src.Path
+			app.Chart = src.Chart
+			app.TargetRevision = src.TargetRevision
+			app.ReleaseName = src.Helm.ReleaseName
+			app.Values = canonicalYAML(t, src.Helm.Values)
+		} else {
+			require.NotEmpty(t, app.Sources, "a generated Application has neither source nor sources")
+		}
+		got = append(got, app)
+	}
+	sortGenerated(got)
+
+	return got
+}
+
+// clusterSources projects the controller's spec.sources onto the shape both
+// sides are compared on.
+func clusterSources(t *testing.T, sources []clusterSource) []generatedSource {
+	t.Helper()
+
+	if len(sources) == 0 {
+		return nil
+	}
+	got := make([]generatedSource, 0, len(sources))
+	for _, src := range sources {
+		got = append(got, generatedSource{
 			RepoURL:        src.RepoURL,
 			Path:           src.Path,
 			Chart:          src.Chart,
 			TargetRevision: src.TargetRevision,
+			Ref:            src.Ref,
 			ReleaseName:    src.Helm.ReleaseName,
+			ValueFiles:     src.Helm.ValueFiles,
 			Values:         canonicalYAML(t, src.Helm.Values),
 		})
 	}
-	sortGenerated(got)
+
+	return got
+}
+
+// expandedSources is clusterSources for argo-compare's own expansion. Source
+// order is spec order on both sides, so it is compared as written.
+func expandedSources(t *testing.T, sources []*models.Source) []generatedSource {
+	t.Helper()
+
+	if len(sources) == 0 {
+		return nil
+	}
+	got := make([]generatedSource, 0, len(sources))
+	for _, src := range sources {
+		require.NotNil(t, src, "a generated Application has a nil source entry")
+		got = append(got, generatedSource{
+			RepoURL:        src.RepoURL,
+			Path:           src.Path,
+			Chart:          src.Chart,
+			TargetRevision: src.TargetRevision,
+			Ref:            src.Ref,
+			ReleaseName:    src.Helm.ReleaseName,
+			ValueFiles:     src.Helm.ValueFiles,
+			Values:         canonicalYAML(t, src.Helm.Values),
+		})
+	}
 
 	return got
 }
