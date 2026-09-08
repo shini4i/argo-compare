@@ -101,7 +101,7 @@ func seedAppSetRepo(t *testing.T, mainManifest, featureManifest string) {
 
 // seedAppSetRepoState is seedAppSetRepo with extra per-branch files. It chdirs
 // into the repository, so tests using either helper can never run in parallel.
-func seedAppSetRepoState(t *testing.T, main, feature branchState) {
+func seedAppSetRepoState(t *testing.T, main, feature branchState) string {
 	t.Helper()
 
 	tempDir := t.TempDir()
@@ -146,9 +146,11 @@ func seedAppSetRepoState(t *testing.T, main, feature branchState) {
 
 	require.NoError(t, worktree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName("feature/appset"), Create: true}))
 
-	require.NoError(t, os.WriteFile(filepath.Join(workDir, appSetPath), []byte(featureManifest), 0o644))
-	_, err = worktree.Add(appSetPath)
-	require.NoError(t, err)
+	if featureManifest != "" {
+		require.NoError(t, os.WriteFile(filepath.Join(workDir, appSetPath), []byte(featureManifest), 0o644))
+		_, err = worktree.Add(appSetPath)
+		require.NoError(t, err)
+	}
 
 	// Files the branch drops must be removed, not merely left out, or the diff
 	// never records the deletion.
@@ -169,6 +171,8 @@ func seedAppSetRepoState(t *testing.T, main, feature branchState) {
 	t.Cleanup(func() {
 		require.NoError(t, os.Chdir(oldWD))
 	})
+
+	return remoteDir
 }
 
 // appSetRunner wires an App over the seeded repository and captures its log.
@@ -187,9 +191,24 @@ func newAppSetRunner(t *testing.T, cfg Config, validator *stubValidator) *appSet
 	return newAppSetRunnerWith(t, cfg, validator, nil)
 }
 
-// newAppSetRunnerWith is newAppSetRunner with an optional comment poster. Both
-// share one wiring so a dependency added here reaches every caller.
+// newAppSetRunnerWith is newAppSetRunner with an optional comment poster.
 func newAppSetRunnerWith(t *testing.T, cfg Config, validator *stubValidator, poster comment.Poster) *appSetRunner {
+	t.Helper()
+
+	return newAppSetRunnerFrom(t, cfg, validator, poster, nil)
+}
+
+// newAppSetRunnerWithFetcher is newAppSetRunner with an anchor fetcher stub,
+// which a cross-repo anchor needs since no remote is reachable in a test.
+func newAppSetRunnerWithFetcher(t *testing.T, cfg Config, fetcher ports.ApplicationFetcher) *appSetRunner {
+	t.Helper()
+
+	return newAppSetRunnerFrom(t, cfg, nil, nil, fetcher)
+}
+
+// newAppSetRunnerFrom is the single wiring point, so a dependency added here
+// reaches every caller.
+func newAppSetRunnerFrom(t *testing.T, cfg Config, validator *stubValidator, poster comment.Poster, fetcher ports.ApplicationFetcher) *appSetRunner {
 	t.Helper()
 
 	tempDir := t.TempDir()
@@ -216,6 +235,9 @@ func newAppSetRunnerWith(t *testing.T, cfg Config, validator *stubValidator, pos
 	}
 	if poster != nil {
 		deps.CommentPosterFactory = func(Config) (comment.Poster, error) { return poster, nil }
+	}
+	if fetcher != nil {
+		deps.ApplicationFetcher = fetcher
 	}
 
 	appInstance, err := New(cfg, deps)

@@ -19,6 +19,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// anchoredTreeAppSetYAML carries a git generator, which is what obliges a
+// cross-repo fetch to attach a tree. Its repoURL is inert here: the fetcher
+// never inspects it, and generatorReadsAnchoredRepo does the matching later.
+const anchoredTreeAppSetYAML = `apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: demo
+  namespace: argocd
+spec:
+  goTemplate: true
+  generators:
+    - git:
+        repoURL: https://git.example.com/org/gitops.git
+        revision: HEAD
+        directories:
+          - path: clusters/*
+  template:
+    metadata:
+      name: '{{ .path.basename }}-demo'
+      namespace: argocd
+    spec:
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .path.basename }}'
+      source:
+        repoURL: https://chart.example.com
+        chart: demo-chart
+        targetRevision: 1.0.0
+`
+
 const sampleApplicationYAML = `apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -56,6 +86,24 @@ func TestFetcher_SameRepo_HappyPath(t *testing.T) {
 	assert.Equal(t, "Application", manifest.Application.Kind)
 	assert.Equal(t, "example", manifest.Application.Metadata.Name)
 	assert.Equal(t, "example-chart", manifest.Application.Spec.Source.Chart)
+	assert.Nil(t, manifest.Tree, "a same-repo anchor expands against the local branch legs")
+	assert.Empty(t, manifest.TreeRevision)
+}
+
+// TestFetcher_SameRepo_AppSetCarriesNoTree pins the nil-Tree contract on the
+// local fetch path: a same-repo anchor expands against the branch legs, so
+// there is no clone to attach even for an ApplicationSet.
+func TestFetcher_SameRepo_AppSetCarriesNoTree(t *testing.T) {
+	repoRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "apps"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "apps", "demo.yaml"), []byte(anchoredTreeAppSetYAML), 0o644))
+
+	f := newTestFetcher(t)
+	manifest, err := f.Fetch(context.Background(), anchor.ApplicationRef{Path: "apps/demo.yaml"}, repoRoot)
+	require.NoError(t, err)
+	require.NotNil(t, manifest.ApplicationSet)
+	assert.Nil(t, manifest.Tree)
+	assert.Empty(t, manifest.TreeRevision)
 }
 
 func TestFetcher_SameRepo_FileMissing(t *testing.T) {
@@ -108,6 +156,92 @@ func TestFetcher_CrossRepo_HappyPath(t *testing.T) {
 	require.NotNil(t, manifest.Application)
 	assert.Equal(t, "example", manifest.Application.Metadata.Name)
 	assert.Equal(t, "example-chart", manifest.Application.Spec.Source.Chart)
+}
+
+// TestFetcher_CrossRepo_AppSetCarriesTree pins the clone an ApplicationSet's
+// git generator is expanded against, including the revision name
+// assertGeneratorRevision compares a generator's own against.
+func TestFetcher_CrossRepo_AppSetCarriesTree(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skip cross-repo integration test in short mode")
+	}
+
+	tempDir := t.TempDir()
+	bareDir := filepath.Join(tempDir, "remote.git")
+	require.NoError(t, seedBareRepoWithFiles(t, bareDir, "main", map[string]string{
+		"apps/demo.yaml":            anchoredTreeAppSetYAML,
+		"clusters/dev/config.yaml":  "cluster: dev\n",
+		"clusters/prod/config.yaml": "cluster: prod\n",
+	}))
+
+	f := newTestFetcher(t)
+	manifest, err := f.Fetch(context.Background(), anchor.ApplicationRef{
+		Repo:   bareDir,
+		Path:   "apps/demo.yaml",
+		Branch: "main",
+	}, "")
+	require.NoError(t, err)
+	require.NotNil(t, manifest.ApplicationSet)
+	require.NotNil(t, manifest.Tree, "an anchored ApplicationSet must carry the clone its generator lists")
+
+	assert.Equal(t, "main", manifest.TreeRevision, "the revision must be the branch name, not a full ref path")
+
+	dirs, err := manifest.Tree.Directories()
+	require.NoError(t, err)
+	assert.Subset(t, dirs, []string{"apps", "clusters", "clusters/dev", "clusters/prod"})
+
+	files, err := manifest.Tree.Files()
+	require.NoError(t, err)
+	assert.Contains(t, files, "apps/demo.yaml")
+
+	content, err := manifest.Tree.ReadFile("clusters/dev/config.yaml")
+	require.NoError(t, err)
+	assert.Equal(t, "cluster: dev\n", string(content))
+}
+
+// TestFetcher_CrossRepo_TreeRevisionDefaultsToRemoteBranch pins the revision an
+// omitted anchor branch resolves to, since a generator's own is matched to it.
+func TestFetcher_CrossRepo_TreeRevisionDefaultsToRemoteBranch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skip cross-repo integration test in short mode")
+	}
+
+	tempDir := t.TempDir()
+	bareDir := filepath.Join(tempDir, "remote.git")
+	require.NoError(t, seedBareRepoWithApplication(t, bareDir, "trunk", "apps/demo.yaml", anchoredTreeAppSetYAML))
+
+	f := newTestFetcher(t)
+	manifest, err := f.Fetch(context.Background(), anchor.ApplicationRef{
+		Repo: bareDir,
+		Path: "apps/demo.yaml",
+		// Branch intentionally omitted.
+	}, "")
+	require.NoError(t, err)
+	require.NotNil(t, manifest.Tree)
+	assert.Equal(t, "trunk", manifest.TreeRevision)
+}
+
+// TestFetcher_CrossRepo_ApplicationCarriesNoTree keeps the clone out of a plain
+// Application's manifest, which has no generator to expand.
+func TestFetcher_CrossRepo_ApplicationCarriesNoTree(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skip cross-repo integration test in short mode")
+	}
+
+	tempDir := t.TempDir()
+	bareDir := filepath.Join(tempDir, "remote.git")
+	require.NoError(t, seedBareRepoWithApplication(t, bareDir, "main", "apps/example.yaml", sampleApplicationYAML))
+
+	f := newTestFetcher(t)
+	manifest, err := f.Fetch(context.Background(), anchor.ApplicationRef{
+		Repo:   bareDir,
+		Path:   "apps/example.yaml",
+		Branch: "main",
+	}, "")
+	require.NoError(t, err)
+	require.NotNil(t, manifest.Application)
+	assert.Nil(t, manifest.Tree)
+	assert.Empty(t, manifest.TreeRevision)
 }
 
 func TestFetcher_CrossRepo_FileMissing(t *testing.T) {
@@ -275,6 +409,14 @@ func TestRedactRepo(t *testing.T) {
 // cloning without an explicit ReferenceName resolve to it.
 func seedBareRepoWithApplication(t *testing.T, bareDir, branch, filePath, content string) error {
 	t.Helper()
+
+	return seedBareRepoWithFiles(t, bareDir, branch, map[string]string{filePath: content})
+}
+
+// seedBareRepoWithFiles is seedBareRepoWithApplication for a whole file set,
+// which a git generator needs since it lists the tree rather than one path.
+func seedBareRepoWithFiles(t *testing.T, bareDir, branch string, files map[string]string) error {
+	t.Helper()
 	bareRepo, err := git.PlainInit(bareDir, true)
 	if err != nil {
 		return err
@@ -292,20 +434,22 @@ func seedBareRepoWithApplication(t *testing.T, bareDir, branch, filePath, conten
 		return err
 	}
 
-	absFile := filepath.Join(workDir, filePath)
-	if err := os.MkdirAll(filepath.Dir(absFile), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(absFile, []byte(content), 0o644); err != nil {
-		return err
-	}
-
 	worktree, err := repo.Worktree()
 	if err != nil {
 		return err
 	}
-	if _, err := worktree.Add(filePath); err != nil {
-		return err
+
+	for _, filePath := range sortedKeys(files) {
+		absFile := filepath.Join(workDir, filePath)
+		if err := os.MkdirAll(filepath.Dir(absFile), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(absFile, []byte(files[filePath]), 0o644); err != nil {
+			return err
+		}
+		if _, err := worktree.Add(filePath); err != nil {
+			return err
+		}
 	}
 	if _, err := worktree.Commit("seed", &git.CommitOptions{Author: defaultSignature()}); err != nil {
 		return err

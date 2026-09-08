@@ -322,7 +322,7 @@ func isHex(s string) bool {
 // refCloneCandidates lists the reference names to attempt for a revision. An
 // empty revision clones the remote's default branch.
 func refCloneCandidates(revision string) []plumbing.ReferenceName {
-	if revision == "" || revision == "HEAD" {
+	if revision == "" || revision == gitRevisionHEAD {
 		return []plumbing.ReferenceName{""}
 	}
 	return []plumbing.ReferenceName{

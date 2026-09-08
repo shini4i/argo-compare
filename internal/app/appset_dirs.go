@@ -10,6 +10,10 @@ import (
 	"github.com/shini4i/argo-compare/internal/models"
 )
 
+// gitRevisionHEAD is the revision a git generator names to follow whichever
+// branch it is read from, rather than pinning one.
+const gitRevisionHEAD = "HEAD"
+
 // assertGitGeneratorsComparable rejects a git generator whose directories the
 // two branch legs cannot stand in for: one reading another repository, or one
 // pinned to a revision that is neither HEAD nor the branch being compared.
@@ -26,7 +30,7 @@ func assertGitGeneratorsComparable(appSet *models.ApplicationSet, originURL, tar
 
 		// A pinned revision keeps ArgoCD generating from a fixed tree, so a
 		// directory this branch adds would change nothing it deploys.
-		if rev := generator.Git.Revision; rev != "" && rev != "HEAD" && rev != targetBranch {
+		if rev := generator.Git.Revision; rev != "" && rev != gitRevisionHEAD && rev != targetBranch {
 			return fmt.Errorf("%w: git generator revision %q is neither HEAD nor the compared branch %q, so the branches cannot stand in for it",
 				models.ErrUnsupportedAppConfiguration, rev, targetBranch)
 		}
@@ -81,8 +85,8 @@ func (g gitTree) ReadFile(path string) ([]byte, error) {
 		return nil, fmt.Errorf("find %s in tree: %w", path, err)
 	}
 
-	// A generator pattern is written by the pull request, so it can match a
-	// blob of any size; the same bound the manifest scan uses applies here.
+	// A generator pattern can match a blob of any size; the same bound the
+	// manifest scan uses applies here.
 	if entry.Size > maxManifestBytes {
 		return nil, fmt.Errorf("%s is %d bytes, over the %d byte limit for generator input", path, entry.Size, maxManifestBytes)
 	}

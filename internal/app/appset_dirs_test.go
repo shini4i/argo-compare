@@ -2,6 +2,8 @@ package app
 
 import (
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
@@ -227,4 +229,24 @@ func TestGitTreeReadsCommittedFiles(t *testing.T) {
 	_, err = reader.ReadFile("clusters/missing.yaml")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "find clusters/missing.yaml in tree")
+}
+
+// TestGitTreeReadFileSizeLimit pins the bound on a blob read as generator
+// input. An anchored generator reads the repository holding its manifest, which
+// the repository under comparison does not control, so this is the only limit
+// on how much of it one parameter file can pull in.
+func TestGitTreeReadFileSizeLimit(t *testing.T) {
+	tree := gitTree{tree: commitTreeWith(t, map[string]string{
+		"config/small.yaml": "cluster: dev\n",
+		"config/big.yaml":   strings.Repeat("a", maxManifestBytes+1),
+	})}
+
+	content, err := tree.ReadFile("config/small.yaml")
+	require.NoError(t, err)
+	assert.Equal(t, "cluster: dev\n", string(content))
+
+	_, err = tree.ReadFile("config/big.yaml")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "over the")
+	assert.Contains(t, err.Error(), strconv.Itoa(maxManifestBytes))
 }
