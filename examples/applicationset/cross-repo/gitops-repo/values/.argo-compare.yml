@@ -1,0 +1,6 @@
+# A values-only change matches no generator pattern, so this anchor is what
+# routes it to the ApplicationSet.
+application:
+  repo: https://git.example.com/platform/apps.git
+  path: appsets/platform.yaml
+  branch: main

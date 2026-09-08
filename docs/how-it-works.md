@@ -9,4 +9,14 @@
 7. Optionally, when `--validate-manifests` is enabled, all source-branch rendered manifests (not just changed ones) are validated against Kubernetes schemas via `kubeconform`. See [Manifest validation](manifest-validation.md).
 8. Finally, it compares the rendered manifests from the source and target branches and prints the difference.
 
-Repositories where the PR touches chart content instead of the Application YAML follow a different entry path; see [Anchored repositories](anchored-repositories.md).
+Step 1 is one of three entry paths. They differ only in how the manifest is found; rendering and diffing are shared.
+
+```mermaid
+flowchart LR
+    A[Application or ApplicationSet<br>YAML in the diff] --> R
+    B[Directory or file matched by a<br>git generator in this repository] --> R
+    C[Chart or values change under a<br>.argo-compare.yml anchor] --> R
+    R[Render both branches<br>and diff]
+```
+
+The second and third paths are described in [Setting up ApplicationSets](applicationset-setup.md) and [Anchored repositories](anchored-repositories.md).

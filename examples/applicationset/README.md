@@ -38,12 +38,9 @@ templates — and the `repoURL` values are placeholders.
     └── app2/config.yaml
 ```
 
-`apps/` is not a magic name — an ApplicationSet is picked up wherever it lives.
-The extension does matter, and it differs by path: a manifest you edit is taken
-from the diff only when it is named `*.yaml`, while the repository scan that
-catches directory and file changes reads both `.yaml` and `.yml`, skips dot
-directories, and skips files over 1 MiB. Name manifests `*.yaml` and the
-distinction never bites.
+`apps/` is not a magic name — an ApplicationSet is picked up wherever it lives,
+named `.yaml` or `.yml`. The repository scan that catches directory and file
+changes skips dot directories and files over 1 MiB.
 
 ## What has to be true
 
@@ -106,9 +103,9 @@ A change that adds or drops an Application rather than altering one needs
 Application only one branch generates has nothing to be diffed against.
 
 An anchor also works across repositories, which is the only way to reach an
-ApplicationSet that does not live in the repository being compared. See
-[`docs/anchored-repositories.md`](../../docs/anchored-repositories.md) and
-[`examples/anchor/`](../anchor).
+ApplicationSet that does not live in the repository being compared.
+[`cross-repo/`](./cross-repo) is that layout, walked through in
+[`docs/applicationset-setup.md`](../../docs/applicationset-setup.md).
 
 ## Unsupported generators
 
