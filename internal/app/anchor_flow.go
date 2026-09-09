@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -464,13 +465,13 @@ func (t *Target) checkSourceValueFilesPresent(fs afero.Fs, repoRoot string, ref 
 		if err != nil {
 			return err
 		}
-		// A chart directory this branch removed is materialization's error to report; probing its
-		// values files would blame the wrong field.
-		chartExists, err := afero.DirExists(fs, chartDir)
+		// A chart dir that is absent, or is not a real directory, is materialization's error to
+		// report; probing through a symlink would reveal what its target holds.
+		info, err := lstatEntry(fs, chartDir)
 		if err != nil {
 			return fmt.Errorf("check anchored chart dir %q: %w", src.Path, err)
 		}
-		if !chartExists {
+		if info == nil || !info.IsDir() {
 			continue
 		}
 		missing, err := firstMissingValueFile(fs, chartDir, src.Helm.ValueFiles)
@@ -491,12 +492,11 @@ func (t *Target) checkSourceValueFilesPresent(fs afero.Fs, repoRoot string, ref 
 // firstMissingValueFile returns the first chart-relative entry of valueFiles that does not exist
 // under chartDir, or "" when all of them do.
 func firstMissingValueFile(fs afero.Fs, chartDir string, valueFiles []string) (string, error) {
-	afs := afero.Afero{Fs: fs}
 	for _, vf := range valueFiles {
 		if !isChartRelativeValueFile(vf) {
 			continue
 		}
-		exists, err := afs.Exists(filepath.Join(chartDir, vf))
+		exists, err := valueFileExists(fs, chartDir, vf)
 		if err != nil {
 			return "", fmt.Errorf("check anchored values file %q: %w", vf, err)
 		}
@@ -505,6 +505,45 @@ func firstMissingValueFile(fs afero.Fs, chartDir string, valueFiles []string) (s
 		}
 	}
 	return "", nil
+}
+
+// valueFileExists reports whether vf exists under chartDir along a path of real directories. A
+// symlink at any component counts as present: materialization rejects any symlink at or under
+// the chart dir uniformly, and looking through one would reveal what exists on the runner.
+func valueFileExists(fs afero.Fs, chartDir, vf string) (bool, error) {
+	path := chartDir
+	for _, part := range strings.Split(filepath.ToSlash(filepath.Clean(vf)), "/") {
+		path = filepath.Join(path, part)
+		info, err := lstatEntry(fs, path)
+		if err != nil {
+			return false, err
+		}
+		if info == nil {
+			return false, nil
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return true, nil
+		}
+	}
+	return true, nil
+}
+
+// lstatEntry returns the info for path without following a symlink at its final component, or
+// nil when path names nothing.
+func lstatEntry(fs afero.Fs, path string) (os.FileInfo, error) {
+	lstater, ok := fs.(afero.Lstater)
+	if !ok {
+		return nil, fmt.Errorf("filesystem %T cannot lstat", fs)
+	}
+	info, _, err := lstater.LstatIfPossible(path)
+	switch {
+	case err == nil:
+		return info, nil
+	case os.IsNotExist(err):
+		return nil, nil
+	default:
+		return nil, err
+	}
 }
 
 // isChartRelativeValueFile reports whether vf is a plain path inside the chart directory.
