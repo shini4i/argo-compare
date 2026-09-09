@@ -67,7 +67,7 @@ contains:
 
 1. **Standard flow** — the PR modifies ArgoCD Application YAML files
    directly. Driver code lives in `internal/app/app.go`,
-   `application_fetcher.go`, `git.go`, `target.go`, `compare.go`.
+   `application_fetcher.go`, `git.go`, `compare.go`.
 
 2. **ApplicationSet flow** — the PR modifies an ApplicationSet manifest, or
    touches a directory a git generator matches. `internal/appset` expands it
@@ -93,7 +93,11 @@ contains:
    repository the anchor fetched the manifest from — that repository's clone,
    carried out of the fetch as `ports.AnchoredManifest.Tree`.
 
-All three converge on the same comparison path in `internal/app/compare.go`.
+All three build each comparison leg with `App.newTarget` and render it through
+`App.renderLeg` in `internal/app/render_leg.go`, which materializes the chart
+(registry pull, working tree, or merge-base tree), resolves ref sources, renders
+and validates. They then converge on the same comparison path in
+`internal/app/compare.go`.
 
 Before rendering, every flow resolves multi-source `ref` sources: a
 `helm.valueFiles` entry written as `$name/path` is materialized into the leg's

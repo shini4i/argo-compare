@@ -102,13 +102,13 @@ func TestAssertSameRepo(t *testing.T) {
 }
 
 func TestCheckSourceValueFilesPresent(t *testing.T) {
-	const tmpDir = "/tmp/anchor"
+	const repoRoot = "/repo"
 	crossRepoRef := anchor.ApplicationRef{
 		Repo:   "https://example.com/group/apps.git",
 		Path:   "apps/demo.yaml",
 		Branch: "main",
 	}
-	chartDir := filepath.Join(tmpDir, "charts", TargetTypeSource, "demo")
+	chartDir := filepath.Join(repoRoot, "charts", "demo")
 
 	newTarget := func(valueFiles []string) *Target {
 		app := models.Application{}
@@ -117,7 +117,7 @@ func TestCheckSourceValueFilesPresent(t *testing.T) {
 			Path:    "charts/demo",
 			Helm:    models.HelmSource{ValueFiles: valueFiles},
 		}
-		return &Target{TmpDir: tmpDir, Type: TargetTypeSource, App: app}
+		return &Target{Type: TargetTypeSource, App: app}
 	}
 
 	newFs := func(t *testing.T) afero.Fs {
@@ -130,12 +130,12 @@ func TestCheckSourceValueFilesPresent(t *testing.T) {
 	t.Run("all referenced value files present", func(t *testing.T) {
 		fs := newFs(t)
 		require.NoError(t, afero.WriteFile(fs, filepath.Join(chartDir, "values.yaml"), []byte("x: 1"), 0o644))
-		assert.NoError(t, newTarget([]string{"values.yaml"}).checkSourceValueFilesPresent(fs, crossRepoRef))
+		assert.NoError(t, newTarget([]string{"values.yaml"}).checkSourceValueFilesPresent(fs, repoRoot, crossRepoRef))
 	})
 
 	t.Run("missing value file yields actionable error", func(t *testing.T) {
 		fs := newFs(t)
-		err := newTarget([]string{"values-prod.yaml"}).checkSourceValueFilesPresent(fs, crossRepoRef)
+		err := newTarget([]string{"values-prod.yaml"}).checkSourceValueFilesPresent(fs, repoRoot, crossRepoRef)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrValueFileMissingFromSource)
 		assert.Contains(t, err.Error(), "values-prod.yaml")
@@ -149,13 +149,13 @@ func TestCheckSourceValueFilesPresent(t *testing.T) {
 	t.Run("inner loop keeps checking after a present value file", func(t *testing.T) {
 		fs := newFs(t)
 		require.NoError(t, afero.WriteFile(fs, filepath.Join(chartDir, "values.yaml"), []byte("x: 1"), 0o644))
-		err := newTarget([]string{"values.yaml", "missing.yaml"}).checkSourceValueFilesPresent(fs, crossRepoRef)
+		err := newTarget([]string{"values.yaml", "missing.yaml"}).checkSourceValueFilesPresent(fs, repoRoot, crossRepoRef)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrValueFileMissingFromSource)
 		assert.Contains(t, err.Error(), "missing.yaml")
 	})
 
-	t.Run("nil source entry is skipped", func(t *testing.T) {
+	t.Run("multi-source Application with a nil entry is checked without panicking", func(t *testing.T) {
 		fs := newFs(t)
 		require.NoError(t, afero.WriteFile(fs, filepath.Join(chartDir, "values.yaml"), []byte("x: 1"), 0o644))
 
@@ -165,13 +165,13 @@ func TestCheckSourceValueFilesPresent(t *testing.T) {
 			nil,
 			{Path: "charts/demo", Helm: models.HelmSource{ValueFiles: []string{"values.yaml"}}},
 		}
-		tgt := &Target{TmpDir: tmpDir, Type: TargetTypeSource, App: app}
+		tgt := &Target{Type: TargetTypeSource, App: app}
 
-		assert.NoError(t, tgt.checkSourceValueFilesPresent(fs, crossRepoRef))
+		assert.NoError(t, tgt.checkSourceValueFilesPresent(fs, repoRoot, crossRepoRef))
 	})
 
 	t.Run("no referenced value files is fine", func(t *testing.T) {
-		assert.NoError(t, newTarget(nil).checkSourceValueFilesPresent(newFs(t), crossRepoRef))
+		assert.NoError(t, newTarget(nil).checkSourceValueFilesPresent(newFs(t), repoRoot, crossRepoRef))
 	})
 
 	t.Run("malformed entries deferred to renderer validation", func(t *testing.T) {
@@ -179,7 +179,7 @@ func TestCheckSourceValueFilesPresent(t *testing.T) {
 		// validateValueFile with a specific error; the preflight must not mask it.
 		fs := newFs(t)
 		tgt := newTarget([]string{"../escape.yaml", "/abs.yaml", ""})
-		assert.NoError(t, tgt.checkSourceValueFilesPresent(fs, crossRepoRef))
+		assert.NoError(t, tgt.checkSourceValueFilesPresent(fs, repoRoot, crossRepoRef))
 	})
 
 	t.Run("ArgoCD $ref multi-source entries are not treated as local paths", func(t *testing.T) {
@@ -188,12 +188,12 @@ func TestCheckSourceValueFilesPresent(t *testing.T) {
 		// spurious ErrValueFileMissingFromSource.
 		fs := newFs(t)
 		tgt := newTarget([]string{"$values/env/prod.yaml"})
-		assert.NoError(t, tgt.checkSourceValueFilesPresent(fs, crossRepoRef))
+		assert.NoError(t, tgt.checkSourceValueFilesPresent(fs, repoRoot, crossRepoRef))
 	})
 
 	t.Run("multi-source Application checks every source", func(t *testing.T) {
 		fs := newFs(t)
-		otherChartDir := filepath.Join(tmpDir, "charts", TargetTypeSource, "other")
+		otherChartDir := filepath.Join(repoRoot, "charts", "other")
 		require.NoError(t, fs.MkdirAll(otherChartDir, 0o755))
 		require.NoError(t, afero.WriteFile(fs, filepath.Join(chartDir, "values.yaml"), []byte("x: 1"), 0o644))
 
@@ -203,11 +203,21 @@ func TestCheckSourceValueFilesPresent(t *testing.T) {
 			{Path: "charts/demo", Helm: models.HelmSource{ValueFiles: []string{"values.yaml"}}},
 			{Path: "charts/other", Helm: models.HelmSource{ValueFiles: []string{"missing.yaml"}}},
 		}
-		tgt := &Target{TmpDir: tmpDir, Type: TargetTypeSource, App: app}
+		tgt := &Target{Type: TargetTypeSource, App: app}
 
-		err := tgt.checkSourceValueFilesPresent(fs, crossRepoRef)
+		err := tgt.checkSourceValueFilesPresent(fs, repoRoot, crossRepoRef)
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrValueFileMissingFromSource)
 		assert.Contains(t, err.Error(), "missing.yaml")
 	})
+}
+
+// TestCheckSourceValueFilesPresentSkipsMissingChartDir pins that a chart directory absent
+// from the working tree is left for materialization to report, not blamed on values files.
+func TestCheckSourceValueFilesPresentSkipsMissingChartDir(t *testing.T) {
+	app := models.Application{}
+	app.Spec.Source = &models.Source{Path: "charts/gone", Helm: models.HelmSource{ValueFiles: []string{"values.yaml"}}}
+	tgt := &Target{Type: TargetTypeSource, App: app}
+
+	assert.NoError(t, tgt.checkSourceValueFilesPresent(afero.NewMemMapFs(), "/repo", anchor.ApplicationRef{Repo: "https://example.com/apps.git", Path: "apps/demo.yaml"}))
 }

@@ -654,7 +654,7 @@ func TestProcessFileCallsValidatorForSource(t *testing.T) {
 		Validate(gomock.Any(), TargetTypeSource, expectedManifestDir).
 		Return(expectedResult, nil)
 
-	// Absolute path skips GetGitRepoRoot() inside Target.parse() so the test does
+	// Absolute path skips GetGitRepoRoot() inside parseApplicationFile so the test does
 	// not depend on running inside a git repository.
 	appFile := filepath.Join(t.TempDir(), "test-app.yaml")
 
