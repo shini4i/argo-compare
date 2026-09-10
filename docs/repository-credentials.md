@@ -41,6 +41,17 @@ source:
   targetRevision: 15.9.0
 ```
 
+A repository namespace may sit on either side of the boundary, since ArgoCD resolves the pull reference as `oci://<repoURL>/<chart>`. The example above and the form below name the same artifact, and both are supported:
+
+```yaml
+source:
+  chart: randomcharts/my-chart
+  repoURL: registry-1.docker.io
+  targetRevision: 15.9.0
+```
+
+Credentials are matched, and `helm registry login` is performed, against the registry host, so a `REPO_CREDS_*` entry for the bare hostname covers either form.
+
 - **Public OCI registries** (e.g. `ghcr.io`) — no additional configuration required.
 - **Private OCI registries** — provide credentials via the same `REPO_CREDS_*` mechanism described above, or use the automatic AWS ECR flow below.
 
