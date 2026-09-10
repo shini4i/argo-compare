@@ -1350,6 +1350,45 @@ func TestDownloadHelmChart_OCINamespacedRepoURLUsesHostCredential(t *testing.T) 
 	assert.NoError(t, err)
 }
 
+// TestDownloadHelmChart_RejectsCachePathEscape pins that a traversal is
+// refused before MkdirAll runs, so nothing is created outside the cache.
+func TestDownloadHelmChart_RejectsCachePathEscape(t *testing.T) {
+	tests := []struct {
+		name      string
+		repoURL   string
+		chartName string
+	}{
+		{name: "chart traversal", repoURL: "registry.example.com", chartName: "../../outside/my-chart"},
+		{name: "repoURL traversal", repoURL: "../../outside", chartName: "my-chart"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+			baseDir := t.TempDir()
+			cacheDir := filepath.Join(baseDir, "cache")
+
+			// No Globber or CmdRunner expectations: the request must be refused
+			// before either is reached.
+			deps := ports.HelmDeps{CmdRunner: mocks.NewMockCmdRunner(ctrl), Globber: mocks.NewMockGlobber(ctrl)}
+
+			err := helmChartProcessor.DownloadHelmChart(context.Background(), deps, ports.ChartDownloadRequest{
+				CacheDir:       cacheDir,
+				RepoURL:        tt.repoURL,
+				ChartName:      tt.chartName,
+				TargetRevision: "1.0.0",
+			})
+
+			assert.ErrorIs(t, err, ErrInvalidChartCachePath)
+			escaped, statErr := os.Stat(filepath.Join(baseDir, "..", "outside"))
+			assert.True(t, os.IsNotExist(statErr), "nothing may be created outside the cache, got %v", escaped)
+		})
+	}
+}
+
 func TestRegistryLoginHost(t *testing.T) {
 	tests := []struct {
 		name    string

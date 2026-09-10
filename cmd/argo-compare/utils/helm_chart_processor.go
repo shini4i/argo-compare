@@ -26,6 +26,27 @@ var ErrFailedToDownloadChart = errors.New("failed to download chart")
 // security reasons (empty, absolute path, or parent-directory traversal).
 var ErrInvalidValueFile = errors.New("invalid valueFile path")
 
+// ErrInvalidChartCachePath is returned when a source's repoURL or chart would
+// place the cache directory outside the configured cache root.
+var ErrInvalidChartCachePath = errors.New("invalid chart cache path")
+
+// chartCacheDir is the directory a chart's tarball is cached in. An OCI
+// namespace is kept as a directory, since two charts on one host can share a
+// name and the flat tarball helm writes would collide.
+//
+// repoURL and chartName come from the Application, so the result must stay
+// under cacheDir: a traversal would have MkdirAll create a directory
+// elsewhere before helm ever rejects the reference.
+func chartCacheDir(cacheDir, repoURL, chartName string) (string, error) {
+	root := filepath.Clean(cacheDir)
+	dir := filepath.Join(root, repoURL, path.Dir(chartName))
+	if dir != root && !strings.HasPrefix(dir, root+string(filepath.Separator)) {
+		return "", fmt.Errorf("%w: repoURL %q with chart %q resolves outside %q",
+			ErrInvalidChartCachePath, repoURL, chartName, root)
+	}
+	return dir, nil
+}
+
 // validateValueFile requires a values file to sit inside the run's temporary
 // directory, which holds both the materialized charts and the files pulled from
 // multi-source ref sources. The caller resolves each Application-supplied path
@@ -148,10 +169,10 @@ func (g RealHelmChartProcessor) DownloadHelmChart(ctx context.Context, deps port
 	// Strip it so that cache paths, credential matching, and helm commands receive a bare hostname.
 	req.RepoURL = strings.TrimPrefix(req.RepoURL, "oci://")
 
-	// The namespace of an OCI reference is kept as a directory: two charts on one
-	// host can share a name, and the flat tarball helm writes would otherwise give
-	// them the same cache entry.
-	chartLocation := filepath.Join(req.CacheDir, req.RepoURL, path.Dir(req.ChartName))
+	chartLocation, err := chartCacheDir(req.CacheDir, req.RepoURL, req.ChartName)
+	if err != nil {
+		return err
+	}
 
 	if err := os.MkdirAll(chartLocation, 0750); err != nil {
 		return fmt.Errorf("failed to create chart cache directory %q: %w", chartLocation, err)
