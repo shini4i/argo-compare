@@ -401,4 +401,16 @@ func TestIgnoresMissingRefFile(t *testing.T) {
 
 		assert.False(t, target.ignoresMissingRefFile(rf))
 	})
+
+	// An Application the caller already rejected must not be read as opting in.
+	t.Run("ref sources do not resolve", func(t *testing.T) {
+		target := ignoreTarget(t, []string{entry}, true)
+		target.App.Spec.Sources = append(target.App.Spec.Sources, &models.Source{
+			RepoURL:        "https://git.example.com/org/other-values.git",
+			TargetRevision: "dev",
+			Ref:            "values",
+		})
+
+		assert.False(t, target.ignoresMissingRefFile(rf), "a duplicate ref name is an error, not a skip")
+	})
 }
