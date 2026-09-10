@@ -187,6 +187,12 @@ func (g RealHelmChartProcessor) downloadChartFromRepo(ctx context.Context, deps 
 		ui.Cyan(req.ChartName))
 
 	if isOCIRegistry(req.RepoURL) {
+		// A repoURL carrying a namespace is still one registry to log into, and
+		// REPO_CREDS_* entries are matched exactly, so a credential naming the
+		// bare host has to be tried before the pull goes out unauthenticated.
+		if host := registryLoginHost(req.RepoURL); creds.Username == "" && host != req.RepoURL {
+			creds = resolveCredentials(ctx, g.Log, deps.CredentialProviders, host)
+		}
 		return g.pullOCIChart(ctx, deps.CmdRunner, req, creds, chartLocation)
 	}
 

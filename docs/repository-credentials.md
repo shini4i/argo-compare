@@ -50,7 +50,7 @@ source:
   targetRevision: 15.9.0
 ```
 
-Credentials are matched, and `helm registry login` is performed, against the registry host, so a `REPO_CREDS_*` entry for the bare hostname covers either form.
+`helm registry login` is performed against the registry host. A `REPO_CREDS_*` entry is matched on the full `repoURL` first and on the bare hostname second, so either spelling works, and a namespace-scoped entry takes precedence over a host-wide one.
 
 - **Public OCI registries** (e.g. `ghcr.io`) — no additional configuration required.
 - **Private OCI registries** — provide credentials via the same `REPO_CREDS_*` mechanism described above, or use the automatic AWS ECR flow below.
