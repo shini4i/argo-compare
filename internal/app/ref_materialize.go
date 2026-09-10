@@ -112,24 +112,34 @@ func (a *App) materializeRefSources(ctx context.Context, target *Target, repoRoo
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		content, contentErr := a.refFileContent(ctx, rf, refs[rf.Ref], target.Type, repoRoot, originURL, mergeBaseTree)
-		if contentErr != nil {
-			// An optional values file is absent on one leg by design, an
-			// override existing on the branch but not at the merge-base.
-			// Leaving it unwritten is what drops it from the helm invocation.
-			if errors.Is(contentErr, ErrRefValueFileMissing) && target.ignoresMissingRefFile(rf) {
-				a.logger.Debugf("Skipping missing ref values file [$%s/%s]: ignoreMissingValueFiles is set", rf.Ref, rf.Path)
-				continue
-			}
-			return contentErr
+		if err := a.materializeRefFile(ctx, target, rf, refs[rf.Ref], repoRoot, originURL, mergeBaseTree); err != nil {
+			return err
 		}
-		dest := filepath.Join(target.refDir(rf.Ref), rf.Path)
-		if err := a.fs.MkdirAll(filepath.Dir(dest), refDirPerm); err != nil {
-			return fmt.Errorf("create ref values dir for %q: %w", rf.Path, err)
+	}
+	return nil
+}
+
+// materializeRefFile writes one ref-source file into the leg's refs directory.
+// A missing one is skipped when every source referencing it sets
+// helm.ignoreMissingValueFiles, which is what drops it from the helm
+// invocation.
+func (a *App) materializeRefFile(ctx context.Context, target *Target, rf refFile, source *models.Source,
+	repoRoot, originURL string, mergeBaseTree mergeBaseTreeFn) error {
+	content, err := a.refFileContent(ctx, rf, source, target.Type, repoRoot, originURL, mergeBaseTree)
+	if err != nil {
+		if errors.Is(err, ErrRefValueFileMissing) && target.ignoresMissingRefFile(rf) {
+			a.logger.Debugf("Skipping missing ref values file [$%s/%s]: ignoreMissingValueFiles is set", rf.Ref, rf.Path)
+			return nil
 		}
-		if err := afero.WriteFile(a.fs, dest, content, refFilePerm); err != nil {
-			return fmt.Errorf("write ref values file %q: %w", rf.Path, err)
-		}
+		return err
+	}
+
+	dest := filepath.Join(target.refDir(rf.Ref), rf.Path)
+	if err := a.fs.MkdirAll(filepath.Dir(dest), refDirPerm); err != nil {
+		return fmt.Errorf("create ref values dir for %q: %w", rf.Path, err)
+	}
+	if err := afero.WriteFile(a.fs, dest, content, refFilePerm); err != nil {
+		return fmt.Errorf("write ref values file %q: %w", rf.Path, err)
 	}
 	return nil
 }
