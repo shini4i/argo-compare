@@ -97,6 +97,26 @@ func TestResolveValueFilesUnknownRef(t *testing.T) {
 	assert.Contains(t, err.Error(), "missing")
 }
 
+// TestResolveValueFilesRejectsGlob keeps an unexpanded pattern loud. Silently
+// skipping one under ignoreMissingValueFiles would render both legs without
+// those values, so a change to a matching file would diff as no change.
+func TestResolveValueFilesRejectsGlob(t *testing.T) {
+	entries := []string{"envs/*.yaml", "envs/values-?.yaml", "envs/[ab].yaml", "$values/envs/*.yaml"}
+
+	for _, entry := range entries {
+		t.Run(entry, func(t *testing.T) {
+			for _, ignoreMissing := range []bool{false, true} {
+				target := ignoreTarget(t, []string{entry}, ignoreMissing)
+
+				_, err := target.resolveValueFiles(target.App.Spec.Sources[0])
+
+				require.ErrorIs(t, err, ErrInvalidValueFilePath)
+				assert.Contains(t, err.Error(), "glob")
+			}
+		})
+	}
+}
+
 // TestResolveValueFilesRejectsTraversal keeps the path guard applied to the
 // remainder after the $ref prefix: valueFiles are PR-author controlled, so a
 // traversal there would read host files into the rendered diff.

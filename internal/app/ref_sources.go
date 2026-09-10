@@ -269,5 +269,11 @@ func validateRelValueFile(rel string) error {
 	if first, _, _ := strings.Cut(filepath.ToSlash(cleaned), "/"); strings.EqualFold(first, ".git") {
 		return fmt.Errorf("%w: Git metadata is not readable: %q", ErrInvalidValueFilePath, rel)
 	}
+	// Globs are not expanded, and helm.ignoreMissingValueFiles would turn a
+	// pattern into a silent skip: both legs would render without those values
+	// and a change to a matching file would diff as no change.
+	if strings.ContainsAny(rel, "*?[") {
+		return fmt.Errorf("%w: glob patterns are not expanded, name one file: %q", ErrInvalidValueFilePath, rel)
+	}
 	return nil
 }
