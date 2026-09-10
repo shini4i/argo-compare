@@ -213,6 +213,6 @@ compare.
 | `Skipping added Application [<name>]; enable --print-added-manifests to render it` | Only your branch generates it. | Pass `--print-added-manifests`, or `--print-removed-manifests` for the mirror case. |
 | `Skipping unreadable ApplicationSet manifest during discovery: <file> (<reason>)` | The repository scan found a manifest it cannot parse. | Fix the manifest; the reason names the field. |
 | `valueFiles entry references an undeclared ref source` | `$name/...` with no source carrying `ref: name`. | Declare the `ref` source. |
-| `values file is missing from ref source` | The `$values` path does not exist at the revision read. | Fix the path, or the `targetRevision` of a remote ref. |
+| `values file is missing from ref source` | The `$values` path does not exist at the revision read, and the source does not set `helm.ignoreMissingValueFiles`. | Fix the path, or the `targetRevision` of a remote ref. Set `ignoreMissingValueFiles: true` if the file is genuinely optional. |
 | `ref source <url> pins commit <sha>; a remote ref source must name a branch or a tag` | A commit SHA on a values repository. | Use a branch or a tag. |
 | `ApplicationSet "<name>" generates duplicate Application name "<name>"` | Two generator elements render the same `metadata.name`. | Make the name template unique per element. |
