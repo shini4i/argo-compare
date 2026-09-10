@@ -34,14 +34,17 @@ var ErrChartPathNotInTree = errors.New("chart path does not exist in target tree
 
 // effectiveChartName returns a non-empty chart name suitable for naming the
 // extracted/materialized chart directory and the per-source values file.
-// Registry sources use Source.Chart directly; path-based sources fall back to
-// the last component of Source.Path (without a trailing slash).
+// Registry sources use the last component of Source.Chart; path-based sources
+// fall back to the last component of Source.Path (without a trailing slash).
+// An OCI reference may carry a repository namespace, but its tarball unpacks
+// to a directory named after the chart alone, so only that last component
+// names anything on disk.
 func effectiveChartName(s *models.Source) string {
 	if s == nil {
 		return ""
 	}
 	if s.Chart != "" {
-		return s.Chart
+		return filepath.Base(s.Chart)
 	}
 	trimmed := strings.TrimRight(s.Path, "/")
 	if trimmed == "" {

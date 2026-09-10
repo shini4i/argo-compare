@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- OCI charts whose reference carries a repository namespace are now resolved, whichever side of the `repoURL`/`chart` boundary it sits on. The cache lookup previously searched a directory nothing creates, so the download failed with `no such file or directory` before helm ran, and the namespace is no longer passed through as part of the registry host.
 - Applications and ApplicationSets committed as `*.yml` are now compared. Only `*.yaml` was picked up before, so editing a `*.yml` manifest reported nothing and exited clean, with no log line to explain why.
 - Several chart directories anchored to the same Application are now compared once rather than once per anchor, which previously repeated the whole diff and posted a duplicate merge request comment for it.
 

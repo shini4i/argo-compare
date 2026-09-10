@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -24,6 +25,27 @@ var ErrFailedToDownloadChart = errors.New("failed to download chart")
 // ErrInvalidValueFile is returned when a helm.valueFiles entry is rejected for
 // security reasons (empty, absolute path, or parent-directory traversal).
 var ErrInvalidValueFile = errors.New("invalid valueFile path")
+
+// ErrInvalidChartCachePath is returned when a source's repoURL or chart would
+// place the cache directory outside the configured cache root.
+var ErrInvalidChartCachePath = errors.New("invalid chart cache path")
+
+// chartCacheDir is the directory a chart's tarball is cached in. An OCI
+// namespace is kept as a directory, since two charts on one host can share a
+// name and the flat tarball helm writes would collide.
+//
+// repoURL and chartName come from the Application, so the result must stay
+// under cacheDir: a traversal would have MkdirAll create a directory
+// elsewhere before helm ever rejects the reference.
+func chartCacheDir(cacheDir, repoURL, chartName string) (string, error) {
+	root := filepath.Clean(cacheDir)
+	dir := filepath.Join(root, repoURL, path.Dir(chartName))
+	if dir != root && !strings.HasPrefix(dir, root+string(filepath.Separator)) {
+		return "", fmt.Errorf("%w: repoURL %q with chart %q resolves outside %q",
+			ErrInvalidChartCachePath, repoURL, chartName, root)
+	}
+	return dir, nil
+}
 
 // validateValueFile requires a values file to sit inside the run's temporary
 // directory, which holds both the materialized charts and the files pulled from
@@ -77,6 +99,15 @@ func escapeHelmSetValue(v string) string {
 	v = strings.ReplaceAll(v, "{", `\{`)
 	v = strings.ReplaceAll(v, "}", `\}`)
 	return v
+}
+
+// registryLoginHost returns the host portion of an OCI repo URL, which may
+// carry a repository namespace. `helm registry login` rejects a repository
+// path with "invalid reference", and credentials are resolved by host at
+// pull time, so a host-scoped login still covers a namespaced pull ref.
+func registryLoginHost(repoURL string) string {
+	host, _, _ := strings.Cut(repoURL, "/")
+	return host
 }
 
 // isOCIRegistry returns true if the repo URL refers to an OCI registry (no http/https scheme).
@@ -138,7 +169,10 @@ func (g RealHelmChartProcessor) DownloadHelmChart(ctx context.Context, deps port
 	// Strip it so that cache paths, credential matching, and helm commands receive a bare hostname.
 	req.RepoURL = strings.TrimPrefix(req.RepoURL, "oci://")
 
-	chartLocation := fmt.Sprintf("%s/%s", req.CacheDir, req.RepoURL)
+	chartLocation, err := chartCacheDir(req.CacheDir, req.RepoURL, req.ChartName)
+	if err != nil {
+		return err
+	}
 
 	if err := os.MkdirAll(chartLocation, 0750); err != nil {
 		return fmt.Errorf("failed to create chart cache directory %q: %w", chartLocation, err)
@@ -146,7 +180,8 @@ func (g RealHelmChartProcessor) DownloadHelmChart(ctx context.Context, deps port
 
 	// A bit hacky, but we need to support cases when helm chart tgz filename does not follow the standard naming convention
 	// For example, sonarqube-4.0.0+315.tgz
-	chartFileName, err := deps.Globber.Glob(fmt.Sprintf("%s/%s-%s*.tgz", chartLocation, req.ChartName, req.TargetRevision))
+	// Only the last component names the file: helm pull --destination writes a flat <name>-<version>.tgz
+	chartFileName, err := deps.Globber.Glob(fmt.Sprintf("%s/%s-%s*.tgz", chartLocation, filepath.Base(req.ChartName), req.TargetRevision))
 	if err != nil {
 		return fmt.Errorf("failed to search for chart %s version %s in %s: %w", req.ChartName, req.TargetRevision, chartLocation, err)
 	}
@@ -174,6 +209,12 @@ func (g RealHelmChartProcessor) downloadChartFromRepo(ctx context.Context, deps 
 		ui.Cyan(req.ChartName))
 
 	if isOCIRegistry(req.RepoURL) {
+		// A repoURL carrying a namespace is still one registry to log into, and
+		// REPO_CREDS_* entries are matched exactly, so a credential naming the
+		// bare host has to be tried before the pull goes out unauthenticated.
+		if host := registryLoginHost(req.RepoURL); creds.Username == "" && host != req.RepoURL {
+			creds = resolveCredentials(ctx, g.Log, deps.CredentialProviders, host)
+		}
 		return g.pullOCIChart(ctx, deps.CmdRunner, req, creds, chartLocation)
 	}
 
@@ -207,18 +248,20 @@ func resolveCredentials(ctx context.Context, log *logger.Logger, providers []por
 func (g RealHelmChartProcessor) pullOCIChart(ctx context.Context, cmdRunner ports.CmdRunner, req ports.ChartDownloadRequest, creds ports.RegistryCredentials, chartLocation string) error {
 	// Authenticate with the OCI registry if credentials are available.
 	if creds.Username != "" && creds.Password != "" {
-		g.Log.Debugf("Logging into OCI registry [%s]...", ui.Cyan(req.RepoURL))
+		loginHost := registryLoginHost(req.RepoURL)
+
+		g.Log.Debugf("Logging into OCI registry [%s]...", ui.Cyan(loginHost))
 
 		stdout, stderr, err := cmdRunner.RunWithStdin(ctx, creds.Password, "helm",
 			"registry", "login",
-			req.RepoURL,
+			loginHost,
 			"--username", creds.Username,
 			"--password-stdin")
 
 		g.logOutput(stdout, stderr)
 
 		if err != nil {
-			return fmt.Errorf("failed to login to OCI registry %q: %w", req.RepoURL, err)
+			return fmt.Errorf("failed to login to OCI registry %q: %w", loginHost, err)
 		}
 	}
 
