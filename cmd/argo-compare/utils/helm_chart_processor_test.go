@@ -1182,6 +1182,107 @@ func TestDownloadHelmChart_OCILoginFailure(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to login to OCI registry")
 }
 
+func TestDownloadHelmChart_OCINamespacedChart(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+	cacheDir := t.TempDir()
+
+	mockGlobber := mocks.NewMockGlobber(ctrl)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	deps := ports.HelmDeps{CmdRunner: mockCmdRunner, Globber: mockGlobber}
+
+	var globbed string
+	mockGlobber.EXPECT().Glob(gomock.Any()).DoAndReturn(func(pattern string) ([]string, error) {
+		globbed = pattern
+		return []string{}, nil
+	})
+
+	// Expect the pull ref to keep the namespace.
+	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+		"pull", "oci://registry.example.com/my-org/my-chart",
+		"--destination", filepath.Join(cacheDir, "cache", "registry.example.com"),
+		"--version", "3.3.0").Return("", "", nil)
+
+	req := ports.ChartDownloadRequest{
+		CacheDir:       filepath.Join(cacheDir, "cache"),
+		RepoURL:        "registry.example.com",
+		ChartName:      "my-org/my-chart",
+		TargetRevision: "3.3.0",
+	}
+	err := helmChartProcessor.DownloadHelmChart(context.Background(), deps, req)
+
+	assert.NoError(t, err)
+	assert.Equal(t,
+		filepath.Join(cacheDir, "cache", "registry.example.com", "my-chart-3.3.0*.tgz"),
+		globbed,
+		"the namespace names the artifact in the registry, not the file in the cache")
+}
+
+func TestDownloadHelmChart_OCINamespacedRepoURLLogsInToHost(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+	cacheDir := t.TempDir()
+
+	mockGlobber := mocks.NewMockGlobber(ctrl)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+
+	staticProvider := NewStaticCredentialProvider([]models.RepoCredentials{
+		{Url: "registry.example.com/my-org", Username: "robot", Password: "secret"},
+	})
+	deps := ports.HelmDeps{
+		CmdRunner:           mockCmdRunner,
+		Globber:             mockGlobber,
+		CredentialProviders: []ports.CredentialProvider{staticProvider},
+	}
+
+	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{}, nil)
+
+	// Expect helm registry login to receive the host without the namespace.
+	mockCmdRunner.EXPECT().RunWithStdin(gomock.Any(), "secret", "helm",
+		"registry", "login",
+		"registry.example.com",
+		"--username", "robot",
+		"--password-stdin").Return("", "", nil)
+
+	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+		"pull", "oci://registry.example.com/my-org/my-chart",
+		"--destination", gomock.Any(),
+		"--version", "3.3.0").Return("", "", nil)
+
+	req := ports.ChartDownloadRequest{
+		CacheDir:       filepath.Join(cacheDir, "cache"),
+		RepoURL:        "registry.example.com/my-org",
+		ChartName:      "my-chart",
+		TargetRevision: "3.3.0",
+	}
+	err := helmChartProcessor.DownloadHelmChart(context.Background(), deps, req)
+	assert.NoError(t, err)
+}
+
+func TestRegistryLoginHost(t *testing.T) {
+	tests := []struct {
+		name    string
+		repoURL string
+		want    string
+	}{
+		{name: "bare host", repoURL: "ghcr.io", want: "ghcr.io"},
+		{name: "host with namespace", repoURL: "ghcr.io/my-org", want: "ghcr.io"},
+		{name: "host with nested namespace", repoURL: "registry.example.com/a/b", want: "registry.example.com"},
+		{name: "host with port", repoURL: "localhost:5000/my-org", want: "localhost:5000"},
+		{name: "empty", repoURL: "", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, registryLoginHost(tt.repoURL))
+		})
+	}
+}
+
 func TestIsOCIRegistry(t *testing.T) {
 	tests := []struct {
 		name string

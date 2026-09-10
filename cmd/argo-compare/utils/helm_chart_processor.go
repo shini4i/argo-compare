@@ -79,6 +79,14 @@ func escapeHelmSetValue(v string) string {
 	return v
 }
 
+// registryLoginHost returns the host portion of an OCI repo URL, which may
+// carry a repository namespace. `helm registry login` rejects a repository
+// path with "invalid reference", and credentials are resolved by host at
+// pull time, so a host-scoped login still covers a namespaced pull ref.
+func registryLoginHost(repoURL string) string {
+	return strings.SplitN(repoURL, "/", 2)[0]
+}
+
 // isOCIRegistry returns true if the repo URL refers to an OCI registry (no http/https scheme).
 func isOCIRegistry(repoURL string) bool {
 	return repoURL != "" &&
@@ -146,7 +154,8 @@ func (g RealHelmChartProcessor) DownloadHelmChart(ctx context.Context, deps port
 
 	// A bit hacky, but we need to support cases when helm chart tgz filename does not follow the standard naming convention
 	// For example, sonarqube-4.0.0+315.tgz
-	chartFileName, err := deps.Globber.Glob(fmt.Sprintf("%s/%s-%s*.tgz", chartLocation, req.ChartName, req.TargetRevision))
+	// Only the last component names the file: helm pull --destination writes a flat <name>-<version>.tgz
+	chartFileName, err := deps.Globber.Glob(fmt.Sprintf("%s/%s-%s*.tgz", chartLocation, filepath.Base(req.ChartName), req.TargetRevision))
 	if err != nil {
 		return fmt.Errorf("failed to search for chart %s version %s in %s: %w", req.ChartName, req.TargetRevision, chartLocation, err)
 	}
@@ -207,18 +216,20 @@ func resolveCredentials(ctx context.Context, log *logger.Logger, providers []por
 func (g RealHelmChartProcessor) pullOCIChart(ctx context.Context, cmdRunner ports.CmdRunner, req ports.ChartDownloadRequest, creds ports.RegistryCredentials, chartLocation string) error {
 	// Authenticate with the OCI registry if credentials are available.
 	if creds.Username != "" && creds.Password != "" {
-		g.Log.Debugf("Logging into OCI registry [%s]...", ui.Cyan(req.RepoURL))
+		loginHost := registryLoginHost(req.RepoURL)
+
+		g.Log.Debugf("Logging into OCI registry [%s]...", ui.Cyan(loginHost))
 
 		stdout, stderr, err := cmdRunner.RunWithStdin(ctx, creds.Password, "helm",
 			"registry", "login",
-			req.RepoURL,
+			loginHost,
 			"--username", creds.Username,
 			"--password-stdin")
 
 		g.logOutput(stdout, stderr)
 
 		if err != nil {
-			return fmt.Errorf("failed to login to OCI registry %q: %w", req.RepoURL, err)
+			return fmt.Errorf("failed to login to OCI registry %q: %w", loginHost, err)
 		}
 	}
 

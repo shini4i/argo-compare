@@ -172,7 +172,7 @@ func (t *Target) extractCharts(ctx context.Context) error {
 	for _, source := range t.renderableSources() {
 		repoURL := strings.TrimPrefix(source.RepoURL, "oci://")
 		req := ports.ChartExtractRequest{
-			ChartName:     source.Chart,
+			ChartName:     effectiveChartName(source),
 			ChartVersion:  source.TargetRevision,
 			ChartLocation: fmt.Sprintf("%s/%s", t.CacheDir, repoURL),
 			TmpDir:        t.TmpDir,
