@@ -270,6 +270,58 @@ func TestMaterializeRefSources_MissingFileInTree(t *testing.T) {
 	require.ErrorIs(t, err, ErrRefValueFileMissing)
 }
 
+// TestMaterializeRefSources_MissingFileIgnoredWhenFlagSet covers a values file
+// that is optional by design: the leg leaves it unwritten instead of failing,
+// which is what drops it from the helm arguments later.
+func TestMaterializeRefSources_MissingFileIgnoredWhenFlagSet(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	target := &Target{TmpDir: "/run", Type: TargetTypeSource, App: refApp(t, testOriginURL, []string{"$values/envs/prod/values.yaml"})}
+	target.App.Spec.Sources[0].Helm.IgnoreMissingValueFiles = true
+	appInstance := newRefApp(t, fs, nil)
+
+	err := appInstance.materializeRefSources(context.Background(), target, t.TempDir(), testOriginURL, nil)
+
+	require.NoError(t, err)
+	written, statErr := afero.Exists(fs, filepath.Join("/run", "refs", TargetTypeSource, "values", "envs/prod/values.yaml"))
+	require.NoError(t, statErr)
+	assert.False(t, written, "an ignored file must not be materialized")
+}
+
+// TestMaterializeRefSources_MissingFileIgnoredOnDestinationLeg pins the same
+// for the merge-base tree, where an override added on the branch is absent.
+func TestMaterializeRefSources_MissingFileIgnoredOnDestinationLeg(t *testing.T) {
+	tree := commitTreeWith(t, map[string]string{"other.yaml": "a: 1\n"})
+	fs := afero.NewMemMapFs()
+	target := &Target{TmpDir: "/run", Type: TargetTypeDestination, App: refApp(t, testOriginURL, []string{"$values/envs/prod/values.yaml"})}
+	target.App.Spec.Sources[0].Helm.IgnoreMissingValueFiles = true
+	appInstance := newRefApp(t, fs, nil)
+
+	err := appInstance.materializeRefSources(context.Background(), target, t.TempDir(), testOriginURL,
+		func() (*object.Tree, error) { return tree, nil })
+
+	require.NoError(t, err)
+}
+
+// TestMaterializeRefSources_MissingFileFailsForSourceWithoutFlag pins that the
+// flag is per source: the file is shared, and the source that did not opt in
+// would fail to render in ArgoCD too.
+func TestMaterializeRefSources_MissingFileFailsForSourceWithoutFlag(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	target := &Target{TmpDir: "/run", Type: TargetTypeSource, App: refApp(t, testOriginURL, []string{"$values/envs/prod/values.yaml"})}
+	target.App.Spec.Sources[0].Helm.IgnoreMissingValueFiles = true
+	target.App.Spec.Sources = append(target.App.Spec.Sources, &models.Source{
+		RepoURL:        "https://prometheus-community.github.io/helm-charts",
+		Chart:          "alertmanager",
+		TargetRevision: "1.0.0",
+		Helm:           models.HelmSource{ValueFiles: []string{"$values/envs/prod/values.yaml"}},
+	})
+	appInstance := newRefApp(t, fs, nil)
+
+	err := appInstance.materializeRefSources(context.Background(), target, t.TempDir(), testOriginURL, nil)
+
+	require.ErrorIs(t, err, ErrRefValueFileMissing)
+}
+
 // TestMaterializeRefSources_NoOrigin refuses to guess: without an origin URL a
 // ref source cannot be classified as local or remote.
 func TestMaterializeRefSources_NoOrigin(t *testing.T) {

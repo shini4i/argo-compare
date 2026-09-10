@@ -155,6 +155,16 @@ func TestCheckSourceValueFilesPresent(t *testing.T) {
 		assert.Contains(t, err.Error(), "missing.yaml")
 	})
 
+	// A source opting out cannot be out of sync with the chart, so the preflight
+	// must not report drift ArgoCD would render through.
+	t.Run("missing value file is fine with ignoreMissingValueFiles", func(t *testing.T) {
+		fs := newFs(t)
+		target := newTarget([]string{"values-prod.yaml"})
+		target.App.Spec.Source.Helm.IgnoreMissingValueFiles = true
+
+		assert.NoError(t, target.checkSourceValueFilesPresent(fs, crossRepoRef))
+	})
+
 	t.Run("nil source entry is skipped", func(t *testing.T) {
 		fs := newFs(t)
 		require.NoError(t, afero.WriteFile(fs, filepath.Join(chartDir, "values.yaml"), []byte("x: 1"), 0o644))

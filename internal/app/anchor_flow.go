@@ -553,6 +553,11 @@ func (t *Target) checkSourceValueFilesPresent(fs afero.Fs, ref anchor.Applicatio
 		if src == nil {
 			continue
 		}
+		// A source that opted into dropping missing values files cannot be
+		// out of sync with the chart: ArgoCD renders it either way.
+		if src.Helm.IgnoreMissingValueFiles {
+			continue
+		}
 		chartDir := filepath.Join(t.TmpDir, "charts", t.Type, effectiveChartName(src))
 		for _, vf := range src.Helm.ValueFiles {
 			if vf == "" || filepath.IsAbs(vf) || strings.HasPrefix(filepath.Clean(vf), "..") || strings.HasPrefix(vf, "$") {
