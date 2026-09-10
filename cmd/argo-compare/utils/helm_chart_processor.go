@@ -85,7 +85,8 @@ func escapeHelmSetValue(v string) string {
 // path with "invalid reference", and credentials are resolved by host at
 // pull time, so a host-scoped login still covers a namespaced pull ref.
 func registryLoginHost(repoURL string) string {
-	return strings.SplitN(repoURL, "/", 2)[0]
+	host, _, _ := strings.Cut(repoURL, "/")
+	return host
 }
 
 // isOCIRegistry returns true if the repo URL refers to an OCI registry (no http/https scheme).
