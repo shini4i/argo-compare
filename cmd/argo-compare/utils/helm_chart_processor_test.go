@@ -1199,10 +1199,11 @@ func TestDownloadHelmChart_OCINamespacedChart(t *testing.T) {
 		return []string{}, nil
 	})
 
-	// Expect the pull ref to keep the namespace.
+	// Expect the pull ref to keep the namespace, and the namespace to survive as
+	// a cache directory.
 	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
 		"pull", "oci://registry.example.com/my-org/my-chart",
-		"--destination", filepath.Join(cacheDir, "cache", "registry.example.com"),
+		"--destination", filepath.Join(cacheDir, "cache", "registry.example.com", "my-org"),
 		"--version", "3.3.0").Return("", "", nil)
 
 	req := ports.ChartDownloadRequest{
@@ -1215,9 +1216,50 @@ func TestDownloadHelmChart_OCINamespacedChart(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t,
-		filepath.Join(cacheDir, "cache", "registry.example.com", "my-chart-3.3.0*.tgz"),
+		filepath.Join(cacheDir, "cache", "registry.example.com", "my-org", "my-chart-3.3.0*.tgz"),
 		globbed,
-		"the namespace names the artifact in the registry, not the file in the cache")
+		"the tarball helm writes is flat, so the namespace has to be a directory")
+}
+
+// TestDownloadHelmChart_OCINamespacesDoNotShareCache pins that two charts on one
+// host sharing a name and a version are cached apart. A flat cache would let the
+// first pull satisfy the second lookup and render the wrong chart.
+func TestDownloadHelmChart_OCINamespacesDoNotShareCache(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+	cacheDir := t.TempDir()
+
+	mockGlobber := mocks.NewMockGlobber(ctrl)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	deps := ports.HelmDeps{CmdRunner: mockCmdRunner, Globber: mockGlobber}
+
+	var globbed []string
+	mockGlobber.EXPECT().Glob(gomock.Any()).DoAndReturn(func(pattern string) ([]string, error) {
+		globbed = append(globbed, pattern)
+		return []string{}, nil
+	}).Times(2)
+
+	for _, org := range []string{"team-a", "team-b"} {
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"pull", "oci://registry.example.com/"+org+"/redis",
+			"--destination", filepath.Join(cacheDir, "cache", "registry.example.com", org),
+			"--version", "1.0.0").Return("", "", nil)
+
+		req := ports.ChartDownloadRequest{
+			CacheDir:       filepath.Join(cacheDir, "cache"),
+			RepoURL:        "registry.example.com",
+			ChartName:      org + "/redis",
+			TargetRevision: "1.0.0",
+		}
+		assert.NoError(t, helmChartProcessor.DownloadHelmChart(context.Background(), deps, req))
+	}
+
+	assert.Equal(t, []string{
+		filepath.Join(cacheDir, "cache", "registry.example.com", "team-a", "redis-1.0.0*.tgz"),
+		filepath.Join(cacheDir, "cache", "registry.example.com", "team-b", "redis-1.0.0*.tgz"),
+	}, globbed, "each namespace needs its own cache entry")
 }
 
 func TestDownloadHelmChart_OCINamespacedRepoURLLogsInToHost(t *testing.T) {

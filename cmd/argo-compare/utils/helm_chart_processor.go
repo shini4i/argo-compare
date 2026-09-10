@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -146,7 +147,10 @@ func (g RealHelmChartProcessor) DownloadHelmChart(ctx context.Context, deps port
 	// Strip it so that cache paths, credential matching, and helm commands receive a bare hostname.
 	req.RepoURL = strings.TrimPrefix(req.RepoURL, "oci://")
 
-	chartLocation := fmt.Sprintf("%s/%s", req.CacheDir, req.RepoURL)
+	// The namespace of an OCI reference is kept as a directory: two charts on one
+	// host can share a name, and the flat tarball helm writes would otherwise give
+	// them the same cache entry.
+	chartLocation := filepath.Join(req.CacheDir, req.RepoURL, path.Dir(req.ChartName))
 
 	if err := os.MkdirAll(chartLocation, 0750); err != nil {
 		return fmt.Errorf("failed to create chart cache directory %q: %w", chartLocation, err)
