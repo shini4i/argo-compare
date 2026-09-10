@@ -1,10 +1,12 @@
 package app
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -322,4 +324,81 @@ func TestUsedRefFilesDedupesAcrossSources(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, []refFile{{Ref: "values", Path: "shared.yaml"}}, used)
+}
+
+// ignoreTarget builds refTarget against a real temporary directory, so a
+// values file's presence on disk decides what resolveValueFiles keeps.
+func ignoreTarget(t *testing.T, valueFiles []string, ignoreMissing bool) *Target {
+	t.Helper()
+	target := refTarget(t, valueFiles)
+	target.TmpDir = t.TempDir()
+	target.Log = logger.New("test")
+	target.App.Spec.Sources[0].Helm.IgnoreMissingValueFiles = ignoreMissing
+	return target
+}
+
+// TestResolveValueFilesSkipsMissingWhenIgnored covers the flag: helm fails on
+// a --values path that does not exist, so an absent entry must be dropped
+// rather than passed on.
+func TestResolveValueFilesSkipsMissingWhenIgnored(t *testing.T) {
+	target := ignoreTarget(t, []string{"values.yaml", "$values/envs/prod/values.yaml"}, true)
+
+	chartDir := filepath.Join(target.TmpDir, "charts", TargetTypeSource, "prometheus")
+	require.NoError(t, os.MkdirAll(chartDir, 0o755))
+	present := filepath.Join(chartDir, "values.yaml")
+	require.NoError(t, os.WriteFile(present, []byte("{}\n"), 0o600))
+
+	resolved, err := target.resolveValueFiles(target.App.Spec.Sources[0])
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{present}, resolved,
+		"a ref file the leg could not materialize must not reach helm")
+}
+
+// TestResolveValueFilesKeepsMissingWithoutFlag is the counterpart: an absent
+// file still reaches helm, so a broken Application fails instead of diffing
+// as if nothing were missing.
+func TestResolveValueFilesKeepsMissingWithoutFlag(t *testing.T) {
+	target := ignoreTarget(t, []string{"values.yaml"}, false)
+
+	resolved, err := target.resolveValueFiles(target.App.Spec.Sources[0])
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		filepath.Join(target.TmpDir, "charts", TargetTypeSource, "prometheus", "values.yaml"),
+	}, resolved)
+}
+
+func TestIgnoresMissingRefFile(t *testing.T) {
+	rf := refFile{Ref: "values", Path: "envs/prod/values.yaml"}
+	entry := "$values/envs/prod/values.yaml"
+
+	t.Run("referencing source sets the flag", func(t *testing.T) {
+		target := ignoreTarget(t, []string{entry}, true)
+		assert.True(t, target.ignoresMissingRefFile(rf))
+	})
+
+	t.Run("referencing source does not set the flag", func(t *testing.T) {
+		target := ignoreTarget(t, []string{entry}, false)
+		assert.False(t, target.ignoresMissingRefFile(rf))
+	})
+
+	t.Run("file is not referenced", func(t *testing.T) {
+		target := ignoreTarget(t, []string{"$values/other.yaml"}, true)
+		assert.False(t, target.ignoresMissingRefFile(rf))
+	})
+
+	// A file shared with a source that does not opt in must still fail: that
+	// source's render would fail in ArgoCD too.
+	t.Run("one of two referencing sources omits the flag", func(t *testing.T) {
+		target := ignoreTarget(t, []string{entry}, true)
+		target.App.Spec.Sources = append(target.App.Spec.Sources, &models.Source{
+			RepoURL:        "https://prometheus-community.github.io/helm-charts",
+			Chart:          "alertmanager",
+			TargetRevision: "1.0.0",
+			Helm:           models.HelmSource{ValueFiles: []string{entry}},
+		})
+
+		assert.False(t, target.ignoresMissingRefFile(rf))
+	})
 }

@@ -114,6 +114,13 @@ func (a *App) materializeRefSources(ctx context.Context, target *Target, repoRoo
 		}
 		content, contentErr := a.refFileContent(ctx, rf, refs[rf.Ref], target.Type, repoRoot, originURL, mergeBaseTree)
 		if contentErr != nil {
+			// An optional values file is absent on one leg by design, an
+			// override existing on the branch but not at the merge-base.
+			// Leaving it unwritten is what drops it from the helm invocation.
+			if errors.Is(contentErr, ErrRefValueFileMissing) && target.ignoresMissingRefFile(rf) {
+				a.logger.Debugf("Skipping missing ref values file [$%s/%s]: ignoreMissingValueFiles is set", rf.Ref, rf.Path)
+				continue
+			}
 			return contentErr
 		}
 		dest := filepath.Join(target.refDir(rf.Ref), rf.Path)
