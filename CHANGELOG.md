@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-14
+
 ### Added
 
 - `helm.ignoreMissingValueFiles`. A `valueFiles` entry whose file does not exist is dropped instead of failing the render, the way ArgoCD treats it, so an Application listing optional per-environment overrides is comparable at all. It covers a `$ref` file a leg cannot materialize as well as a chart-relative path; without the flag a missing file stays a hard error, as it does for a file shared with a source that does not set it.
@@ -48,5 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `golang.org/x/text` and `golang.org/x/net`, fixing denial of service on invalid UTF-8 input and on invalid DNS record parsing.
 - Builds now use the Go 1.26.7 toolchain, picking up the standard library fixes released in 1.26.6.
 
-[Unreleased]: https://github.com/shini4i/argo-compare/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/shini4i/argo-compare/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/shini4i/argo-compare/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/shini4i/argo-compare/compare/v0.9.1...v0.9.2
