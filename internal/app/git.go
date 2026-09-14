@@ -345,17 +345,12 @@ func (g *GitRepo) parseTargetApplication(fileContent string) (models.Application
 		}
 	}(tmpFile)
 
-	target := Target{
-		CmdRunner:  g.cmdRunner,
-		FileReader: g.fileReader,
-		Log:        g.log,
-		File:       tmpFile.Name(),
-	}
-	if err := target.parse(); err != nil {
+	app, err := parseApplicationFile(g.fileReader, g.log, tmpFile.Name())
+	if err != nil {
 		return models.Application{}, fmt.Errorf("failed to parse the application: %w", err)
 	}
 
-	return target.App, nil
+	return app, nil
 }
 
 // printChangeFile reports the lists of added and removed files at debug level.
@@ -462,14 +457,7 @@ func isHelmTemplate(fs afero.Fs, repoRoot, relFile string) (bool, error) {
 func (g *GitRepo) classifyManifest(file string) (string, error) {
 	g.log.Debugf("===> Checking if [%s] is an Application", ui.Cyan(file))
 
-	target := Target{
-		CmdRunner:  g.cmdRunner,
-		FileReader: g.fileReader,
-		Log:        g.log,
-		File:       file,
-	}
-
-	appErr := target.parse()
+	_, appErr := parseApplicationFile(g.fileReader, g.log, file)
 	if appErr == nil {
 		return models.KindApplication, nil
 	}

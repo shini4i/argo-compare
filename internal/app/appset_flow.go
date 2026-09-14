@@ -235,7 +235,7 @@ func (a *App) skipOneSidedPair(pair generatedPair) bool {
 // comparison should be skipped for want of a baseline to diff against.
 func (a *App) renderGeneratedLegs(ctx context.Context, repo *GitRepo, pair generatedPair, tmpDir string, validationResults map[string]ports.ValidationResult) (bool, error) {
 	if pair.src != nil {
-		if err := a.renderGeneratedLeg(ctx, repo, *pair.src, TargetTypeSource, tmpDir, validationResults); err != nil {
+		if err := a.renderLeg(ctx, repo, a.newTarget(TargetTypeSource, tmpDir, *pair.src), "", validationResults); err != nil {
 			return false, err
 		}
 	}
@@ -247,7 +247,7 @@ func (a *App) renderGeneratedLegs(ctx context.Context, repo *GitRepo, pair gener
 	// A path-based chart the branch adds for the first time is absent from the
 	// merge-base tree even though both branches generate the Application, so the
 	// baseline leg has nothing to render. That is a new chart, not a failure.
-	destErr := a.renderGeneratedLeg(ctx, repo, *pair.dst, TargetTypeDestination, tmpDir, validationResults)
+	destErr := a.renderLeg(ctx, repo, a.newTarget(TargetTypeDestination, tmpDir, *pair.dst), "", validationResults)
 	switch {
 	case destErr == nil:
 		return true, nil
@@ -259,23 +259,4 @@ func (a *App) renderGeneratedLegs(ctx context.Context, repo *GitRepo, pair gener
 	default:
 		return false, destErr
 	}
-}
-
-// renderGeneratedLeg renders one leg of a generated Application. No File is set
-// on the Target: the Application came from expansion, not from a manifest on disk.
-func (a *App) renderGeneratedLeg(ctx context.Context, repo *GitRepo, app models.Application, leg, tmpDir string, validationResults map[string]ports.ValidationResult) error {
-	target := Target{
-		CmdRunner:           a.cmdRunner,
-		FileReader:          a.fileReader,
-		HelmProcessor:       a.helmProcessor,
-		Globber:             a.globber,
-		CacheDir:            a.cfg.CacheDir,
-		TmpDir:              tmpDir,
-		CredentialProviders: a.activeProviders,
-		Log:                 a.logger,
-		Type:                leg,
-		App:                 app,
-	}
-
-	return a.renderTarget(ctx, repo, &target, leg, validationResults)
 }

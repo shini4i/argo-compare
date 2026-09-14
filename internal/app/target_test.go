@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/shini4i/argo-compare/cmd/argo-compare/utils"
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 
 	"github.com/shini4i/argo-compare/internal/ports"
@@ -20,6 +21,7 @@ type recordingHelmProcessor struct {
 	generateValuesCalls int
 	downloadCalls       int
 	downloadRequests    []ports.ChartDownloadRequest
+	downloadDeps        []ports.HelmDeps
 	extractCalls        int
 	renderCalls         int
 	renderRequests      []ports.ChartRenderRequest
@@ -30,7 +32,8 @@ func (r *recordingHelmProcessor) GenerateValuesFile(chartName, tmpDir, targetTyp
 	return nil
 }
 
-func (r *recordingHelmProcessor) DownloadHelmChart(_ context.Context, _ ports.HelmDeps, req ports.ChartDownloadRequest) error {
+func (r *recordingHelmProcessor) DownloadHelmChart(_ context.Context, deps ports.HelmDeps, req ports.ChartDownloadRequest) error {
+	r.downloadDeps = append(r.downloadDeps, deps)
 	r.downloadCalls++
 	r.downloadRequests = append(r.downloadRequests, req)
 	return nil
@@ -51,18 +54,10 @@ func (r *recordingHelmProcessor) BuildChartDependencies(_ context.Context, _ por
 	return nil
 }
 
-func TestTargetParseReturnsErrorFromFileReader(t *testing.T) {
+func TestParseApplicationFileReturnsErrorFromFileReader(t *testing.T) {
 	sentinel := errors.New("permission denied")
 
-	target := Target{
-		CmdRunner:  portstest.NoopCmdRunner{},
-		FileReader: portstest.ErrFileReader{Err: sentinel},
-		Log:        logger.New("target-test"),
-		File:       "/some/app.yaml",
-		Type:       TargetTypeSource,
-	}
-
-	err := target.parse()
+	_, err := parseApplicationFile(portstest.ErrFileReader{Err: sentinel}, logger.New("target-test"), "/some/app.yaml")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, sentinel, "original error must be reachable via errors.Is")
 	assert.Contains(t, err.Error(), "/some/app.yaml", "error must include the file path")
@@ -429,4 +424,29 @@ func TestTargetMultiSourcePropagatesValueFiles(t *testing.T) {
 		filepath.Join(chartB, "b-values.yaml"),
 		filepath.Join(chartB, "b-env.yaml"),
 	}, processor.renderRequests[1].ValueFiles)
+}
+
+// TestNewTargetCarriesCredentialChain pins that a Target built for a leg hands the
+// run's credential providers to Helm; every flow builds its Targets this way.
+func TestNewTargetCarriesCredentialChain(t *testing.T) {
+	processor := &recordingHelmProcessor{}
+	provider := utils.NewStaticCredentialProvider(nil)
+	appInstance := &App{
+		cfg:             Config{CacheDir: t.TempDir()},
+		helmProcessor:   processor,
+		globber:         portstest.NoopGlobber{},
+		cmdRunner:       portstest.NoopCmdRunner{},
+		fileReader:      portstest.NoopFileReader{},
+		logger:          logger.New("new-target-test"),
+		activeProviders: []ports.CredentialProvider{provider},
+	}
+	app := models.Application{}
+	app.Spec.Source = &models.Source{RepoURL: "https://charts.example.com", Chart: "demo", TargetRevision: "1.0.0"}
+
+	target := appInstance.newTarget(TargetTypeSource, t.TempDir(), app)
+	require.NoError(t, target.ensureHelmCharts(context.Background()))
+
+	require.Len(t, processor.downloadDeps, 1)
+	require.Len(t, processor.downloadDeps[0].CredentialProviders, 1)
+	assert.Same(t, provider, processor.downloadDeps[0].CredentialProviders[0])
 }

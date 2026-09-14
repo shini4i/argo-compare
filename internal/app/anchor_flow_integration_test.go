@@ -638,3 +638,120 @@ spec:
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrMixedMultiSource)
 }
+
+// crossRepoAppYAML is a path-based Application held in another repository whose
+// chart lives at chartPath in localOrigin and reads the given values files.
+func crossRepoAppYAML(localOrigin, chartPath string, valueFiles ...string) string {
+	files := ""
+	for _, vf := range valueFiles {
+		files += "\n          - " + vf
+	}
+
+	return `apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo
+  namespace: argocd
+spec:
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo
+  source:
+    repoURL: ` + localOrigin + `
+    path: ` + chartPath + `
+    targetRevision: HEAD
+    helm:
+      valueFiles:` + files + `
+`
+}
+
+// demoChart is the anchored chart under comparison, with the given values files.
+func demoChart(valueFiles ...string) map[string]string {
+	files := map[string]string{
+		"charts/demo/.argo-compare.yml":  "", // replaced by the caller
+		"charts/demo/Chart.yaml":         "apiVersion: v2\nname: demo\nversion: 0.0.1\n",
+		"charts/demo/templates/dep.yaml": "kind: Deployment\n",
+	}
+	for _, vf := range valueFiles {
+		files["charts/demo/"+vf] = "replicaCount: 1\n"
+	}
+
+	return files
+}
+
+// runCrossRepoAnchor seeds an Application in a bare repo, anchors the local
+// chart to it, and runs the comparison with the feature branch bumping values.yaml.
+func runCrossRepoAnchor(t *testing.T, appValueFiles, chartValueFiles []string) (*appSetRunner, error) {
+	t.Helper()
+
+	return runCrossRepoAnchorAt(t, "charts/demo", appValueFiles, chartValueFiles)
+}
+
+// runCrossRepoAnchorAt is runCrossRepoAnchor with the Application pointing at appChartPath,
+// which need not be the anchored chart directory.
+func runCrossRepoAnchorAt(t *testing.T, appChartPath string, appValueFiles, chartValueFiles []string) (*appSetRunner, error) {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	localOrigin := filepath.Join(tempDir, "origin.git")
+	appRepo := filepath.Join(tempDir, "apps.git")
+	require.NoError(t, seedBareRepoWithApplication(t, appRepo, "main", "apps/demo.yaml", crossRepoAppYAML(localOrigin, appChartPath, appValueFiles...)))
+
+	mainFiles := demoChart(chartValueFiles...)
+	mainFiles["charts/demo/.argo-compare.yml"] = "application:\n  repo: " + appRepo + "\n  path: apps/demo.yaml\n  branch: main\n"
+	featureFiles := mergeFileMaps(mainFiles, map[string]string{"charts/demo/values.yaml": "replicaCount: 7\n"})
+	seedLocalRepo(t, tempDir, localOrigin, mainFiles, featureFiles)
+
+	runner := newAppSetRunner(t, Config{AnchorFileName: DefaultAnchorFileName}, nil)
+
+	return runner, runner.app.Run(context.Background())
+}
+
+// TestAppRunCrossRepoAnchorRendersWhenValueFilesPresent pins that a healthy cross-repo
+// anchor, whose values files all exist, is not tripped by the preflight.
+func TestAppRunCrossRepoAnchorRendersWhenValueFilesPresent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skip integration test in short mode")
+	}
+
+	runner, err := runCrossRepoAnchor(t, []string{"values.yaml", "values-prod.yaml"}, []string{"values.yaml", "values-prod.yaml"})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, runner.helm.callCount("RenderAppSource"), "both legs must render")
+	assert.Contains(t, runner.log.String(), "Processing anchored chart")
+	runner.assertTempDirsRemoved(t)
+}
+
+// TestAppRunCrossRepoAnchorRejectsMissingValueFile pins that the preflight resolves the chart
+// from the repository root (a wrong root could not name values-prod.yaml) and fires before
+// any leg reaches Helm.
+func TestAppRunCrossRepoAnchorRejectsMissingValueFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skip integration test in short mode")
+	}
+
+	runner, err := runCrossRepoAnchor(t, []string{"values.yaml", "values-prod.yaml"}, []string{"values.yaml"})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrValueFileMissingFromSource)
+	assert.Contains(t, err.Error(), "values-prod.yaml")
+	assert.Contains(t, err.Error(), "charts/demo")
+	assert.Contains(t, err.Error(), "apps/demo.yaml")
+
+	assert.Equal(t, 0, runner.helm.callCount("RenderAppSource"), "the preflight must fire before any leg renders")
+	assert.Equal(t, 0, runner.helm.callCount("BuildChartDependencies"), "the preflight must fire before any chart dependency build")
+	assert.Empty(t, runner.helm.tmpDirs, "no Helm call may have received a workspace")
+}
+
+// TestAppRunCrossRepoAnchorReportsMissingChartDir pins that a chart directory the Application
+// names but this branch lacks is reported by materialization, not blamed on values files.
+func TestAppRunCrossRepoAnchorReportsMissingChartDir(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skip integration test in short mode")
+	}
+
+	runner, err := runCrossRepoAnchorAt(t, "charts/gone", []string{"values.yaml"}, []string{"values.yaml"})
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrValueFileMissingFromSource)
+	assert.Contains(t, err.Error(), "charts/gone")
+	assert.Equal(t, 0, runner.helm.callCount("RenderAppSource"), "a missing chart directory must fail before rendering")
+}

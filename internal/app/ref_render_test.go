@@ -107,25 +107,25 @@ func TestRegistryChartWithRefIsNotPathBased(t *testing.T) {
 	assert.NoError(t, target.ClassifySources(), "a ref source is neither chart- nor path-based, so it cannot make the Application mixed")
 }
 
-// TestMaterializeChartForLegPullsRegistryChart covers the anchor flow reaching a
+// TestMaterializeChartPullsRegistryChart covers the anchor flow reaching a
 // registry-chart Application, which it can now do when the values come from a
 // ref source in this repository. Without the registry pipeline the chart
 // directory would stay empty and helm would render nothing.
-func TestMaterializeChartForLegPullsRegistryChart(t *testing.T) {
+func TestMaterializeChartPullsRegistryChart(t *testing.T) {
 	processor := &recordingHelmProcessor{}
 	target := refRenderTarget(t, processor, []string{"$values/values.yaml"})
 	appInstance := &App{cfg: Config{TargetBranch: "main"}, fs: afero.NewMemMapFs(), logger: logger.New("anchor-registry-test")}
 
-	require.NoError(t, appInstance.materializeChartForLeg(context.Background(), target, TargetTypeSource, nil, t.TempDir()))
+	require.NoError(t, appInstance.materializeChart(context.Background(), nil, target, t.TempDir()))
 
 	require.Len(t, processor.downloadRequests, 1, "the registry chart must be pulled")
 	assert.Equal(t, "prometheus", processor.downloadRequests[0].ChartName)
 	assert.Equal(t, 1, processor.extractCalls, "the pulled chart must be extracted")
 }
 
-// TestMaterializeChartForLegKeepsPathBasedOffTheRegistry guards the existing
+// TestMaterializeChartKeepsPathBasedOffTheRegistry guards the existing
 // behaviour: a path-based anchored chart comes from the tree, never helm pull.
-func TestMaterializeChartForLegKeepsPathBasedOffTheRegistry(t *testing.T) {
+func TestMaterializeChartKeepsPathBasedOffTheRegistry(t *testing.T) {
 	processor := &recordingHelmProcessor{}
 	target := refRenderTarget(t, processor, nil)
 	target.App.Spec.Sources = target.App.Spec.Sources[:1]
@@ -138,7 +138,7 @@ func TestMaterializeChartForLegKeepsPathBasedOffTheRegistry(t *testing.T) {
 
 	appInstance := &App{cfg: Config{TargetBranch: "main"}, fs: afero.NewMemMapFs(), logger: logger.New("anchor-path-test")}
 
-	require.NoError(t, appInstance.materializeChartForLeg(context.Background(), target, TargetTypeSource, nil, repoRoot))
+	require.NoError(t, appInstance.materializeChart(context.Background(), nil, target, repoRoot))
 
 	assert.Empty(t, processor.downloadRequests, "a path-based chart must not trigger helm pull")
 	assert.Equal(t, 0, processor.extractCalls)
@@ -220,4 +220,20 @@ func TestSourceWithoutValueFilesPassesNone(t *testing.T) {
 
 	require.Len(t, processor.renderRequests, 1)
 	assert.Empty(t, processor.renderRequests[0].ValueFiles)
+}
+
+// TestMaterializeChartUnknownLeg mirrors TestMaterializeRefSources_UnknownLeg for the
+// chart step, which reads the leg from Target.Type as well.
+func TestMaterializeChartUnknownLeg(t *testing.T) {
+	target := refRenderTarget(t, &recordingHelmProcessor{}, nil)
+	target.Type = "sideways"
+	target.App.Spec.Sources = target.App.Spec.Sources[:1]
+	target.App.Spec.Sources[0].Chart = ""
+	target.App.Spec.Sources[0].Path = "charts/demo"
+	appInstance := &App{cfg: Config{TargetBranch: "main"}, fs: afero.NewMemMapFs(), logger: logger.New("unknown-leg-test")}
+
+	err := appInstance.materializeChart(context.Background(), nil, target, t.TempDir())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown render leg")
 }

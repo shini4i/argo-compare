@@ -31,32 +31,49 @@ type Target struct {
 	CredentialProviders []ports.CredentialProvider
 	Log                 *logger.Logger
 
-	File string
 	Type string
 	App  models.Application
 }
 
-// parse loads the target application's manifest into memory and validates its structure.
-func (t *Target) parse() error {
-	yamlContent, err := readManifest(t.FileReader, t.File)
+// newTarget builds the Target for one comparison leg of app, wired to the
+// App's collaborators and the run's credential chain. leg is TargetTypeSource or
+// TargetTypeDestination; tmpDir is the per-comparison scratch directory that
+// receives the materialized chart, values files and rendered manifests.
+func (a *App) newTarget(leg, tmpDir string, app models.Application) *Target {
+	return &Target{
+		CmdRunner:           a.cmdRunner,
+		FileReader:          a.fileReader,
+		HelmProcessor:       a.helmProcessor,
+		Globber:             a.globber,
+		CacheDir:            a.cfg.CacheDir,
+		TmpDir:              tmpDir,
+		CredentialProviders: a.activeProviders,
+		Log:                 a.logger,
+		Type:                leg,
+		App:                 app,
+	}
+}
+
+// parseApplicationFile reads the Application manifest at path (relative paths
+// resolve against the repository root) and validates its structure.
+func parseApplicationFile(fileReader ports.FileReader, log *logger.Logger, path string) (models.Application, error) {
+	yamlContent, err := readManifest(fileReader, path)
 	if err != nil {
-		return err
+		return models.Application{}, err
 	}
 
-	t.Log.Debugf("Parsing %s...", t.File)
+	log.Debugf("Parsing %s...", path)
 
 	app := models.Application{}
 	if err := yaml.Unmarshal(yamlContent, &app); err != nil {
-		return err
+		return models.Application{}, err
 	}
 
 	if err := app.Validate(); err != nil {
-		return err
+		return models.Application{}, err
 	}
 
-	t.App = app
-
-	return nil
+	return app, nil
 }
 
 // readManifest reads a manifest file, resolving a relative path against the

@@ -437,36 +437,6 @@ func (a *App) resolveTargetApplication(repo *GitRepo, file string) (models.Appli
 	return models.Application{}, action, nil
 }
 
-// prepareChartFromPath materializes a path-based source's chart directory into
-// the layout the renderer expects. The source leg copies from the local
-// working tree; the destination leg extracts from the merge-base tree of the
-// configured target branch. After materialization, subchart dependencies
-// declared in Chart.yaml are resolved into chart/charts/ via
-// `helm dependency build`.
-func (a *App) prepareChartFromPath(ctx context.Context, repo *GitRepo, target *Target, fileType string) error {
-	switch fileType {
-	case TargetTypeSource:
-		repoRoot, err := GetGitRepoRoot()
-		if err != nil {
-			return fmt.Errorf("resolve repo root for path-based source: %w", err)
-		}
-		if err := target.MaterializeChartFromWorkingTree(ctx, a.fs, repoRoot); err != nil {
-			return err
-		}
-	case TargetTypeDestination:
-		tree, err := repo.MergeBaseTreeFor(a.cfg.TargetBranch)
-		if err != nil {
-			return err
-		}
-		if err := target.MaterializeChartFromTree(ctx, a.fs, tree); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("unknown render leg %q", fileType)
-	}
-	return target.BuildChartDependencies(ctx)
-}
-
 // decideDestinationAction maps the outcome of GetChangedFileContent to a destinationAction.
 // Errors other than the two named sentinels are returned to the caller; previously they
 // were logged and silently downgraded to destinationProcess, which produced confusing
@@ -484,105 +454,19 @@ func decideDestinationAction(err error, printAdded bool) (destinationAction, err
 	}
 }
 
-// processFile prepares Helm inputs for a single manifest and renders its templates.
-// validationResults is populated when a validator is configured; entries are keyed by fileType.
-//
-// For registry-based sources (spec.source.chart set) the chart is fetched via
-// the existing helm pull + extract pipeline. For path-based sources
-// (spec.source.path set) the chart directory is materialized into the same
-// on-disk layout from the local working tree (src leg) or the merge-base tree
-// (dst leg), and the registry plumbing is skipped.
+// processFile renders one leg of a changed Application manifest into tmpDir. The source leg
+// parses the manifest from fileName; the destination leg renders the application read from
+// the target branch. validationResults is keyed by fileType.
 func (a *App) processFile(ctx context.Context, repo *GitRepo, fileName, fileType string, application models.Application, tmpDir string, validationResults map[string]ports.ValidationResult) error {
-	target := Target{
-		CmdRunner:           a.cmdRunner,
-		FileReader:          a.fileReader,
-		HelmProcessor:       a.helmProcessor,
-		Globber:             a.globber,
-		CacheDir:            a.cfg.CacheDir,
-		TmpDir:              tmpDir,
-		CredentialProviders: a.activeProviders,
-		Log:                 a.logger,
-		File:                fileName,
-		Type:                fileType,
-		App:                 application,
-	}
-
 	if fileType == TargetTypeSource {
-		if err := target.parse(); err != nil {
+		parsed, err := parseApplicationFile(a.fileReader, a.logger, fileName)
+		if err != nil {
 			return err
 		}
+		application = parsed
 	}
 
-	return a.renderTarget(ctx, repo, &target, fileType, validationResults)
-}
-
-// renderTarget drives the shared Helm pipeline for a target whose Application
-// is already resolved: classify sources, materialize the chart, render, and
-// validate the result.
-func (a *App) renderTarget(ctx context.Context, repo *GitRepo, target *Target, fileType string, validationResults map[string]ports.ValidationResult) error {
-	if err := target.ClassifySources(); err != nil {
-		return err
-	}
-
-	if err := target.generateValuesFiles(); err != nil {
-		return err
-	}
-
-	if err := a.prepareChart(ctx, repo, target, fileType); err != nil {
-		return err
-	}
-
-	if err := a.materializeRefSourcesForLeg(ctx, repo, target, ""); err != nil {
-		return err
-	}
-
-	if err := target.renderAppSources(ctx); err != nil {
-		return err
-	}
-
-	a.runManifestValidation(ctx, fileType, target.TmpDir, validationResults)
-	return nil
-}
-
-// prepareChart materializes the chart inputs for a target. Path-based sources
-// are copied from the working tree (src) or extracted from the merge-base tree
-// (dst); registry-based sources go through the existing helm pull + extract
-// pipeline.
-func (a *App) prepareChart(ctx context.Context, repo *GitRepo, target *Target, fileType string) error {
-	if target.PathBased() {
-		return a.prepareChartFromPath(ctx, repo, target, fileType)
-	}
-	if err := target.ensureHelmCharts(ctx); err != nil {
-		return err
-	}
-	return target.extractCharts(ctx)
-}
-
-// runManifestValidation invokes the configured validator on rendered source
-// manifests and records the outcome. Destination manifests are intentionally
-// skipped: src reflects the post-merge state, while dst reflects the current
-// target branch — validating dst would surface pre-existing breakage unrelated
-// to the PR, which is noise for a merge gate.
-func (a *App) runManifestValidation(ctx context.Context, fileType, tmpDir string, validationResults map[string]ports.ValidationResult) {
-	if a.validator == nil || fileType != TargetTypeSource {
-		return
-	}
-	// Rendered manifests land at <tmpDir>/templates/<src|dst> (set by RenderAppSource).
-	manifests := filepath.Join(tmpDir, "templates", fileType)
-	result, err := a.validator.Validate(ctx, fileType, manifests)
-	if err != nil {
-		a.logger.Warningf("Manifest validation failed: %v", err)
-		// Record a synthetic result so the failure surfaces in presenters.
-		validationResults[fileType] = ports.ValidationResult{
-			Target:          fileType,
-			InvocationError: err.Error(),
-		}
-		return
-	}
-	validationResults[fileType] = result
-	if !result.Valid {
-		a.logger.Warningf("Validation errors found: %d issues", result.ErrorCount)
-	}
+	return a.renderLeg(ctx, repo, a.newTarget(fileType, tmpDir, application), "", validationResults)
 }
 
 // runComparison executes the diff strategy for the prepared temporary workspace.

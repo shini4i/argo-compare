@@ -52,10 +52,8 @@ func (a *App) materializeRefSourcesForLeg(ctx context.Context, repo *GitRepo, ta
 		return nil
 	}
 
-	if repoRoot == "" {
-		if repoRoot, err = GetGitRepoRoot(); err != nil {
-			return fmt.Errorf("resolve repo root for $ref values files: %w", err)
-		}
+	if repoRoot, err = ensureRepoRoot(repoRoot); err != nil {
+		return fmt.Errorf("resolve repo root for $ref values files: %w", err)
 	}
 
 	var originURL string
