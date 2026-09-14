@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1107,4 +1108,17 @@ func TestGitRepoGetChangedFilesAnchorFileOnlyChange(t *testing.T) {
 	require.Empty(t, result.Applications)
 	require.Empty(t, result.Invalid)
 	require.Empty(t, result.AnchorGroups)
+}
+
+// TestGitRepoParseTargetApplicationRejectsMalformedManifest pins that an unparsable manifest on
+// the target branch is reported as a parse failure. Returning the zero Application instead would
+// render the destination leg empty and report every resource as added.
+func TestGitRepoParseTargetApplicationRejectsMalformedManifest(t *testing.T) {
+	repoInstance, _ := buildGitRepo(t, true)
+
+	_, err := repoInstance.parseTargetApplication("kind: Application\n\tbad: indent\n")
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to parse the application")
+	require.NotNil(t, errors.Unwrap(err), "the wrap must keep the parse error reachable")
 }
