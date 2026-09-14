@@ -457,13 +457,19 @@ func (a *App) renderAnchorLegs(ctx context.Context, lc *anchorLegContext, group 
 }
 
 // checkSourceValueFilesPresent reports ErrValueFileMissingFromSource when a path-based source
-// names a chart-relative values file that is absent from the chart under repoRoot. Entries the
-// renderer validates itself (absolute, "..", empty) and "$ref" entries are skipped.
+// names a chart-relative values file absent from the chart under repoRoot. Each source's path is
+// resolved against repoRoot first. A source setting ignoreMissingValueFiles then skips the file
+// check, as do entries the renderer validates itself (absolute, "..", empty) and "$ref" entries.
 func (t *Target) checkSourceValueFilesPresent(fs afero.Fs, repoRoot string, ref anchor.ApplicationRef) error {
 	for _, src := range t.pathSources() {
 		chartDir, err := resolveRepoPath(repoRoot, src.Path)
 		if err != nil {
 			return err
+		}
+		// A source that opted into dropping missing values files cannot be out of sync with
+		// the chart: ArgoCD renders it either way.
+		if src.Helm.IgnoreMissingValueFiles {
+			continue
 		}
 		// A chart dir that is absent, or is not a real directory, is materialization's error to
 		// report; probing through a symlink would reveal what its target holds.

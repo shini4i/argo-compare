@@ -3,11 +3,14 @@ package app
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/shini4i/argo-compare/internal/models"
+	"github.com/shini4i/argo-compare/internal/ui"
 )
 
 // ErrUnknownValueFileRef is returned when a helm.valueFiles entry uses a
@@ -123,13 +126,33 @@ func (t *Target) resolveValueFiles(source *models.Source) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		resolvedPath := filepath.Join(t.chartDirFor(source), entry)
 		if isRef {
-			resolved = append(resolved, filepath.Join(t.refDir(rf.Ref), rf.Path))
+			resolvedPath = filepath.Join(t.refDir(rf.Ref), rf.Path)
+		}
+		// One check covers both: a ref file the leg could not materialize is
+		// as absent on disk as a chart-relative file that does not exist.
+		if t.skipMissingValueFile(source, entry, resolvedPath) {
 			continue
 		}
-		resolved = append(resolved, filepath.Join(t.chartDirFor(source), entry))
+		resolved = append(resolved, resolvedPath)
 	}
 	return resolved, nil
+}
+
+// skipMissingValueFile reports whether an absent values file should be dropped
+// under helm.ignoreMissingValueFiles. helm fails on a --values path that does
+// not exist, so the entry has to go before the argv is built. Any other stat
+// error is left for helm to report.
+func (t *Target) skipMissingValueFile(source *models.Source, entry, resolved string) bool {
+	if !source.Helm.IgnoreMissingValueFiles {
+		return false
+	}
+	if _, err := os.Stat(resolved); err == nil || !errors.Is(err, fs.ErrNotExist) {
+		return false
+	}
+	t.Log.Debugf("Skipping missing values file [%s]: ignoreMissingValueFiles is set", ui.Cyan(entry))
+	return true
 }
 
 // refFileFor validates one valueFiles entry and reports the ref-source file it
@@ -181,6 +204,31 @@ func (t *Target) usedRefFiles() ([]refFile, error) {
 	return used, nil
 }
 
+// ignoresMissingRefFile reports whether every renderable source referencing rf
+// sets helm.ignoreMissingValueFiles. One that does not must still fail, since
+// its render would fail in ArgoCD too. Entries are validated before
+// materialization, so a resolve error here is old news and never skips.
+func (t *Target) ignoresMissingRefFile(rf refFile) bool {
+	refs, err := t.refSources()
+	if err != nil {
+		return false
+	}
+	referenced := false
+	for _, source := range t.renderableSources() {
+		for _, entry := range source.Helm.ValueFiles {
+			candidate, isRef, err := t.refFileFor(entry, refs)
+			if err != nil || !isRef || candidate != rf {
+				continue
+			}
+			if !source.Helm.IgnoreMissingValueFiles {
+				return false
+			}
+			referenced = true
+		}
+	}
+	return referenced
+}
+
 // renderableSources lists the sources that produce manifests, skipping
 // values-only ref sources.
 func (t *Target) renderableSources() []*models.Source {
@@ -220,6 +268,12 @@ func validateRelValueFile(rel string) error {
 	// values file legitimately lives in Git's own metadata.
 	if first, _, _ := strings.Cut(filepath.ToSlash(cleaned), "/"); strings.EqualFold(first, ".git") {
 		return fmt.Errorf("%w: Git metadata is not readable: %q", ErrInvalidValueFilePath, rel)
+	}
+	// Globs are not expanded, and helm.ignoreMissingValueFiles would turn a
+	// pattern into a silent skip: both legs would render without those values
+	// and a change to a matching file would diff as no change.
+	if strings.ContainsAny(rel, "*?[") {
+		return fmt.Errorf("%w: glob patterns are not expanded, name one file: %q", ErrInvalidValueFilePath, rel)
 	}
 	return nil
 }

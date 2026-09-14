@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -189,9 +190,9 @@ func (t *Target) extractCharts(ctx context.Context) error {
 	for _, source := range t.renderableSources() {
 		repoURL := strings.TrimPrefix(source.RepoURL, "oci://")
 		req := ports.ChartExtractRequest{
-			ChartName:     source.Chart,
+			ChartName:     effectiveChartName(source),
 			ChartVersion:  source.TargetRevision,
-			ChartLocation: fmt.Sprintf("%s/%s", t.CacheDir, repoURL),
+			ChartLocation: filepath.Join(t.CacheDir, repoURL, path.Dir(source.Chart)),
 			TmpDir:        t.TmpDir,
 			TargetType:    t.Type,
 		}

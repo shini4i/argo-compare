@@ -1182,6 +1182,233 @@ func TestDownloadHelmChart_OCILoginFailure(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to login to OCI registry")
 }
 
+func TestDownloadHelmChart_OCINamespacedChart(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+	cacheDir := t.TempDir()
+
+	mockGlobber := mocks.NewMockGlobber(ctrl)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	deps := ports.HelmDeps{CmdRunner: mockCmdRunner, Globber: mockGlobber}
+
+	var globbed string
+	mockGlobber.EXPECT().Glob(gomock.Any()).DoAndReturn(func(pattern string) ([]string, error) {
+		globbed = pattern
+		return []string{}, nil
+	})
+
+	// Expect the pull ref to keep the namespace, and the namespace to survive as
+	// a cache directory.
+	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+		"pull", "oci://registry.example.com/my-org/my-chart",
+		"--destination", filepath.Join(cacheDir, "cache", "registry.example.com", "my-org"),
+		"--version", "3.3.0").Return("", "", nil)
+
+	req := ports.ChartDownloadRequest{
+		CacheDir:       filepath.Join(cacheDir, "cache"),
+		RepoURL:        "registry.example.com",
+		ChartName:      "my-org/my-chart",
+		TargetRevision: "3.3.0",
+	}
+	err := helmChartProcessor.DownloadHelmChart(context.Background(), deps, req)
+
+	assert.NoError(t, err)
+	assert.Equal(t,
+		filepath.Join(cacheDir, "cache", "registry.example.com", "my-org", "my-chart-3.3.0*.tgz"),
+		globbed,
+		"the tarball helm writes is flat, so the namespace has to be a directory")
+}
+
+// TestDownloadHelmChart_OCINamespacesDoNotShareCache pins that two charts on one
+// host sharing a name and a version are cached apart. A flat cache would let the
+// first pull satisfy the second lookup and render the wrong chart.
+func TestDownloadHelmChart_OCINamespacesDoNotShareCache(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+	cacheDir := t.TempDir()
+
+	mockGlobber := mocks.NewMockGlobber(ctrl)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+	deps := ports.HelmDeps{CmdRunner: mockCmdRunner, Globber: mockGlobber}
+
+	var globbed []string
+	mockGlobber.EXPECT().Glob(gomock.Any()).DoAndReturn(func(pattern string) ([]string, error) {
+		globbed = append(globbed, pattern)
+		return []string{}, nil
+	}).Times(2)
+
+	for _, org := range []string{"team-a", "team-b"} {
+		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+			"pull", "oci://registry.example.com/"+org+"/redis",
+			"--destination", filepath.Join(cacheDir, "cache", "registry.example.com", org),
+			"--version", "1.0.0").Return("", "", nil)
+
+		req := ports.ChartDownloadRequest{
+			CacheDir:       filepath.Join(cacheDir, "cache"),
+			RepoURL:        "registry.example.com",
+			ChartName:      org + "/redis",
+			TargetRevision: "1.0.0",
+		}
+		assert.NoError(t, helmChartProcessor.DownloadHelmChart(context.Background(), deps, req))
+	}
+
+	assert.Equal(t, []string{
+		filepath.Join(cacheDir, "cache", "registry.example.com", "team-a", "redis-1.0.0*.tgz"),
+		filepath.Join(cacheDir, "cache", "registry.example.com", "team-b", "redis-1.0.0*.tgz"),
+	}, globbed, "each namespace needs its own cache entry")
+}
+
+func TestDownloadHelmChart_OCINamespacedRepoURLLogsInToHost(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+	cacheDir := t.TempDir()
+
+	mockGlobber := mocks.NewMockGlobber(ctrl)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+
+	staticProvider := NewStaticCredentialProvider([]models.RepoCredentials{
+		{Url: "registry.example.com/my-org", Username: "robot", Password: "secret"},
+	})
+	deps := ports.HelmDeps{
+		CmdRunner:           mockCmdRunner,
+		Globber:             mockGlobber,
+		CredentialProviders: []ports.CredentialProvider{staticProvider},
+	}
+
+	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{}, nil)
+
+	// Expect helm registry login to receive the host without the namespace.
+	mockCmdRunner.EXPECT().RunWithStdin(gomock.Any(), "secret", "helm",
+		"registry", "login",
+		"registry.example.com",
+		"--username", "robot",
+		"--password-stdin").Return("", "", nil)
+
+	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+		"pull", "oci://registry.example.com/my-org/my-chart",
+		"--destination", gomock.Any(),
+		"--version", "3.3.0").Return("", "", nil)
+
+	req := ports.ChartDownloadRequest{
+		CacheDir:       filepath.Join(cacheDir, "cache"),
+		RepoURL:        "registry.example.com/my-org",
+		ChartName:      "my-chart",
+		TargetRevision: "3.3.0",
+	}
+	err := helmChartProcessor.DownloadHelmChart(context.Background(), deps, req)
+	assert.NoError(t, err)
+}
+
+// TestDownloadHelmChart_OCINamespacedRepoURLUsesHostCredential covers the
+// documented setup: REPO_CREDS_* names the bare host while repoURL carries the
+// namespace. Entries are matched exactly, so the host has to be tried too.
+func TestDownloadHelmChart_OCINamespacedRepoURLUsesHostCredential(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+	cacheDir := t.TempDir()
+
+	mockGlobber := mocks.NewMockGlobber(ctrl)
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
+
+	staticProvider := NewStaticCredentialProvider([]models.RepoCredentials{
+		{Url: "registry.example.com", Username: "robot", Password: "secret"},
+	})
+	deps := ports.HelmDeps{
+		CmdRunner:           mockCmdRunner,
+		Globber:             mockGlobber,
+		CredentialProviders: []ports.CredentialProvider{staticProvider},
+	}
+
+	mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{}, nil)
+
+	mockCmdRunner.EXPECT().RunWithStdin(gomock.Any(), "secret", "helm",
+		"registry", "login",
+		"registry.example.com",
+		"--username", "robot",
+		"--password-stdin").Return("", "", nil)
+
+	mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
+		"pull", "oci://registry.example.com/my-org/my-chart",
+		"--destination", gomock.Any(),
+		"--version", "3.3.0").Return("", "", nil)
+
+	req := ports.ChartDownloadRequest{
+		CacheDir:       filepath.Join(cacheDir, "cache"),
+		RepoURL:        "registry.example.com/my-org",
+		ChartName:      "my-chart",
+		TargetRevision: "3.3.0",
+	}
+	err := helmChartProcessor.DownloadHelmChart(context.Background(), deps, req)
+	assert.NoError(t, err)
+}
+
+// TestDownloadHelmChart_RejectsCachePathEscape pins that a traversal is
+// refused before MkdirAll runs, so nothing is created outside the cache.
+func TestDownloadHelmChart_RejectsCachePathEscape(t *testing.T) {
+	tests := []struct {
+		name      string
+		repoURL   string
+		chartName string
+	}{
+		{name: "chart traversal", repoURL: "registry.example.com", chartName: "../../outside/my-chart"},
+		{name: "repoURL traversal", repoURL: "../../outside", chartName: "my-chart"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+			baseDir := t.TempDir()
+			cacheDir := filepath.Join(baseDir, "cache")
+
+			// No Globber or CmdRunner expectations: the request must be refused
+			// before either is reached.
+			deps := ports.HelmDeps{CmdRunner: mocks.NewMockCmdRunner(ctrl), Globber: mocks.NewMockGlobber(ctrl)}
+
+			err := helmChartProcessor.DownloadHelmChart(context.Background(), deps, ports.ChartDownloadRequest{
+				CacheDir:       cacheDir,
+				RepoURL:        tt.repoURL,
+				ChartName:      tt.chartName,
+				TargetRevision: "1.0.0",
+			})
+
+			assert.ErrorIs(t, err, ErrInvalidChartCachePath)
+			escaped, statErr := os.Stat(filepath.Join(baseDir, "..", "outside"))
+			assert.True(t, os.IsNotExist(statErr), "nothing may be created outside the cache, got %v", escaped)
+		})
+	}
+}
+
+func TestRegistryLoginHost(t *testing.T) {
+	tests := []struct {
+		name    string
+		repoURL string
+		want    string
+	}{
+		{name: "bare host", repoURL: "ghcr.io", want: "ghcr.io"},
+		{name: "host with namespace", repoURL: "ghcr.io/my-org", want: "ghcr.io"},
+		{name: "host with nested namespace", repoURL: "registry.example.com/a/b", want: "registry.example.com"},
+		{name: "host with port", repoURL: "localhost:5000/my-org", want: "localhost:5000"},
+		{name: "empty", repoURL: "", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, registryLoginHost(tt.repoURL))
+		})
+	}
+}
+
 func TestIsOCIRegistry(t *testing.T) {
 	tests := []struct {
 		name string

@@ -156,6 +156,16 @@ func TestCheckSourceValueFilesPresent(t *testing.T) {
 		assert.Contains(t, err.Error(), "missing.yaml")
 	})
 
+	// A source opting out cannot be out of sync with the chart, so the preflight
+	// must not report drift ArgoCD would render through.
+	t.Run("missing value file is fine with ignoreMissingValueFiles", func(t *testing.T) {
+		fs := newFs(t)
+		target := newTarget([]string{"values-prod.yaml"})
+		target.App.Spec.Source.Helm.IgnoreMissingValueFiles = true
+
+		assert.NoError(t, target.checkSourceValueFilesPresent(fs, repoRoot, crossRepoRef))
+	})
+
 	t.Run("multi-source Application with a nil entry is checked without panicking", func(t *testing.T) {
 		fs := newFs(t)
 		require.NoError(t, afero.WriteFile(fs, filepath.Join(chartDir, "values.yaml"), []byte("x: 1"), 0o644))
@@ -210,6 +220,49 @@ func TestCheckSourceValueFilesPresent(t *testing.T) {
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrValueFileMissingFromSource)
 		assert.Contains(t, err.Error(), "missing.yaml")
+	})
+
+	t.Run("flagged source does not excuse an unflagged one in the same Application", func(t *testing.T) {
+		// The skip is per-source: a source setting the flag must not end the scan and
+		// let a later source's genuinely missing values file reach helm unreported.
+		fs := newFs(t)
+		otherChartDir := filepath.Join(repoRoot, "charts", "other")
+		require.NoError(t, fs.MkdirAll(otherChartDir, 0o755))
+
+		app := models.Application{}
+		app.Spec.MultiSource = true
+		app.Spec.Sources = []*models.Source{
+			{Path: "charts/demo", Helm: models.HelmSource{
+				ValueFiles:              []string{"values-prod.yaml"},
+				IgnoreMissingValueFiles: true,
+			}},
+			{Path: "charts/other", Helm: models.HelmSource{ValueFiles: []string{"missing.yaml"}}},
+		}
+		tgt := &Target{Type: TargetTypeSource, App: app}
+
+		err := tgt.checkSourceValueFilesPresent(fs, repoRoot, crossRepoRef)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrValueFileMissingFromSource)
+		assert.Contains(t, err.Error(), "missing.yaml")
+	})
+
+	t.Run("path escaping the repo root is rejected even when ignoreMissingValueFiles is set", func(t *testing.T) {
+		// The flag drops missing values files, not path validation: spec.source.path is
+		// pull-request-author input and is resolved before the source is skipped.
+		fs := newFs(t)
+		app := models.Application{}
+		app.Spec.Source = &models.Source{
+			Path: "../outside",
+			Helm: models.HelmSource{
+				ValueFiles:              []string{"values.yaml"},
+				IgnoreMissingValueFiles: true,
+			},
+		}
+		tgt := &Target{Type: TargetTypeSource, App: app}
+
+		err := tgt.checkSourceValueFilesPresent(fs, repoRoot, crossRepoRef)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "escapes repository root")
 	})
 }
 

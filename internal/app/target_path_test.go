@@ -21,6 +21,7 @@ func TestEffectiveChartName(t *testing.T) {
 		want string
 	}{
 		{"chart only", models.Source{Chart: "foo"}, "foo"},
+		{"namespaced chart", models.Source{Chart: "my-org/foo"}, "foo"},
 		{"path only", models.Source{Path: "charts/foo"}, "foo"},
 		{"trailing slash path", models.Source{Path: "charts/foo/"}, "foo"},
 		{"single-component path", models.Source{Path: "foo"}, "foo"},

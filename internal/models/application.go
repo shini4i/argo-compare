@@ -69,12 +69,18 @@ func (s *Source) Renderable() bool {
 // equivalents). ArgoCD also lets these be overridden by .argocd-source[-<app>].yaml
 // files committed next to the chart, which is how argo-watcher / Argo CD Image
 // Updater record image bumps; see source_overrides.go for that merge.
+//
+// IgnoreMissingValueFiles carries the flag of the same name: ArgoCD drops a
+// valueFiles entry whose file does not exist instead of failing the render,
+// which is what makes an Application listing optional per-environment
+// overrides comparable at all.
 type HelmSource struct {
-	ReleaseName  string                 `yaml:"releaseName,omitempty"`
-	Values       string                 `yaml:"values,omitempty"`
-	ValueFiles   []string               `yaml:"valueFiles,omitempty"`
-	ValuesObject map[string]interface{} `yaml:"valuesObject,omitempty"`
-	Parameters   []HelmParameter        `yaml:"parameters,omitempty"`
+	ReleaseName             string                 `yaml:"releaseName,omitempty"`
+	Values                  string                 `yaml:"values,omitempty"`
+	ValueFiles              []string               `yaml:"valueFiles,omitempty"`
+	ValuesObject            map[string]interface{} `yaml:"valuesObject,omitempty"`
+	Parameters              []HelmParameter        `yaml:"parameters,omitempty"`
+	IgnoreMissingValueFiles bool                   `yaml:"ignoreMissingValueFiles,omitempty"`
 }
 
 // HelmParameter is a single spec.source.helm.parameters entry. ForceString
