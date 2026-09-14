@@ -16,6 +16,7 @@ import (
 	"github.com/shini4i/argo-compare/internal/models"
 	"github.com/shini4i/argo-compare/internal/ports"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -24,28 +25,45 @@ func TestGenerateValuesFile(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	chartName := "ingress-nginx"
-	targetType := "src"
 	values := "fullnameOverride: ingress-nginx\ncontroller:\n  kind: DaemonSet\n  service:\n    externalTrafficPolicy: Local\n    annotations:\n      fancyAnnotation: false\n"
 
-	// Test case 1: Everything works as expected
-	err := helmChartProcessor.GenerateValuesFile(chartName, tmpDir, targetType, values, nil)
+	// Test case 1: the parent directory is created on the way
+	valuesPath := filepath.Join(tmpDir, "values", "src", "a3f91c2e", "ingress-nginx-values.yaml")
+	err := helmChartProcessor.GenerateValuesFile(valuesPath, values, nil)
 	assert.NoError(t, err, "expected no error, got %v", err)
 
 	// Read the generated file
-	generatedValues, err := os.ReadFile(filepath.Join(tmpDir, chartName+"-values-"+targetType+".yaml"))
+	generatedValues, err := os.ReadFile(valuesPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	assert.Equal(t, values, string(generatedValues))
 
-	// Test case 2: Error when creating the file
-	err = helmChartProcessor.GenerateValuesFile(chartName, "/non/existing/path", targetType, values, nil)
+	// Test case 2: Error when the parent directory cannot be created
+	blocker := filepath.Join(tmpDir, "blocker")
+	assert.NoError(t, os.WriteFile(blocker, nil, 0o600))
+	err = helmChartProcessor.GenerateValuesFile(filepath.Join(blocker, "values.yaml"), values, nil)
 	assert.Error(t, err, "expected error, got nil")
+	assert.Contains(t, err.Error(), "failed to create values directory")
 
-	// Test case 3: Error when neither values nor valuesObject is provided
-	err = helmChartProcessor.GenerateValuesFile(chartName, tmpDir, targetType, "", nil)
+	// Test case 3: Error when the parent exists but the file itself cannot be created
+	taken := filepath.Join(tmpDir, "taken")
+	assert.NoError(t, os.MkdirAll(taken, 0o750))
+	err = helmChartProcessor.GenerateValuesFile(taken, values, nil)
+	assert.Error(t, err, "a directory occupying the values path must surface an error")
+	assert.NotContains(t, err.Error(), "failed to create values directory",
+		"case 3 must fail in os.Create, not MkdirAll")
+
+	// Test case 4: valuesObject is marshalled when values is empty
+	objectPath := filepath.Join(tmpDir, "object-values.yaml")
+	require.NoError(t, helmChartProcessor.GenerateValuesFile(objectPath, "", map[string]any{"replicaCount": 2}))
+	marshalled, err := os.ReadFile(objectPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(marshalled), "replicaCount: 2")
+
+	// Test case 5: Error when neither values nor valuesObject is provided
+	err = helmChartProcessor.GenerateValuesFile(filepath.Join(tmpDir, "empty-values.yaml"), "", nil)
 	assert.Error(t, err, "expected error when both values and valuesObject are empty")
 	assert.Contains(t, err.Error(), "either 'values' or 'valuesObject' must be provided")
 }
@@ -379,7 +397,7 @@ func TestExtractHelmChart(t *testing.T) {
 	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
 	baseDir := t.TempDir()
 	expectedChartLocation := filepath.Join(baseDir, "cache")
-	expectedTmpDir := filepath.Join(baseDir, "tmp")
+	expectedExtractDir := filepath.Join(baseDir, "tmp", "charts", "target", "a3f91c2e")
 
 	// Create the mocks
 	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
@@ -390,7 +408,6 @@ func TestExtractHelmChart(t *testing.T) {
 
 	// Test case 1: Single chart file found
 	expectedChartFileName := filepath.Join(baseDir, "charts", "ingress-nginx", "ingress-nginx-3.34.0.tgz")
-	expectedTargetType := "target"
 
 	// Mock the behavior of the globber
 	mockGlobber.EXPECT().Glob(fmt.Sprintf("%s/%s-%s*.tgz", expectedChartLocation, "ingress-nginx", "3.34.0")).Return([]string{expectedChartFileName}, nil)
@@ -400,19 +417,20 @@ func TestExtractHelmChart(t *testing.T) {
 		"xf",
 		expectedChartFileName,
 		"-C",
-		fmt.Sprintf("%s/charts/%s", expectedTmpDir, expectedTargetType),
+		expectedExtractDir,
 	).Return("", "", nil)
 
 	req := ports.ChartExtractRequest{
 		ChartName:     "ingress-nginx",
 		ChartVersion:  "3.34.0",
 		ChartLocation: expectedChartLocation,
-		TmpDir:        expectedTmpDir,
-		TargetType:    expectedTargetType,
+		ExtractDir:    expectedExtractDir,
 	}
 	err := helmChartProcessor.ExtractHelmChart(context.Background(), deps, req)
 
 	assert.NoError(t, err, "expected no error, got %v", err)
+	// tar is mocked, so only the adapter's own MkdirAll can have created this.
+	require.DirExists(t, expectedExtractDir)
 
 	// Test case 2: Multiple chart files found, error expected
 	expectedChartFilesNames := []string{
@@ -426,8 +444,7 @@ func TestExtractHelmChart(t *testing.T) {
 		ChartName:     "sonarqube",
 		ChartVersion:  "4.0.0",
 		ChartLocation: expectedChartLocation,
-		TmpDir:        expectedTmpDir,
-		TargetType:    expectedTargetType,
+		ExtractDir:    expectedExtractDir,
 	}
 	err = helmChartProcessor.ExtractHelmChart(context.Background(), deps, req2)
 	assert.Error(t, err, "expected error, got %v", err)
@@ -438,7 +455,7 @@ func TestExtractHelmChart(t *testing.T) {
 		"xf",
 		expectedChartFileName,
 		"-C",
-		fmt.Sprintf("%s/charts/%s", expectedTmpDir, expectedTargetType),
+		expectedExtractDir,
 	).Return("", "some unexpected error", errors.New("some unexpected error"))
 
 	err = helmChartProcessor.ExtractHelmChart(context.Background(), deps, req)
@@ -469,12 +486,15 @@ func TestRenderAppSource(t *testing.T) {
 		assert.NoError(t, os.WriteFile(inlinePath, []byte("key: value"), 0o644))
 
 		req := ports.ChartRenderRequest{
-			ReleaseName:  "my-release",
-			ChartName:    "my-chart",
-			ChartVersion: "1.2.3",
-			TmpDir:       tmpDir,
-			TargetType:   "src",
-			Namespace:    "my-namespace",
+			ReleaseName:      "my-release",
+			ChartName:        "my-chart",
+			ChartVersion:     "1.2.3",
+			TmpDir:           tmpDir,
+			TargetType:       "src",
+			ChartDir:         fmt.Sprintf("%s/charts/src/my-chart", tmpDir),
+			OutputDir:        fmt.Sprintf("%s/templates/src", tmpDir),
+			InlineValuesFile: filepath.Join(tmpDir, "my-chart-values-src.yaml"),
+			Namespace:        "my-namespace",
 		}
 
 		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
@@ -496,12 +516,15 @@ func TestRenderAppSource(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		req := ports.ChartRenderRequest{
-			ReleaseName:  "my-release",
-			ChartName:    "my-chart",
-			ChartVersion: "1.2.3",
-			TmpDir:       tmpDir,
-			TargetType:   "src",
-			Namespace:    "my-namespace",
+			ReleaseName:      "my-release",
+			ChartName:        "my-chart",
+			ChartVersion:     "1.2.3",
+			TmpDir:           tmpDir,
+			TargetType:       "src",
+			ChartDir:         fmt.Sprintf("%s/charts/src/my-chart", tmpDir),
+			OutputDir:        fmt.Sprintf("%s/templates/src", tmpDir),
+			InlineValuesFile: filepath.Join(tmpDir, "my-chart-values-src.yaml"),
+			Namespace:        "my-namespace",
 		}
 
 		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
@@ -526,12 +549,15 @@ func TestRenderAppSource(t *testing.T) {
 
 		chartDir := fmt.Sprintf("%s/charts/src/my-chart", tmpDir)
 		req := ports.ChartRenderRequest{
-			ReleaseName:  "my-release",
-			ChartName:    "my-chart",
-			ChartVersion: "1.2.3",
-			TmpDir:       tmpDir,
-			TargetType:   "src",
-			Namespace:    "my-namespace",
+			ReleaseName:      "my-release",
+			ChartName:        "my-chart",
+			ChartVersion:     "1.2.3",
+			TmpDir:           tmpDir,
+			TargetType:       "src",
+			ChartDir:         fmt.Sprintf("%s/charts/src/my-chart", tmpDir),
+			OutputDir:        fmt.Sprintf("%s/templates/src", tmpDir),
+			InlineValuesFile: filepath.Join(tmpDir, "my-chart-values-src.yaml"),
+			Namespace:        "my-namespace",
 			ValueFiles: []string{
 				fmt.Sprintf("%s/values.yaml", chartDir),
 				fmt.Sprintf("%s/environment.yaml", chartDir),
@@ -562,13 +588,16 @@ func TestRenderAppSource(t *testing.T) {
 		tmpDir := t.TempDir()
 		chartDir := fmt.Sprintf("%s/charts/src/my-chart", tmpDir)
 		req := ports.ChartRenderRequest{
-			ReleaseName:  "my-release",
-			ChartName:    "my-chart",
-			ChartVersion: "1.2.3",
-			TmpDir:       tmpDir,
-			TargetType:   "src",
-			Namespace:    "my-namespace",
-			ValueFiles:   []string{fmt.Sprintf("%s/production.yaml", chartDir)},
+			ReleaseName:      "my-release",
+			ChartName:        "my-chart",
+			ChartVersion:     "1.2.3",
+			TmpDir:           tmpDir,
+			TargetType:       "src",
+			ChartDir:         fmt.Sprintf("%s/charts/src/my-chart", tmpDir),
+			OutputDir:        fmt.Sprintf("%s/templates/src", tmpDir),
+			InlineValuesFile: filepath.Join(tmpDir, "my-chart-values-src.yaml"),
+			Namespace:        "my-namespace",
+			ValueFiles:       []string{fmt.Sprintf("%s/production.yaml", chartDir)},
 		}
 
 		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
@@ -594,12 +623,15 @@ func TestRenderAppSource(t *testing.T) {
 		chartDir := fmt.Sprintf("%s/charts/src/my-chart", tmpDir)
 		refFile := fmt.Sprintf("%s/refs/src/values/envs/prod/values.yaml", tmpDir)
 		req := ports.ChartRenderRequest{
-			ReleaseName: "my-release",
-			ChartName:   "my-chart",
-			TmpDir:      tmpDir,
-			TargetType:  "src",
-			Namespace:   "my-namespace",
-			ValueFiles:  []string{refFile},
+			ReleaseName:      "my-release",
+			ChartName:        "my-chart",
+			TmpDir:           tmpDir,
+			TargetType:       "src",
+			ChartDir:         fmt.Sprintf("%s/charts/src/my-chart", tmpDir),
+			OutputDir:        fmt.Sprintf("%s/templates/src", tmpDir),
+			InlineValuesFile: filepath.Join(tmpDir, "my-chart-values-src.yaml"),
+			Namespace:        "my-namespace",
+			ValueFiles:       []string{refFile},
 		}
 
 		mockCmdRunner.EXPECT().Run(gomock.Any(), "helm",
@@ -621,12 +653,15 @@ func TestRenderAppSource(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		req := ports.ChartRenderRequest{
-			ReleaseName:  "my-release",
-			ChartName:    "my-chart",
-			ChartVersion: "1.2.3",
-			TmpDir:       tmpDir,
-			TargetType:   "src",
-			Namespace:    "my-namespace",
+			ReleaseName:      "my-release",
+			ChartName:        "my-chart",
+			ChartVersion:     "1.2.3",
+			TmpDir:           tmpDir,
+			TargetType:       "src",
+			ChartDir:         fmt.Sprintf("%s/charts/src/my-chart", tmpDir),
+			OutputDir:        fmt.Sprintf("%s/templates/src", tmpDir),
+			InlineValuesFile: filepath.Join(tmpDir, "my-chart-values-src.yaml"),
+			Namespace:        "my-namespace",
 			Parameters: []models.HelmParameter{
 				{Name: "image.repository", Value: "registry.example.com/app", ForceString: false},
 				{Name: "image.tag", Value: "2.0.0", ForceString: true},
@@ -654,12 +689,15 @@ func TestRenderAppSource(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		req := ports.ChartRenderRequest{
-			ReleaseName:  "my-release",
-			ChartName:    "my-chart",
-			ChartVersion: "1.2.3",
-			TmpDir:       tmpDir,
-			TargetType:   "src",
-			Namespace:    "my-namespace",
+			ReleaseName:      "my-release",
+			ChartName:        "my-chart",
+			ChartVersion:     "1.2.3",
+			TmpDir:           tmpDir,
+			TargetType:       "src",
+			ChartDir:         fmt.Sprintf("%s/charts/src/my-chart", tmpDir),
+			OutputDir:        fmt.Sprintf("%s/templates/src", tmpDir),
+			InlineValuesFile: filepath.Join(tmpDir, "my-chart-values-src.yaml"),
+			Namespace:        "my-namespace",
 			Parameters: []models.HelmParameter{
 				{Name: "nodeSelector", Value: "a=b,c=d"},
 			},
@@ -685,12 +723,15 @@ func TestRenderAppSource(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		req := ports.ChartRenderRequest{
-			ReleaseName:  "my-release",
-			ChartName:    "my-chart",
-			ChartVersion: "1.2.3",
-			TmpDir:       tmpDir,
-			TargetType:   "src",
-			Namespace:    "my-namespace",
+			ReleaseName:      "my-release",
+			ChartName:        "my-chart",
+			ChartVersion:     "1.2.3",
+			TmpDir:           tmpDir,
+			TargetType:       "src",
+			ChartDir:         fmt.Sprintf("%s/charts/src/my-chart", tmpDir),
+			OutputDir:        fmt.Sprintf("%s/templates/src", tmpDir),
+			InlineValuesFile: filepath.Join(tmpDir, "my-chart-values-src.yaml"),
+			Namespace:        "my-namespace",
 			Parameters: []models.HelmParameter{
 				{Name: "annotations.note", Value: `a\b{x,y}`},
 			},
@@ -718,12 +759,15 @@ func TestRenderAppSource(t *testing.T) {
 		tmpDir := t.TempDir()
 		for _, badName := range []string{"a=b", "x,y", "k{v}", `a\b`} {
 			req := ports.ChartRenderRequest{
-				ReleaseName: "my-release",
-				ChartName:   "my-chart",
-				TmpDir:      tmpDir,
-				TargetType:  "src",
-				Namespace:   "ns",
-				Parameters:  []models.HelmParameter{{Name: badName, Value: "v"}},
+				ReleaseName:      "my-release",
+				ChartName:        "my-chart",
+				TmpDir:           tmpDir,
+				TargetType:       "src",
+				ChartDir:         fmt.Sprintf("%s/charts/src/my-chart", tmpDir),
+				OutputDir:        fmt.Sprintf("%s/templates/src", tmpDir),
+				InlineValuesFile: filepath.Join(tmpDir, "my-chart-values-src.yaml"),
+				Namespace:        "ns",
+				Parameters:       []models.HelmParameter{{Name: badName, Value: "v"}},
 			}
 			err := helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req)
 			assert.Error(t, err, "name %q must be rejected", badName)
@@ -738,12 +782,15 @@ func TestRenderAppSource(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		req := ports.ChartRenderRequest{
-			ReleaseName:  "my-release",
-			ChartName:    "my-chart",
-			ChartVersion: "1.2.3",
-			TmpDir:       tmpDir,
-			TargetType:   "src",
-			Namespace:    "my-namespace",
+			ReleaseName:      "my-release",
+			ChartName:        "my-chart",
+			ChartVersion:     "1.2.3",
+			TmpDir:           tmpDir,
+			TargetType:       "src",
+			ChartDir:         fmt.Sprintf("%s/charts/src/my-chart", tmpDir),
+			OutputDir:        fmt.Sprintf("%s/templates/src", tmpDir),
+			InlineValuesFile: filepath.Join(tmpDir, "my-chart-values-src.yaml"),
+			Namespace:        "my-namespace",
 		}
 
 		osErr := &exec.ExitError{ProcessState: &os.ProcessState{}}
@@ -806,12 +853,15 @@ func TestRenderAppSource_ValueFileValidation(t *testing.T) {
 
 	for _, vf := range []string{"../escape.yaml", "/etc/passwd", ""} {
 		req := ports.ChartRenderRequest{
-			ReleaseName: "my-release",
-			ChartName:   "my-chart",
-			TmpDir:      tmpDir,
-			TargetType:  "src",
-			Namespace:   "my-namespace",
-			ValueFiles:  []string{vf},
+			ReleaseName:      "my-release",
+			ChartName:        "my-chart",
+			TmpDir:           tmpDir,
+			TargetType:       "src",
+			ChartDir:         fmt.Sprintf("%s/charts/src/my-chart", tmpDir),
+			OutputDir:        fmt.Sprintf("%s/templates/src", tmpDir),
+			InlineValuesFile: filepath.Join(tmpDir, "my-chart-values-src.yaml"),
+			Namespace:        "my-namespace",
+			ValueFiles:       []string{vf},
 		}
 		err := helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req)
 		assert.ErrorIs(t, err, ErrInvalidValueFile, "expected rejection of valueFile %q", vf)

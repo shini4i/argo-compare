@@ -107,6 +107,12 @@ cached shallow clone when it points elsewhere. `ref_sources.go` turns each entry
 into an absolute path, and the renderer requires every values file to sit inside
 the run's temporary directory.
 
+Each renderable source gets a directory of its own inside the leg, named by
+`sourceSlot` in `internal/app/source_slot.go` from the source's `repoURL`, its
+`chart` or `path`, and its `helm.releaseName`. `targetRevision` is excluded so
+the two legs agree on the name; without that separation two sources sharing a
+chart name would extract, render and write their values over one another.
+
 Comment publication is decoupled from it: a `commentCollector` appends each
 comparison to `App.commentSections`, and `Run` publishes the batch as one
 comment once every comparison has finished (`internal/app/app.go`). The

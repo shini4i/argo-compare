@@ -86,38 +86,44 @@ type ChartDownloadRequest struct {
 }
 
 // ChartExtractRequest contains the parameters for extracting a Helm chart.
+// ChartName locates the cached tarball; ExtractDir is where it is unpacked,
+// and the tarball's own top-level directory appears beneath it.
 type ChartExtractRequest struct {
 	ChartName     string
 	ChartVersion  string
 	ChartLocation string
-	TmpDir        string
-	TargetType    string
+	ExtractDir    string
 }
 
 // ChartRenderRequest contains the parameters for rendering a Helm chart.
-// ValueFiles lists absolute, caller-resolved paths from helm.valueFiles, each
-// required to sit inside TmpDir. They are applied in order, before inline
-// values from Application.spec.source.helm.values / valuesObject.
-//
-// Parameters carries the fully-resolved spec.source.helm.parameters (merged
-// with any .argocd-source override files). They render as helm `--set` /
-// `--set-string` flags, which take precedence over all value files per ArgoCD's
-// ordering (parameters > valuesObject > values > valueFiles).
+// ChartDir, OutputDir and InlineValuesFile are caller-owned paths; TmpDir is
+// only the containment root every ValueFiles entry must sit inside. ArgoCD's
+// precedence holds: parameters > InlineValuesFile > ValueFiles.
 type ChartRenderRequest struct {
 	ReleaseName  string
 	ChartName    string
 	ChartVersion string
-	TmpDir       string
-	TargetType   string
-	Namespace    string
-	ValueFiles   []string
-	Parameters   []models.HelmParameter
+	ChartDir     string
+	OutputDir    string
+	// InlineValuesFile holds helm.values / helm.valuesObject, and is applied
+	// only when it exists: a source carrying neither has none generated.
+	InlineValuesFile string
+	TmpDir           string
+	TargetType       string
+	Namespace        string
+	// ValueFiles are absolute, caller-resolved helm.valueFiles entries applied
+	// in order. Parameters are spec.source.helm.parameters merged with any
+	// .argocd-source override files, rendered as `--set` / `--set-string`.
+	ValueFiles []string
+	Parameters []models.HelmParameter
 }
 
 // HelmChartsProcessor coordinates the Helm chart lifecycle required for comparisons.
 // Methods that perform I/O operations accept a context for cancellation and timeout control.
 type HelmChartsProcessor interface {
-	GenerateValuesFile(chartName, tmpDir, targetType, values string, valuesObject map[string]interface{}) error
+	// GenerateValuesFile writes helm.values / helm.valuesObject to path,
+	// creating its parent directory.
+	GenerateValuesFile(path, values string, valuesObject map[string]interface{}) error
 	DownloadHelmChart(ctx context.Context, deps HelmDeps, req ChartDownloadRequest) error
 	ExtractHelmChart(ctx context.Context, deps HelmDeps, req ChartExtractRequest) error
 	RenderAppSource(ctx context.Context, cmdRunner CmdRunner, req ChartRenderRequest) error

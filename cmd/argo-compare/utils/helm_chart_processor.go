@@ -122,12 +122,15 @@ type RealHelmChartProcessor struct {
 	Log *logger.Logger
 }
 
-// GenerateValuesFile creates a Helm values file for a given chart in a specified directory.
-// It takes a chart name, a temporary directory for storing the file, the target type categorizing the application,
-// and the content of the values file in string format.
-// The function first attempts to create the file and writes the provided values content to disk.
-func (g RealHelmChartProcessor) GenerateValuesFile(chartName, tmpDir, targetType, values string, valuesObject map[string]any) error {
-	yamlFile, err := os.Create(fmt.Sprintf("%s/%s-values-%s.yaml", tmpDir, chartName, targetType))
+// GenerateValuesFile writes a source's inline Helm values to path, taking them
+// from values when set and otherwise marshalling valuesObject. Its parent
+// directory is created; supplying neither form is an error.
+func (g RealHelmChartProcessor) GenerateValuesFile(path, values string, valuesObject map[string]any) error {
+	if err := os.MkdirAll(filepath.Dir(path), workDirPerm); err != nil {
+		return fmt.Errorf("failed to create values directory for %q: %w", path, err)
+	}
+
+	yamlFile, err := os.Create(path) // #nosec G304 -- path is composed by the renderer from the run's temporary directory
 	if err != nil {
 		return err
 	}
@@ -174,7 +177,7 @@ func (g RealHelmChartProcessor) DownloadHelmChart(ctx context.Context, deps port
 		return err
 	}
 
-	if err := os.MkdirAll(chartLocation, 0750); err != nil {
+	if err := os.MkdirAll(chartLocation, workDirPerm); err != nil {
 		return fmt.Errorf("failed to create chart cache directory %q: %w", chartLocation, err)
 	}
 
@@ -289,6 +292,10 @@ func (g RealHelmChartProcessor) pullOCIChart(ctx context.Context, cmdRunner port
 // pullRepoName is the repository entry name used in the temporary
 // repositories.yaml generated for authenticated HTTP chart pulls.
 const pullRepoName = "argo-compare-repo"
+
+// workDirPerm is the mode of every directory this file creates under the
+// chart cache and the run's temporary directory.
+const workDirPerm = 0o750
 
 // Helm CLI flag names shared by multiple helm invocations in this file.
 const (
@@ -603,14 +610,13 @@ func writeRepoEntriesConfig(scratchDir string, entries []helmRepoEntry) (string,
 // If multiple files matching the pattern are found, an error is returned.
 // The context can be used to cancel the extraction or set a timeout.
 func (g RealHelmChartProcessor) ExtractHelmChart(ctx context.Context, deps ports.HelmDeps, req ports.ChartExtractRequest) error {
-	g.Log.Debugf("Extracting [%s] chart version [%s] to %s/charts/%s...",
+	g.Log.Debugf("Extracting [%s] chart version [%s] to %s...",
 		ui.Cyan(req.ChartName),
 		ui.Cyan(req.ChartVersion),
-		req.TmpDir, req.TargetType)
+		req.ExtractDir)
 
-	path := fmt.Sprintf("%s/charts/%s/%s", req.TmpDir, req.TargetType, req.ChartName)
-	if err := os.MkdirAll(path, 0750); err != nil {
-		return fmt.Errorf("failed to create chart extraction directory %q: %w", path, err)
+	if err := os.MkdirAll(req.ExtractDir, workDirPerm); err != nil {
+		return fmt.Errorf("failed to create chart extraction directory %q: %w", req.ExtractDir, err)
 	}
 
 	searchPattern := fmt.Sprintf("%s/%s-%s*.tgz",
@@ -636,7 +642,7 @@ func (g RealHelmChartProcessor) ExtractHelmChart(ctx context.Context, deps ports
 	stdout, stderr, err := deps.CmdRunner.Run(ctx, "tar",
 		"xf",
 		chartFileName[0],
-		"-C", fmt.Sprintf("%s/charts/%s", req.TmpDir, req.TargetType),
+		"-C", req.ExtractDir,
 	)
 
 	g.logOutput(stdout, stderr)
@@ -660,18 +666,17 @@ func (g RealHelmChartProcessor) ExtractHelmChart(ctx context.Context, deps ports
 //
 // The context can be used to cancel the rendering or set a timeout.
 func (g RealHelmChartProcessor) RenderAppSource(ctx context.Context, cmdRunner ports.CmdRunner, req ports.ChartRenderRequest) error {
-	g.Log.Debugf("Rendering [%s] chart's version [%s] templates using release name [%s]",
+	g.Log.Debugf("Rendering [%s] chart's version [%s] templates for [%s] using release name [%s]",
 		ui.Cyan(req.ChartName),
 		ui.Cyan(req.ChartVersion),
+		ui.Cyan(req.TargetType),
 		ui.Cyan(req.ReleaseName))
-
-	chartDir := fmt.Sprintf("%s/charts/%s/%s", req.TmpDir, req.TargetType, req.ChartName)
 
 	args := []string{
 		"template",
 		"--release-name", req.ReleaseName,
-		chartDir,
-		"--output-dir", fmt.Sprintf("%s/templates/%s", req.TmpDir, req.TargetType),
+		req.ChartDir,
+		"--output-dir", req.OutputDir,
 	}
 
 	for _, vf := range req.ValueFiles {
@@ -681,12 +686,11 @@ func (g RealHelmChartProcessor) RenderAppSource(ctx context.Context, cmdRunner p
 		args = append(args, "--values", vf)
 	}
 
-	inlineValuesPath := fmt.Sprintf("%s/%s-values-%s.yaml", req.TmpDir, req.ChartName, req.TargetType)
-	if _, err := os.Stat(inlineValuesPath); err == nil || !errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(req.InlineValuesFile); err == nil || !errors.Is(err, fs.ErrNotExist) {
 		if err != nil {
-			return fmt.Errorf("check inline values file %q: %w", inlineValuesPath, err)
+			return fmt.Errorf("check inline values file %q: %w", req.InlineValuesFile, err)
 		}
-		args = append(args, "--values", inlineValuesPath)
+		args = append(args, "--values", req.InlineValuesFile)
 	}
 
 	for _, p := range req.Parameters {

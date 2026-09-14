@@ -124,20 +124,15 @@ func parseApplicationSetContent(yamlContent []byte) (*models.ApplicationSet, err
 }
 
 // generateValuesFiles materializes Helm values files so templates can be rendered.
-// The chart name used for the values file derives from effectiveChartName so
-// registry-based (chart) and Git-path-based (path) sources both produce
-// stably-named values files for the downstream render step to find.
-//
-// Sources that declare no inline values (no helm.values and no helm.valuesObject)
-// skip the generation entirely — the renderer detects the missing file and
-// omits the corresponding --values flag. This supports Applications that rely
-// solely on helm.valueFiles or on the chart's own defaults.
+// Each source writes to inlineValuesFileFor, the path renderAppSources hands Helm.
+// A source declaring neither helm.values nor helm.valuesObject writes nothing;
+// the renderer then omits its --values flag rather than failing on the path.
 func (t *Target) generateValuesFiles() error {
 	for _, source := range t.renderableSources() {
 		if !hasInlineValues(source) {
 			continue
 		}
-		if err := t.HelmProcessor.GenerateValuesFile(effectiveChartName(source), t.TmpDir, t.Type, source.Helm.Values, source.Helm.ValuesObject); err != nil {
+		if err := t.HelmProcessor.GenerateValuesFile(t.inlineValuesFileFor(source), source.Helm.Values, source.Helm.ValuesObject); err != nil {
 			return err
 		}
 	}
@@ -193,8 +188,7 @@ func (t *Target) extractCharts(ctx context.Context) error {
 			ChartName:     effectiveChartName(source),
 			ChartVersion:  source.TargetRevision,
 			ChartLocation: filepath.Join(t.CacheDir, repoURL, path.Dir(source.Chart)),
-			TmpDir:        t.TmpDir,
-			TargetType:    t.Type,
+			ExtractDir:    t.sourceDirFor(source),
 		}
 		if err := t.HelmProcessor.ExtractHelmChart(ctx, deps, req); err != nil {
 			return err
@@ -221,14 +215,17 @@ func (t *Target) renderAppSources(ctx context.Context) error {
 			return err
 		}
 		req := ports.ChartRenderRequest{
-			ReleaseName:  releaseName,
-			ChartName:    effectiveChartName(source),
-			ChartVersion: source.TargetRevision,
-			TmpDir:       t.TmpDir,
-			TargetType:   t.Type,
-			Namespace:    t.App.Spec.Destination.Namespace,
-			ValueFiles:   valueFiles,
-			Parameters:   parameters,
+			ReleaseName:      releaseName,
+			ChartName:        effectiveChartName(source),
+			ChartVersion:     source.TargetRevision,
+			ChartDir:         t.chartDirFor(source),
+			OutputDir:        t.outputDirFor(source),
+			InlineValuesFile: t.inlineValuesFileFor(source),
+			TmpDir:           t.TmpDir,
+			TargetType:       t.Type,
+			Namespace:        t.App.Spec.Destination.Namespace,
+			ValueFiles:       valueFiles,
+			Parameters:       parameters,
 		}
 		if err := t.HelmProcessor.RenderAppSource(ctx, t.CmdRunner, req); err != nil {
 			return err
@@ -240,9 +237,7 @@ func (t *Target) renderAppSources(ctx context.Context) error {
 // resolveSourceParameters merges a source's inline helm.parameters with any
 // .argocd-source override files materialized alongside its chart, so image
 // bumps written by argo-watcher / Argo CD Image Updater are reflected in the
-// rendered diff. The chart directory mirrors the layout produced by chart
-// materialization and extraction (TmpDir/charts/<Type>/<ChartName>).
+// rendered diff.
 func (t *Target) resolveSourceParameters(source *models.Source) ([]models.HelmParameter, error) {
-	chartDir := filepath.Join(t.TmpDir, "charts", t.Type, effectiveChartName(source))
-	return resolveHelmParameters(t.FileReader, source, chartDir, t.App.Metadata.Name)
+	return resolveHelmParameters(t.FileReader, source, t.chartDirFor(source), t.App.Metadata.Name)
 }

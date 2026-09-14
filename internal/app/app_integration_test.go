@@ -228,15 +228,14 @@ func (s *stubHelmProcessor) callCount(call string) int {
 	return s.calls[call]
 }
 
-func (s *stubHelmProcessor) GenerateValuesFile(chartName, tmpDir, targetType, values string, valuesObject map[string]interface{}) error {
-	s.record("GenerateValuesFile", tmpDir)
-	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+func (s *stubHelmProcessor) GenerateValuesFile(path, values string, valuesObject map[string]interface{}) error {
+	s.record("GenerateValuesFile", filepath.Dir(path))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	if values == "" && valuesObject == nil {
 		values = "replicaCount: 1\n"
 	}
-	path := filepath.Join(tmpDir, fmt.Sprintf("%s-values-%s.yaml", chartName, targetType))
 	return os.WriteFile(path, []byte(values), 0o600)
 }
 
@@ -246,8 +245,9 @@ func (s *stubHelmProcessor) DownloadHelmChart(_ context.Context, _ ports.HelmDep
 }
 
 func (s *stubHelmProcessor) ExtractHelmChart(_ context.Context, _ ports.HelmDeps, req ports.ChartExtractRequest) error {
-	s.record("ExtractHelmChart", req.TmpDir)
-	dir := filepath.Join(req.TmpDir, "charts", req.TargetType, req.ChartName)
+	s.record("ExtractHelmChart", req.ExtractDir)
+	// Mirrors tar: the tarball's own top-level directory appears under ExtractDir.
+	dir := filepath.Join(req.ExtractDir, req.ChartName)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -256,12 +256,18 @@ func (s *stubHelmProcessor) ExtractHelmChart(_ context.Context, _ ports.HelmDeps
 }
 
 func (s *stubHelmProcessor) RenderAppSource(_ context.Context, _ ports.CmdRunner, req ports.ChartRenderRequest) error {
-	s.record("RenderAppSource", req.TmpDir)
+	s.record("RenderAppSource", req.OutputDir)
 	s.recordRender(req)
 	if err := s.renderErrFor[req.ReleaseName]; err != nil {
 		return err
 	}
-	dir := filepath.Join(req.TmpDir, "templates", req.TargetType, req.ChartName)
+	// helm reads the chart from ChartDir, so a layout where extraction and
+	// rendering disagree must fail here rather than render from nothing.
+	if _, err := os.Stat(req.ChartDir); err != nil {
+		return fmt.Errorf("chart directory %q was never materialized: %w", req.ChartDir, err)
+	}
+	// Mirrors helm --output-dir, which nests the release and chart beneath it.
+	dir := filepath.Join(req.OutputDir, req.ReleaseName, req.ChartName)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}

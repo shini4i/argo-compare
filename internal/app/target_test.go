@@ -23,12 +23,15 @@ type recordingHelmProcessor struct {
 	downloadRequests    []ports.ChartDownloadRequest
 	downloadDeps        []ports.HelmDeps
 	extractCalls        int
+	extractRequests     []ports.ChartExtractRequest
 	renderCalls         int
 	renderRequests      []ports.ChartRenderRequest
+	generateValuesPaths []string
 }
 
-func (r *recordingHelmProcessor) GenerateValuesFile(chartName, tmpDir, targetType, values string, valuesObject map[string]interface{}) error {
+func (r *recordingHelmProcessor) GenerateValuesFile(path, values string, valuesObject map[string]interface{}) error {
 	r.generateValuesCalls++
+	r.generateValuesPaths = append(r.generateValuesPaths, path)
 	return nil
 }
 
@@ -39,8 +42,9 @@ func (r *recordingHelmProcessor) DownloadHelmChart(_ context.Context, deps ports
 	return nil
 }
 
-func (r *recordingHelmProcessor) ExtractHelmChart(_ context.Context, _ ports.HelmDeps, _ ports.ChartExtractRequest) error {
+func (r *recordingHelmProcessor) ExtractHelmChart(_ context.Context, _ ports.HelmDeps, req ports.ChartExtractRequest) error {
 	r.extractCalls++
+	r.extractRequests = append(r.extractRequests, req)
 	return nil
 }
 
@@ -265,27 +269,8 @@ helm:
 func TestTargetMultiSourcePropagatesParameters(t *testing.T) {
 	processor := &recordingHelmProcessor{}
 
-	// Two distinct chart directories for the two path sources.
-	reader := mapFileReader{files: map[string][]byte{
-		filepath.Join("tmp", "charts", "src", "chart-a", ".argocd-source-demo.yaml"): []byte(`
-helm:
-  parameters:
-    - name: image.tag
-      value: "a-override"
-      forceString: true
-`),
-		filepath.Join("tmp", "charts", "src", "chart-b", ".argocd-source-demo.yaml"): []byte(`
-helm:
-  parameters:
-    - name: image.tag
-      value: "b-override"
-      forceString: true
-`),
-	}}
-
 	target := Target{
 		CmdRunner:     portstest.NoopCmdRunner{},
-		FileReader:    reader,
 		HelmProcessor: processor,
 		Log:           logger.New("target-test"),
 		TmpDir:        "tmp",
@@ -324,6 +309,24 @@ helm:
 			},
 		},
 	}
+
+	// Each source's override file sits under the chart directory of that source.
+	target.FileReader = mapFileReader{files: map[string][]byte{
+		filepath.Join(target.chartDirFor(target.App.Spec.Sources[0]), ".argocd-source-demo.yaml"): []byte(`
+helm:
+  parameters:
+    - name: image.tag
+      value: "a-override"
+      forceString: true
+`),
+		filepath.Join(target.chartDirFor(target.App.Spec.Sources[1]), ".argocd-source-demo.yaml"): []byte(`
+helm:
+  parameters:
+    - name: image.tag
+      value: "b-override"
+      forceString: true
+`),
+	}}
 
 	require.NoError(t, target.renderAppSources(context.Background()))
 	require.Len(t, processor.renderRequests, 2)
@@ -417,8 +420,8 @@ func TestTargetMultiSourcePropagatesValueFiles(t *testing.T) {
 
 	require.NoError(t, target.renderAppSources(context.Background()))
 	require.Len(t, processor.renderRequests, 2)
-	chartA := filepath.Join("/run", "charts", TargetTypeSource, "chartA")
-	chartB := filepath.Join("/run", "charts", TargetTypeSource, "chartB")
+	chartA := target.chartDirFor(target.App.Spec.Sources[0])
+	chartB := target.chartDirFor(target.App.Spec.Sources[1])
 	assert.Equal(t, []string{filepath.Join(chartA, "a-values.yaml")}, processor.renderRequests[0].ValueFiles)
 	assert.Equal(t, []string{
 		filepath.Join(chartB, "b-values.yaml"),
