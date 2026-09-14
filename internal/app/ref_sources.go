@@ -102,12 +102,6 @@ func (t *Target) refDir(refName string) string {
 	return filepath.Join(t.TmpDir, "refs", t.Type, refName)
 }
 
-// chartDirFor is the directory a renderable source's chart is materialized
-// into, matching the layout produced by chart extraction.
-func (t *Target) chartDirFor(source *models.Source) string {
-	return filepath.Join(t.TmpDir, "charts", t.Type, effectiveChartName(source))
-}
-
 // resolveValueFiles turns a source's helm.valueFiles into absolute paths,
 // preserving order because Helm lets a later file override an earlier one.
 // Plain entries resolve against the chart directory; "$ref/path" entries

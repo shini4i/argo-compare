@@ -79,7 +79,7 @@ func TestResolveValueFilesMixesChartAndRefEntriesInOrder(t *testing.T) {
 	resolved, err := target.resolveValueFiles(target.App.Spec.Sources[0])
 
 	require.NoError(t, err)
-	chartDir := filepath.Join("/tmp/run", "charts", TargetTypeSource, "prometheus")
+	chartDir := target.chartDirFor(target.App.Spec.Sources[0])
 	refDir := filepath.Join("/tmp/run", "refs", TargetTypeSource, "values")
 	assert.Equal(t, []string{
 		filepath.Join(chartDir, "values.yaml"),
@@ -363,7 +363,7 @@ func ignoreTarget(t *testing.T, valueFiles []string, ignoreMissing bool) *Target
 func TestResolveValueFilesSkipsMissingWhenIgnored(t *testing.T) {
 	target := ignoreTarget(t, []string{"values.yaml", "$values/envs/prod/values.yaml"}, true)
 
-	chartDir := filepath.Join(target.TmpDir, "charts", TargetTypeSource, "prometheus")
+	chartDir := target.chartDirFor(target.App.Spec.Sources[0])
 	require.NoError(t, os.MkdirAll(chartDir, 0o755))
 	present := filepath.Join(chartDir, "values.yaml")
 	require.NoError(t, os.WriteFile(present, []byte("{}\n"), 0o600))
@@ -385,7 +385,7 @@ func TestResolveValueFilesKeepsMissingWithoutFlag(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{
-		filepath.Join(target.TmpDir, "charts", TargetTypeSource, "prometheus", "values.yaml"),
+		filepath.Join(target.chartDirFor(target.App.Spec.Sources[0]), "values.yaml"),
 	}, resolved)
 }
 

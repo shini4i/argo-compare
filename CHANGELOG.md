@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Two sources of one multi-source Application that share a chart name no longer overwrite each other. Each source now materializes its chart, its inline values file and its rendered manifests under a directory keyed to its own `repoURL`, chart, path and `releaseName`, so `redis` pulled from two registries renders from the chart each source declared instead of from whichever landed last — previously the diff silently reported the wrong chart for one of them. Rendered manifests of a multi-source Application therefore gain that directory in the paths the diff names. Two sources sharing all four are now refused: nothing else — `targetRevision` or values — tells them apart on disk.
 - OCI charts whose reference carries a repository namespace are now resolved, whichever side of the `repoURL`/`chart` boundary it sits on. The cache lookup previously searched a directory nothing creates, so the download failed with `no such file or directory` before helm ran, and the namespace is no longer passed through as part of the registry host.
 - Applications and ApplicationSets committed as `*.yml` are now compared. Only `*.yaml` was picked up before, so editing a `*.yml` manifest reported nothing and exited clean, with no log line to explain why.
 - Several chart directories anchored to the same Application are now compared once rather than once per anchor, which previously repeated the whole diff and posted a duplicate merge request comment for it.

@@ -69,12 +69,15 @@ func (t *Target) PathBased() bool {
 	return true
 }
 
-// ClassifySources rejects multi-source Applications that mix registry and
-// path sources. Single-source Applications and uniform multi-source
-// Applications return nil.
+// ClassifySources rejects multi-source Applications the renderer cannot keep
+// apart: those mixing registry and path sources, and those whose sources would
+// share a materialization directory.
 func (t *Target) ClassifySources() error {
 	if !t.App.Spec.MultiSource {
 		return nil
+	}
+	if err := t.checkDistinctSources(); err != nil {
+		return err
 	}
 	var (
 		seenChart bool
@@ -98,10 +101,10 @@ func (t *Target) ClassifySources() error {
 }
 
 // MaterializeChartFromWorkingTree copies the chart directory referenced by each
-// path-based source from the local working tree into the same on-disk layout
-// the registry pipeline produces (TmpDir/charts/<TargetType>/<ChartName>). It
-// is only meaningful for source-side rendering (t.Type == TargetTypeSource);
-// the destination side reads from a Git tree via MaterializeChartFromTree.
+// path-based source from the local working tree into chartDirFor(src), the
+// layout the registry pipeline produces. It is only meaningful for source-side
+// rendering (t.Type == TargetTypeSource); the destination side reads from a
+// Git tree via MaterializeChartFromTree.
 //
 // spec.source.path is treated as untrusted (a malicious or misconfigured
 // Application can set it to "../../etc" or an absolute path); resolveRepoPath
@@ -117,7 +120,7 @@ func (t *Target) MaterializeChartFromWorkingTree(ctx context.Context, fs afero.F
 		if err != nil {
 			return fmt.Errorf("materialize chart %q from working tree: %w", src.Path, err)
 		}
-		to := filepath.Join(t.TmpDir, "charts", t.Type, effectiveChartName(src))
+		to := t.chartDirFor(src)
 		if err := copyDirOnDisk(fs, from, to); err != nil {
 			return fmt.Errorf("materialize chart %q from working tree: %w", src.Path, err)
 		}
@@ -145,9 +148,9 @@ func resolveRepoPath(repoRoot, rel string) (string, error) {
 }
 
 // MaterializeChartFromTree extracts the chart directory referenced by each
-// path-based source from tree into TmpDir/charts/<TargetType>/<ChartName>.
-// It is the destination-side counterpart of MaterializeChartFromWorkingTree
-// and uses MaterializeTreeDir under the hood for the actual walk.
+// path-based source from tree into chartDirFor(src). It is the
+// destination-side counterpart of MaterializeChartFromWorkingTree and uses
+// MaterializeTreeDir under the hood for the actual walk.
 //
 // A source whose path is absent from tree yields ErrChartPathNotInTree (wrapped
 // with the offending path) rather than go-git's opaque ErrDirectoryNotFound, so
@@ -155,7 +158,7 @@ func resolveRepoPath(repoRoot, rel string) (string, error) {
 // Application instead of failing the run.
 func (t *Target) MaterializeChartFromTree(ctx context.Context, fs afero.Fs, tree *object.Tree) error {
 	for _, src := range t.pathSources() {
-		dest := filepath.Join(t.TmpDir, "charts", t.Type, effectiveChartName(src))
+		dest := t.chartDirFor(src)
 		if err := MaterializeTreeDir(ctx, fs, tree, src.Path, dest); err != nil {
 			if errors.Is(err, object.ErrDirectoryNotFound) {
 				return fmt.Errorf("%w: %s", ErrChartPathNotInTree, src.Path)
@@ -183,7 +186,7 @@ func (t *Target) BuildChartDependencies(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		chartDir := filepath.Join(t.TmpDir, "charts", t.Type, effectiveChartName(src))
+		chartDir := t.chartDirFor(src)
 		if err := t.HelmProcessor.BuildChartDependencies(ctx, deps, chartDir, t.TmpDir); err != nil {
 			return fmt.Errorf("build dependencies for chart %q: %w", src.Path, err)
 		}

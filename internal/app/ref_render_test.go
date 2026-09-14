@@ -42,7 +42,7 @@ func TestRenderAppSourcesResolvesRefValueFiles(t *testing.T) {
 
 	require.Len(t, processor.renderRequests, 1, "a values-only ref source renders nothing of its own")
 	assert.Equal(t, []string{
-		filepath.Join("/run", "charts", TargetTypeSource, "prometheus", "values.yaml"),
+		filepath.Join(target.chartDirFor(target.App.Spec.Sources[0]), "values.yaml"),
 		filepath.Join("/run", "refs", TargetTypeSource, "values", "envs/prod/values.yaml"),
 	}, processor.renderRequests[0].ValueFiles)
 }

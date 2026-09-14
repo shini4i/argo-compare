@@ -372,3 +372,78 @@ func TestMaterializeChartFromTree(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "replicaCount: 9\n", string(values))
 }
+
+// TestMaterializeChartFromWorkingTree_SameBasenameSources is the path-based
+// half of the #185 regression. copyDirOnDisk truncates per file rather than
+// clearing the directory, so two sources sharing a basename used to merge into
+// a chart that exists in neither repository, with no error.
+func TestMaterializeChartFromWorkingTree_SameBasenameSources(t *testing.T) {
+	repoRoot := t.TempDir()
+	for _, c := range []struct{ team, replicas string }{{"team-a", "1"}, {"team-b", "2"}} {
+		dir := filepath.Join(repoRoot, "charts", c.team, "redis")
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "templates"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "Chart.yaml"), []byte("name: redis\n"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "values.yaml"), []byte("replicaCount: "+c.replicas+"\n"), 0o644))
+	}
+	onlyA := filepath.Join(repoRoot, "charts", "team-a", "redis", "templates", "only-a.yaml")
+	require.NoError(t, os.WriteFile(onlyA, []byte("kind: ConfigMap\n"), 0o644))
+
+	tmpDir := t.TempDir()
+	srcA := &models.Source{RepoURL: testOriginURL, Path: "charts/team-a/redis"}
+	srcB := &models.Source{RepoURL: testOriginURL, Path: "charts/team-b/redis"}
+	tgt := Target{
+		TmpDir: tmpDir,
+		Type:   TargetTypeSource,
+		Log:    logger.New("target-path-collision-test"),
+		App:    multiSourceApp(srcA, srcB),
+	}
+
+	require.NoError(t, tgt.MaterializeChartFromWorkingTree(context.Background(), afero.NewOsFs(), repoRoot))
+
+	require.NotEqual(t, tgt.chartDirFor(srcA), tgt.chartDirFor(srcB))
+	assertChartValues(t, tgt.chartDirFor(srcA), "replicaCount: 1\n")
+	assertChartValues(t, tgt.chartDirFor(srcB), "replicaCount: 2\n")
+
+	// The merge, not just the overwrite: a file unique to team-a must not
+	// appear in team-b's chart.
+	require.FileExists(t, filepath.Join(tgt.chartDirFor(srcA), "templates", "only-a.yaml"))
+	require.NoFileExists(t, filepath.Join(tgt.chartDirFor(srcB), "templates", "only-a.yaml"))
+}
+
+// TestMaterializeChartFromTree_SameBasenameSources is the destination-leg
+// counterpart: the same collision reached through a Git tree walk.
+func TestMaterializeChartFromTree_SameBasenameSources(t *testing.T) {
+	tree := commitTreeWith(t, map[string]string{
+		"charts/team-a/redis/Chart.yaml":            "name: redis\n",
+		"charts/team-a/redis/values.yaml":           "replicaCount: 1\n",
+		"charts/team-a/redis/templates/only-a.yaml": "kind: ConfigMap\n",
+		"charts/team-b/redis/Chart.yaml":            "name: redis\n",
+		"charts/team-b/redis/values.yaml":           "replicaCount: 2\n",
+	})
+
+	tmpDir := t.TempDir()
+	srcA := &models.Source{RepoURL: testOriginURL, Path: "charts/team-a/redis"}
+	srcB := &models.Source{RepoURL: testOriginURL, Path: "charts/team-b/redis"}
+	tgt := Target{
+		TmpDir: tmpDir,
+		Type:   TargetTypeDestination,
+		Log:    logger.New("target-tree-collision-test"),
+		App:    multiSourceApp(srcA, srcB),
+	}
+
+	require.NoError(t, tgt.MaterializeChartFromTree(context.Background(), afero.NewOsFs(), tree))
+
+	require.NotEqual(t, tgt.chartDirFor(srcA), tgt.chartDirFor(srcB))
+	assertChartValues(t, tgt.chartDirFor(srcA), "replicaCount: 1\n")
+	assertChartValues(t, tgt.chartDirFor(srcB), "replicaCount: 2\n")
+	require.FileExists(t, filepath.Join(tgt.chartDirFor(srcA), "templates", "only-a.yaml"))
+	require.NoFileExists(t, filepath.Join(tgt.chartDirFor(srcB), "templates", "only-a.yaml"))
+}
+
+// assertChartValues reads values.yaml from a materialized chart directory.
+func assertChartValues(t *testing.T, chartDir, want string) {
+	t.Helper()
+	got, err := os.ReadFile(filepath.Join(chartDir, "values.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, want, string(got))
+}

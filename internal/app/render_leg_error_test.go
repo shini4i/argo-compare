@@ -25,11 +25,11 @@ type failingHelmProcessor struct {
 	downloadErr       error
 }
 
-func (f *failingHelmProcessor) GenerateValuesFile(chartName, tmpDir, targetType, values string, valuesObject map[string]interface{}) error {
+func (f *failingHelmProcessor) GenerateValuesFile(path, values string, valuesObject map[string]interface{}) error {
 	if f.generateValuesErr != nil {
 		return f.generateValuesErr
 	}
-	return f.recordingHelmProcessor.GenerateValuesFile(chartName, tmpDir, targetType, values, valuesObject)
+	return f.recordingHelmProcessor.GenerateValuesFile(path, values, valuesObject)
 }
 
 func (f *failingHelmProcessor) DownloadHelmChart(ctx context.Context, deps ports.HelmDeps, req ports.ChartDownloadRequest) error {
@@ -60,6 +60,25 @@ func TestRenderLegStopsOnMixedMultiSource(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrMixedMultiSource)
+	assert.Empty(t, processor.downloadRequests, "a rejected Application must not pull a chart")
+}
+
+// TestRenderLegStopsOnIndistinguishableSources pins the same ordering for the sibling
+// rejection: two sources that would share a directory must be caught before either is
+// pulled, or the first is already overwritten by the time the run fails.
+func TestRenderLegStopsOnIndistinguishableSources(t *testing.T) {
+	processor := &recordingHelmProcessor{}
+	target := refRenderTarget(t, processor, nil)
+	target.App.Spec.MultiSource = true
+	target.App.Spec.Sources = []*models.Source{
+		{Chart: "prometheus", RepoURL: "https://charts.example.com", TargetRevision: "1.0.0"},
+		{Chart: "prometheus", RepoURL: "https://charts.example.com", TargetRevision: "2.0.0"},
+	}
+
+	err := errorLegApp("indistinguishable-leg-test").renderLeg(context.Background(), nil, target, t.TempDir(), nil)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrIndistinguishableSources)
 	assert.Empty(t, processor.downloadRequests, "a rejected Application must not pull a chart")
 }
 
