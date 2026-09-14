@@ -60,3 +60,25 @@ jobs:
           version: ${{ github.ref_name }}
           target-repo: shini4i/nixpkgs
           github-token: ${{ secrets.NIXPKGS_UPDATER_TOKEN }}
+
+      - name: Prune superseded pre-releases
+        # Once a stable vX.Y.Z ships, its vX.Y.Z-pre.* snapshots are obsolete.
+        # Per-tag failures are tolerated so cleanup can't fail a good release.
+        # The tag-ref guard keeps this destructive delete off a branch ref, where
+        # GITHUB_REF_NAME would be a branch name rather than a version.
+        if: ${{ success() && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-pre.') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Listed into a variable, not piped: the runner's bash has no pipefail,
+          # so a failing `release list` would otherwise read as "nothing to prune".
+          tags=$(gh release list --limit 200 --json tagName,isPrerelease \
+            --jq '.[] | select(.isPrerelease and (.tagName | startswith(env.GITHUB_REF_NAME + "-pre."))) | .tagName') \
+            || { echo "::warning::could not list releases; skipping prune"; tags=""; }
+          for tag in $tags; do
+            echo "Deleting superseded pre-release: $tag"
+            # --cleanup-tag deletes the release first, so a tag-protection ruleset
+            # can leave the release gone and the tag behind.
+            gh release delete "$tag" --cleanup-tag --yes \
+              || echo "::warning::$tag prune incomplete; check if the release and/or tag remain"
+          done
