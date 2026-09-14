@@ -31,11 +31,21 @@ func (t *Target) sourceSlot(source *models.Source) string {
 	// different revisions, and a slot moving with it would report every
 	// manifest as removed and re-added. releaseName is in because helm already
 	// nests output under it, so one chart can render twice under two names.
-	parts := []string{source.RepoURL, source.Chart, source.Path, source.Helm.ReleaseName}
+	parts := []string{source.RepoURL, source.Chart, source.Path, t.effectiveReleaseName(source)}
 	// NUL-separated so the fields cannot run together: a chart and a path of
 	// the same name would otherwise hash alike.
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return hex.EncodeToString(sum[:])[:slotLength]
+}
+
+// effectiveReleaseName is the release Helm renders a source under, which falls
+// back to the Application's name. The slot hashes this rather than the raw
+// field so that spelling the fallback out explicitly does not move the source.
+func (t *Target) effectiveReleaseName(source *models.Source) string {
+	if source != nil && source.Helm.ReleaseName != "" {
+		return source.Helm.ReleaseName
+	}
+	return t.App.Metadata.Name
 }
 
 // sourceDirFor is the workspace root a single source materializes under.

@@ -133,7 +133,7 @@ func (t *Target) generateValuesFiles() error {
 			continue
 		}
 		if err := t.HelmProcessor.GenerateValuesFile(t.inlineValuesFileFor(source), source.Helm.Values, source.Helm.ValuesObject); err != nil {
-			return err
+			return fmt.Errorf("generate inline values for chart %q: %w", effectiveChartName(source), err)
 		}
 	}
 	return nil
@@ -202,10 +202,7 @@ func (t *Target) extractCharts(ctx context.Context) error {
 // reaches Helm as the file materialized for this leg.
 func (t *Target) renderAppSources(ctx context.Context) error {
 	for _, source := range t.renderableSources() {
-		releaseName := t.App.Metadata.Name
-		if source.Helm.ReleaseName != "" {
-			releaseName = source.Helm.ReleaseName
-		}
+		releaseName := t.effectiveReleaseName(source)
 		parameters, err := t.resolveSourceParameters(source)
 		if err != nil {
 			return err

@@ -197,6 +197,24 @@ func TestSourceSlotSeparatesFieldsOfEqualText(t *testing.T) {
 	assert.NotEqual(t, tgt.sourceSlot(chart), tgt.sourceSlot(path))
 }
 
+// TestSourceSlotIgnoresAnExplicitDefaultReleaseName pins that spelling out the
+// fallback changes nothing. Helm renders under the Application name either way,
+// so a slot keyed on the raw field would move every manifest of that source for
+// an edit that alters no output.
+func TestSourceSlotIgnoresAnExplicitDefaultReleaseName(t *testing.T) {
+	implicit := &models.Source{RepoURL: "registry.example.com", Chart: "redis", TargetRevision: "1.0.0"}
+	explicit := &models.Source{
+		RepoURL: "registry.example.com", Chart: "redis", TargetRevision: "1.0.0",
+		Helm: models.HelmSource{ReleaseName: "app"}, // the Application's own name
+	}
+	other := &models.Source{RepoURL: "registry.example.com", Chart: "postgres", TargetRevision: "1.0.0"}
+
+	dstLeg := Target{TmpDir: "tmp", Type: TargetTypeDestination, App: multiSourceApp(implicit, other)}
+	srcLeg := Target{TmpDir: "tmp", Type: TargetTypeSource, App: multiSourceApp(explicit, other)}
+
+	assert.Equal(t, dstLeg.sourceSlot(implicit), srcLeg.sourceSlot(explicit))
+}
+
 // TestSourceSlotSeparatesSourcesByReleaseName covers one chart deployed twice
 // under two release names. helm already nests its output under the release, so
 // including it in the slot keeps a valid Application renderable rather than

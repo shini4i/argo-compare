@@ -132,7 +132,7 @@ func (g RealHelmChartProcessor) GenerateValuesFile(path, values string, valuesOb
 
 	yamlFile, err := os.Create(path) // #nosec G304 -- path is composed by the renderer from the run's temporary directory
 	if err != nil {
-		return err
+		return fmt.Errorf("create values file %q: %w", path, err)
 	}
 
 	defer func(yamlFile *os.File) {
@@ -149,14 +149,14 @@ func (g RealHelmChartProcessor) GenerateValuesFile(path, values string, valuesOb
 		// Serialize the 'valuesObject' if it is provided
 		data, err = yaml.Marshal(valuesObject)
 		if err != nil {
-			return err
+			return fmt.Errorf("marshal valuesObject for %q: %w", path, err)
 		}
 	} else {
 		return errors.New("either 'values' or 'valuesObject' must be provided")
 	}
 
 	if _, err := yamlFile.Write(data); err != nil {
-		return err
+		return fmt.Errorf("write values file %q: %w", path, err)
 	}
 
 	return nil
