@@ -534,6 +534,20 @@ func TestExtractHelmChart(t *testing.T) {
 	})
 }
 
+func TestContextReader_StopsOnCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	r := contextReader{ctx: ctx, r: strings.NewReader("chart content")}
+
+	buf := make([]byte, 5)
+	n, err := r.Read(buf)
+	require.NoError(t, err)
+	assert.Equal(t, 5, n)
+
+	cancel()
+	_, err = r.Read(buf)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
 // TestExtractHelmChart_RejectsUnsafeEntries pins that a chart archive from a registry the change
 // under review chose cannot plant links or write outside the extract directory: helm follows
 // symlinks when it loads a chart, so a link would render runner files into the diff.

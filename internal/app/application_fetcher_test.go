@@ -405,6 +405,23 @@ func TestFetcher_buildCloneOptions_NoAuthOffTheOriginEndpoint(t *testing.T) {
 	}
 }
 
+func TestFetcher_buildCloneOptions_ExplicitDefaultPortIsSameEndpoint(t *testing.T) {
+	cases := map[string]struct{ repo, origin string }{
+		"origin spells :443": {"https://github.com/example/repo.git", "https://github.com:443/example/infra.git"},
+		"anchor spells :443": {"https://github.com:443/example/repo.git", "https://github.com/example/infra.git"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newTestFetcher(t)
+			f.GitToken = "ghp_secret"
+			f.OriginURL = tc.origin
+
+			opts := f.buildCloneOptions(anchor.ApplicationRef{Repo: tc.repo, Path: "apps/example.yaml"})
+			assert.NotNil(t, opts.Auth)
+		})
+	}
+}
+
 func TestApplicationFetcher_DefaultCarriesOriginURL(t *testing.T) {
 	// Without OriginURL, cloneAuth never attaches the token and authenticated anchor clones fail.
 	a := &App{cfg: Config{GitUsername: "u", GitToken: "tok"}}

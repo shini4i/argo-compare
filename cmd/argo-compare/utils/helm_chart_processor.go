@@ -33,6 +33,9 @@ var ErrInvalidValueFile = errors.New("invalid valueFile path")
 // path segment, which would move its cache directory out of the cache or into another slot.
 var ErrInvalidChartCachePath = errors.New("invalid chart cache path")
 
+// ociScheme is the optional scheme prefix ArgoCD accepts on an OCI repoURL.
+const ociScheme = "oci://"
+
 // ErrUnsafeChartArchive is returned when a chart archive holds a link, a special file, or a
 // path outside the extract directory.
 var ErrUnsafeChartArchive = errors.New("unsafe chart archive")
@@ -42,7 +45,7 @@ var ErrUnsafeChartArchive = errors.New("unsafe chart archive")
 // repoURL and chartName come from the Application, and cleaning a dot segment away would let
 // one repository write into the slot another repository reads from.
 func chartCacheDir(cacheDir, repoURL, chartName string) (string, error) {
-	repoURL = strings.TrimPrefix(repoURL, "oci://")
+	repoURL = strings.TrimPrefix(repoURL, ociScheme)
 	for _, segment := range strings.Split(repoURL+"/"+chartName, "/") {
 		if segment == "." || segment == ".." {
 			return "", fmt.Errorf("%w: repoURL %q with chart %q has a %q path segment",
@@ -194,7 +197,7 @@ func (g RealHelmChartProcessor) GenerateValuesFile(path, values string, valuesOb
 func (g RealHelmChartProcessor) DownloadHelmChart(ctx context.Context, deps ports.HelmDeps, req ports.ChartDownloadRequest) error {
 	// Normalize OCI URLs: ArgoCD manifests may specify repoURL with an "oci://" scheme prefix.
 	// Strip it so that cache paths, credential matching, and helm commands receive a bare hostname.
-	req.RepoURL = strings.TrimPrefix(req.RepoURL, "oci://")
+	req.RepoURL = strings.TrimPrefix(req.RepoURL, ociScheme)
 
 	chartLocation, err := chartCacheDir(req.CacheDir, req.RepoURL, req.ChartName)
 	if err != nil {
@@ -551,7 +554,7 @@ func (g RealHelmChartProcessor) writeRepoConfig(ctx context.Context, helmDeps po
 		if dep.Repository == "" || strings.HasPrefix(dep.Repository, "file://") {
 			continue
 		}
-		if strings.HasPrefix(dep.Repository, "oci://") {
+		if strings.HasPrefix(dep.Repository, ociScheme) {
 			// helm handles OCI auth via registry config, not repositories.yaml.
 			// Skip silently so helm surfaces its own error if creds are needed.
 			continue
@@ -686,11 +689,14 @@ func extractChartArchive(ctx context.Context, archivePath, destDir string) error
 	}
 	defer func() { _ = gz.Close() }()
 
-	tr := tar.NewReader(gz)
+	root, err := os.OpenRoot(destDir)
+	if err != nil {
+		return fmt.Errorf("open chart extraction directory %q: %w", destDir, err)
+	}
+	defer func() { _ = root.Close() }()
+
+	tr := tar.NewReader(contextReader{ctx: ctx, r: gz})
 	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
 			return nil
@@ -698,15 +704,29 @@ func extractChartArchive(ctx context.Context, archivePath, destDir string) error
 		if err != nil {
 			return fmt.Errorf("read chart archive %q: %w", archivePath, err)
 		}
-		if err := extractChartEntry(tr, hdr, archivePath, destDir); err != nil {
+		if err := extractChartEntry(tr, hdr, archivePath, root); err != nil {
 			return err
 		}
 	}
 }
 
-// extractChartEntry writes one tar entry under destDir, refusing anything extractChartArchive
-// documents as unsafe.
-func extractChartEntry(tr *tar.Reader, hdr *tar.Header, archivePath, destDir string) error {
+// contextReader fails every Read once ctx is done, so cancelling stops extraction mid-file.
+type contextReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+// Read reads from the wrapped reader unless the context is already done.
+func (c contextReader) Read(p []byte) (int, error) {
+	if err := c.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return c.r.Read(p)
+}
+
+// extractChartEntry writes one tar entry through root, refusing anything extractChartArchive
+// documents as unsafe. root confines every write to the extract directory.
+func extractChartEntry(tr *tar.Reader, hdr *tar.Header, archivePath string, root *os.Root) error {
 	if hdr.Typeflag == tar.TypeXGlobalHeader {
 		return nil
 	}
@@ -714,16 +734,15 @@ func extractChartEntry(tr *tar.Reader, hdr *tar.Header, archivePath, destDir str
 		return fmt.Errorf("%w: %q holds %q, which leaves the extract directory",
 			ErrUnsafeChartArchive, archivePath, hdr.Name)
 	}
-	target := filepath.Join(destDir, hdr.Name) // #nosec G305 -- hdr.Name passed filepath.IsLocal above
 
 	switch hdr.Typeflag {
 	case tar.TypeDir:
-		return os.MkdirAll(target, workDirPerm)
+		return root.MkdirAll(hdr.Name, workDirPerm)
 	case tar.TypeReg:
-		if err := os.MkdirAll(filepath.Dir(target), workDirPerm); err != nil {
+		if err := root.MkdirAll(filepath.Dir(hdr.Name), workDirPerm); err != nil {
 			return err
 		}
-		out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, chartFilePerm) // #nosec G304 -- target is filepath.IsLocal under destDir
+		out, err := root.OpenFile(hdr.Name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, chartFilePerm)
 		if err != nil {
 			return fmt.Errorf("extract %q from %q: %w", hdr.Name, archivePath, err)
 		}

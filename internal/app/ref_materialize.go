@@ -408,7 +408,16 @@ func sameCredentialEndpoint(repoURL, originURL string) bool {
 	if host == "" || host != repoIdentityHost(originURL) {
 		return false
 	}
-	return parsed.Port() == originHTTPSPort(originURL)
+	return httpsPort(parsed.Port()) == httpsPort(originHTTPSPort(originURL))
+}
+
+// httpsPort maps an explicit default HTTPS port to the empty port, so ":443" and no port compare
+// equal.
+func httpsPort(port string) string {
+	if port == "443" {
+		return ""
+	}
+	return port
 }
 
 // originHTTPSPort is the port origin serves HTTPS on, empty meaning the
