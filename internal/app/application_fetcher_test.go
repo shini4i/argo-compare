@@ -347,6 +347,7 @@ func TestFetcher_buildCloneOptions_BasicAuthWhenBothSet(t *testing.T) {
 	f := newTestFetcher(t)
 	f.GitUsername = "x-access-token"
 	f.GitToken = "ghp_secret"
+	f.OriginURL = "https://github.com/example/infra.git"
 
 	opts := f.buildCloneOptions(anchor.ApplicationRef{
 		Repo: "https://github.com/example/repo.git",
@@ -365,6 +366,7 @@ func TestFetcher_buildCloneOptions_DefaultsUsernameWhenTokenOnly(t *testing.T) {
 	// Typical CI setup: only token provided. Username defaults to "x-access-token",
 	// which works for GitHub PATs, GitLab PATs, and Gitea — the common-case providers.
 	f.GitToken = "ghp_secret"
+	f.OriginURL = "https://github.com/example/infra.git"
 
 	opts := f.buildCloneOptions(anchor.ApplicationRef{
 		Repo: "https://github.com/example/repo.git",
@@ -376,6 +378,63 @@ func TestFetcher_buildCloneOptions_DefaultsUsernameWhenTokenOnly(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "x-access-token", basic.Username)
 	assert.Equal(t, "ghp_secret", basic.Password)
+}
+
+func TestFetcher_buildCloneOptions_NoAuthOffTheOriginEndpoint(t *testing.T) {
+	// The anchor's repo: comes from the change under review, so it must not be
+	// able to choose which host receives the CI token.
+	cases := map[string]struct {
+		repo, origin string
+	}{
+		"foreign host":          {"https://attacker.example/x.git", "https://github.com/example/infra.git"},
+		"cleartext on origin":   {"http://github.com/example/repo.git", "https://github.com/example/infra.git"},
+		"other port on origin":  {"https://github.com:8443/example/repo.git", "https://github.com/example/infra.git"},
+		"origin unknown":        {"https://github.com/example/repo.git", ""},
+		"lookalike origin host": {"https://github.com.attacker.example/example/repo.git", "https://github.com/example/infra.git"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newTestFetcher(t)
+			f.GitToken = "ghp_secret"
+			f.OriginURL = tc.origin
+
+			opts := f.buildCloneOptions(anchor.ApplicationRef{Repo: tc.repo, Path: "apps/example.yaml"})
+			assert.Nil(t, opts.Auth)
+			assert.Equal(t, tc.repo, opts.URL, "the clone itself still goes ahead, unauthenticated")
+		})
+	}
+}
+
+func TestFetcher_buildCloneOptions_ExplicitDefaultPortIsSameEndpoint(t *testing.T) {
+	cases := map[string]struct{ repo, origin string }{
+		"origin spells :443": {"https://github.com/example/repo.git", "https://github.com:443/example/infra.git"},
+		"anchor spells :443": {"https://github.com:443/example/repo.git", "https://github.com/example/infra.git"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newTestFetcher(t)
+			f.GitToken = "ghp_secret"
+			f.OriginURL = tc.origin
+
+			opts := f.buildCloneOptions(anchor.ApplicationRef{Repo: tc.repo, Path: "apps/example.yaml"})
+			assert.NotNil(t, opts.Auth)
+		})
+	}
+}
+
+func TestApplicationFetcher_DefaultCarriesOriginURL(t *testing.T) {
+	// Without OriginURL, cloneAuth never attaches the token and authenticated anchor clones fail.
+	a := &App{cfg: Config{GitUsername: "u", GitToken: "tok"}}
+
+	fetcher, ok := a.applicationFetcher("https://github.com/example/infra.git").(*RealApplicationFetcher)
+	require.True(t, ok)
+	assert.Equal(t, "https://github.com/example/infra.git", fetcher.OriginURL)
+	assert.Equal(t, "u", fetcher.GitUsername)
+	assert.Equal(t, "tok", fetcher.GitToken)
+
+	injected := &RealApplicationFetcher{}
+	a.fetcher = injected
+	assert.Same(t, injected, a.applicationFetcher("https://github.com/example/infra.git"))
 }
 
 func TestFetcher_buildCloneOptions_OmitsBranchWhenEmpty(t *testing.T) {

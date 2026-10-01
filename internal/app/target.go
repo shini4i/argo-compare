@@ -3,9 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
-	"path"
 	"path/filepath"
-	"strings"
 
 	"github.com/shini4i/argo-compare/cmd/argo-compare/utils/logger"
 
@@ -183,12 +181,12 @@ func (t *Target) extractCharts(ctx context.Context) error {
 	deps := ports.HelmDeps{CmdRunner: t.CmdRunner, Globber: t.Globber, CredentialProviders: t.CredentialProviders}
 
 	for _, source := range t.renderableSources() {
-		repoURL := strings.TrimPrefix(source.RepoURL, "oci://")
 		req := ports.ChartExtractRequest{
-			ChartName:     effectiveChartName(source),
-			ChartVersion:  source.TargetRevision,
-			ChartLocation: filepath.Join(t.CacheDir, repoURL, path.Dir(source.Chart)),
-			ExtractDir:    t.sourceDirFor(source),
+			CacheDir:     t.CacheDir,
+			RepoURL:      source.RepoURL,
+			ChartName:    source.Chart,
+			ChartVersion: source.TargetRevision,
+			ExtractDir:   t.sourceDirFor(source),
 		}
 		if err := t.HelmProcessor.ExtractHelmChart(ctx, deps, req); err != nil {
 			return err

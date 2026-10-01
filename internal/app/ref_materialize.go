@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/shini4i/argo-compare/internal/models"
@@ -377,14 +378,21 @@ func (f *gitRefTreeFetcher) cloneOptions(repoURL string, refName plumbing.Refere
 		Tags:          git.NoTags,
 		ReferenceName: refName,
 	}
-	if f.token != "" && sameCredentialEndpoint(repoURL, f.originURL) {
-		username := f.username
-		if username == "" {
-			username = defaultGitUsername
-		}
-		opts.Auth = &githttp.BasicAuth{Username: username, Password: f.token}
-	}
+	opts.Auth = cloneAuth(f.username, f.token, repoURL, f.originURL)
 	return opts
+}
+
+// cloneAuth is the HTTP Basic auth for cloning repoURL, or nil unless repoURL is the HTTPS endpoint
+// origin is served from. Every cross-repo clone URL comes from the change under review, so
+// this gate decides whether a pull request can pick the host that receives the CI token.
+func cloneAuth(username, token, repoURL, originURL string) transport.AuthMethod {
+	if token == "" || !sameCredentialEndpoint(repoURL, originURL) {
+		return nil
+	}
+	if username == "" {
+		username = defaultGitUsername
+	}
+	return &githttp.BasicAuth{Username: username, Password: token}
 }
 
 // sameCredentialEndpoint reports whether repoURL is the same HTTPS endpoint the
@@ -400,7 +408,16 @@ func sameCredentialEndpoint(repoURL, originURL string) bool {
 	if host == "" || host != repoIdentityHost(originURL) {
 		return false
 	}
-	return parsed.Port() == originHTTPSPort(originURL)
+	return httpsPort(parsed.Port()) == httpsPort(originHTTPSPort(originURL))
+}
+
+// httpsPort maps an explicit default HTTPS port to the empty port, so ":443" and no port compare
+// equal.
+func httpsPort(port string) string {
+	if port == "443" {
+		return ""
+	}
+	return port
 }
 
 // originHTTPSPort is the port origin serves HTTPS on, empty meaning the

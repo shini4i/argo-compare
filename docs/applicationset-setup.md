@@ -153,8 +153,8 @@ changes the chart layout and the Application's `valueFiles` at the same time is
 out of sync until the apps-repository change lands. Land that one first.
 
 Credentials for the clone come from `ARGO_COMPARE_GIT_TOKEN` and optionally
-`ARGO_COMPARE_GIT_USERNAME`; they apply to `https://` anchors, while `ssh://`
-anchors use the SSH agent. See
+`ARGO_COMPARE_GIT_USERNAME`. They are sent only to an `https://` anchor with the
+same host and port as `origin`; `ssh://` anchors use the SSH agent. See
 [Authenticating cross-repo clones](anchored-repositories.md#authenticating-cross-repo-clones)
 for the per-host username table.
 
