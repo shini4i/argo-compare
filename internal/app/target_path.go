@@ -120,6 +120,9 @@ func (t *Target) MaterializeChartFromWorkingTree(ctx context.Context, fs afero.F
 		if err != nil {
 			return fmt.Errorf("materialize chart %q from working tree: %w", src.Path, err)
 		}
+		if err := rejectSymlinkedParents(repoRoot, src.Path); err != nil {
+			return fmt.Errorf("materialize chart %q from working tree: %w", src.Path, err)
+		}
 		to := t.chartDirFor(src)
 		if err := copyDirOnDisk(fs, from, to); err != nil {
 			return fmt.Errorf("materialize chart %q from working tree: %w", src.Path, err)
@@ -145,6 +148,29 @@ func resolveRepoPath(repoRoot, rel string) (string, error) {
 		return "", fmt.Errorf("path %q escapes repository root", rel)
 	}
 	return abs, nil
+}
+
+// rejectSymlinkedParents fails when a directory above the final component of rel is a symlink:
+// resolveRepoPath is lexical and copyDirOnDisk checks only the final component. A missing
+// component ends the walk without error, leaving the caller to report the missing path.
+func rejectSymlinkedParents(repoRoot, rel string) error {
+	parts := strings.Split(filepath.ToSlash(filepath.Clean(rel)), "/")
+	current := filepath.Clean(repoRoot)
+	for i, part := range parts[:len(parts)-1] {
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%q is a symlink; only regular files and directories are supported in path-based chart sources",
+				strings.Join(parts[:i+1], "/"))
+		}
+	}
+	return nil
 }
 
 // MaterializeChartFromTree extracts the chart directory referenced by each

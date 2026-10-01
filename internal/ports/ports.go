@@ -85,14 +85,15 @@ type ChartDownloadRequest struct {
 	TargetRevision string
 }
 
-// ChartExtractRequest contains the parameters for extracting a Helm chart.
-// ChartName locates the cached tarball; ExtractDir is where it is unpacked,
-// and the tarball's own top-level directory appears beneath it.
+// ChartExtractRequest contains the parameters for extracting a Helm chart. CacheDir, RepoURL and
+// ChartName locate the cached tarball exactly as ChartDownloadRequest stored it. ExtractDir is
+// where it is unpacked, and the tarball's own top-level directory appears beneath it.
 type ChartExtractRequest struct {
-	ChartName     string
-	ChartVersion  string
-	ChartLocation string
-	ExtractDir    string
+	CacheDir     string
+	RepoURL      string
+	ChartName    string
+	ChartVersion string
+	ExtractDir   string
 }
 
 // ChartRenderRequest contains the parameters for rendering a Helm chart.

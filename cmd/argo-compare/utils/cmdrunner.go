@@ -15,7 +15,7 @@ type RealCmdRunner struct{}
 // Run executes cmd with args and captures stdout and stderr strings.
 // The context can be used to cancel the command or set a timeout.
 func (r *RealCmdRunner) Run(ctx context.Context, cmd string, args ...string) (string, string, error) {
-	command := exec.CommandContext(ctx, cmd, args...) // #nosec G204 -- callers validate cmd via validateExecutable before invoking Run
+	command := exec.CommandContext(ctx, cmd, args...) // #nosec G204 -- cmd is helm or an operator-configured binary; callers validate PR-supplied args
 
 	var stdoutBuffer, stderrBuffer bytes.Buffer
 	command.Stdout = &stdoutBuffer
@@ -32,7 +32,7 @@ func (r *RealCmdRunner) Run(ctx context.Context, cmd string, args ...string) (st
 // elements, which are world-readable via /proc/<pid>/cmdline.
 // The context can be used to cancel the command or set a timeout.
 func (r *RealCmdRunner) RunWithStdin(ctx context.Context, stdin, cmd string, args ...string) (string, string, error) {
-	command := exec.CommandContext(ctx, cmd, args...) // #nosec G204 -- callers validate cmd via validateExecutable before invoking Run
+	command := exec.CommandContext(ctx, cmd, args...) // #nosec G204 -- cmd is helm or an operator-configured binary; callers validate PR-supplied args
 
 	command.Stdin = strings.NewReader(stdin)
 

@@ -59,6 +59,10 @@ func TestECRCredentialProvider_Matches(t *testing.T) {
 		{name: "GHCR", url: "ghcr.io/my-org", want: false},
 		{name: "empty", url: "", want: false},
 		{name: "partial ECR", url: "dkr.ecr.us-east-1.amazonaws.com", want: false},
+		{name: "lookalike host suffix", url: "123456789012.dkr.ecr.us-east-1.amazonaws.com.evil.example/charts", want: false},
+		{name: "lookalike host bare", url: "123456789012.dkr.ecr.us-east-1.amazonaws.com.evil.example", want: false},
+		{name: "userinfo-style host", url: "123456789012.dkr.ecr.us-east-1.amazonaws.com@evil.example/charts", want: false},
+		{name: "hyphenated host", url: "123456789012.dkr.ecr.us-east-1.amazonaws.com-evil.example", want: false},
 	}
 
 	for _, tt := range tests {
