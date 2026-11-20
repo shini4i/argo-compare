@@ -74,11 +74,10 @@ func TestFromYAMLArray(t *testing.T) {
 	assert.Error(t, err, "a mapping is not a sequence")
 }
 
-// TestToYAMLReportsUnmarshalableValues covers the error branch. yaml.v3 decodes
-// a mapping with a non-string key into map[any]any, which the JSON marshalling
-// underneath sigs.k8s.io/yaml refuses.
+// TestToYAMLReportsUnmarshalableValues covers the error branch. sigs.k8s.io/yaml
+// marshals through encoding/json, which has no representation for a channel.
 func TestToYAMLReportsUnmarshalableValues(t *testing.T) {
-	got, err := toYAML(map[any]any{8080: "http"})
+	got, err := toYAML(map[string]any{"ch": make(chan int)})
 
 	require.Error(t, err)
 	assert.Empty(t, got)
