@@ -1,9 +1,12 @@
 package utils
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -26,25 +29,30 @@ var ErrFailedToDownloadChart = errors.New("failed to download chart")
 // security reasons (empty, absolute path, or parent-directory traversal).
 var ErrInvalidValueFile = errors.New("invalid valueFile path")
 
-// ErrInvalidChartCachePath is returned when a source's repoURL or chart would
-// place the cache directory outside the configured cache root.
+// ErrInvalidChartCachePath is returned when a source's repoURL or chart carries a "." or ".."
+// path segment, which would move its cache directory out of the cache or into another slot.
 var ErrInvalidChartCachePath = errors.New("invalid chart cache path")
 
-// chartCacheDir is the directory a chart's tarball is cached in. An OCI
-// namespace is kept as a directory, since two charts on one host can share a
-// name and the flat tarball helm writes would collide.
-//
-// repoURL and chartName come from the Application, so the result must stay
-// under cacheDir: a traversal would have MkdirAll create a directory
-// elsewhere before helm ever rejects the reference.
+// ociScheme is the optional scheme prefix ArgoCD accepts on an OCI repoURL.
+const ociScheme = "oci://"
+
+// ErrUnsafeChartArchive is returned when a chart archive holds a link, a special file, or a
+// path outside the extract directory.
+var ErrUnsafeChartArchive = errors.New("unsafe chart archive")
+
+// chartCacheDir is the directory a chart's tarball is cached in: cacheDir/repoURL/dir(chart),
+// keeping an OCI namespace as a directory so same-named charts on one host do not collide.
+// repoURL and chartName come from the Application, and cleaning a dot segment away would let
+// one repository write into the slot another repository reads from.
 func chartCacheDir(cacheDir, repoURL, chartName string) (string, error) {
-	root := filepath.Clean(cacheDir)
-	dir := filepath.Join(root, repoURL, path.Dir(chartName))
-	if dir != root && !strings.HasPrefix(dir, root+string(filepath.Separator)) {
-		return "", fmt.Errorf("%w: repoURL %q with chart %q resolves outside %q",
-			ErrInvalidChartCachePath, repoURL, chartName, root)
+	repoURL = strings.TrimPrefix(repoURL, ociScheme)
+	for _, segment := range strings.Split(repoURL+"/"+chartName, "/") {
+		if segment == "." || segment == ".." {
+			return "", fmt.Errorf("%w: repoURL %q with chart %q has a %q path segment",
+				ErrInvalidChartCachePath, repoURL, chartName, segment)
+		}
 	}
-	return dir, nil
+	return filepath.Join(filepath.Clean(cacheDir), repoURL, path.Dir(chartName)), nil
 }
 
 // validateValueFile requires a values file to sit inside the run's temporary
@@ -63,6 +71,25 @@ func validateValueFile(vf, tmpDir string) error {
 	root := filepath.Clean(tmpDir)
 	if !strings.HasPrefix(filepath.Clean(vf), root+string(filepath.Separator)) {
 		return fmt.Errorf("%w: %q is not inside the render directory %q", ErrInvalidValueFile, vf, root)
+	}
+	return nil
+}
+
+// ErrInvalidReleaseName is returned when a release name breaks helm's naming rule.
+var ErrInvalidReleaseName = errors.New("invalid release name")
+
+// releaseNameRe and maxReleaseNameLen are helm's own release-name rule.
+var releaseNameRe = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
+
+const maxReleaseNameLen = 53
+
+// validateReleaseName applies helm's release-name rule before the name reaches argv. Helm
+// checks it too, but only after parsing flags, so a name like "--post-renderer=x" would be
+// taken as a flag first.
+func validateReleaseName(name string) error {
+	if len(name) > maxReleaseNameLen || !releaseNameRe.MatchString(name) {
+		return fmt.Errorf("%w: %q must match %s and be at most %d characters",
+			ErrInvalidReleaseName, name, releaseNameRe, maxReleaseNameLen)
 	}
 	return nil
 }
@@ -170,7 +197,7 @@ func (g RealHelmChartProcessor) GenerateValuesFile(path, values string, valuesOb
 func (g RealHelmChartProcessor) DownloadHelmChart(ctx context.Context, deps ports.HelmDeps, req ports.ChartDownloadRequest) error {
 	// Normalize OCI URLs: ArgoCD manifests may specify repoURL with an "oci://" scheme prefix.
 	// Strip it so that cache paths, credential matching, and helm commands receive a bare hostname.
-	req.RepoURL = strings.TrimPrefix(req.RepoURL, "oci://")
+	req.RepoURL = strings.TrimPrefix(req.RepoURL, ociScheme)
 
 	chartLocation, err := chartCacheDir(req.CacheDir, req.RepoURL, req.ChartName)
 	if err != nil {
@@ -296,6 +323,9 @@ const pullRepoName = "argo-compare-repo"
 // workDirPerm is the mode of every directory this file creates under the
 // chart cache and the run's temporary directory.
 const workDirPerm = 0o750
+
+// chartFilePerm is the mode for files extracted from a chart archive.
+const chartFilePerm = 0o640
 
 // Helm CLI flag names shared by multiple helm invocations in this file.
 const (
@@ -524,7 +554,7 @@ func (g RealHelmChartProcessor) writeRepoConfig(ctx context.Context, helmDeps po
 		if dep.Repository == "" || strings.HasPrefix(dep.Repository, "file://") {
 			continue
 		}
-		if strings.HasPrefix(dep.Repository, "oci://") {
+		if strings.HasPrefix(dep.Repository, ociScheme) {
 			// helm handles OCI auth via registry config, not repositories.yaml.
 			// Skip silently so helm surfaces its own error if creds are needed.
 			continue
@@ -604,24 +634,27 @@ func writeRepoEntriesConfig(scratchDir string, entries []helmRepoEntry) (string,
 	return repoCfgPath, repoCachePath, combinedCleanup, nil
 }
 
-// ExtractHelmChart extracts a specific version of a Helm chart from a cache directory
-// and stores it in a temporary directory. The function uses the provided CmdRunner to
-// execute the tar command and Globber to match the chart file in the cache.
-// If multiple files matching the pattern are found, an error is returned.
-// The context can be used to cancel the extraction or set a timeout.
+// ExtractHelmChart unpacks the cached tarball for req into req.ExtractDir. It fails when no
+// tarball or more than one matches, and with ErrUnsafeChartArchive when the archive holds
+// anything but regular files and directories inside ExtractDir.
 func (g RealHelmChartProcessor) ExtractHelmChart(ctx context.Context, deps ports.HelmDeps, req ports.ChartExtractRequest) error {
 	g.Log.Debugf("Extracting [%s] chart version [%s] to %s...",
 		ui.Cyan(req.ChartName),
 		ui.Cyan(req.ChartVersion),
 		req.ExtractDir)
 
+	chartLocation, err := chartCacheDir(req.CacheDir, req.RepoURL, req.ChartName)
+	if err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(req.ExtractDir, workDirPerm); err != nil {
 		return fmt.Errorf("failed to create chart extraction directory %q: %w", req.ExtractDir, err)
 	}
 
 	searchPattern := fmt.Sprintf("%s/%s-%s*.tgz",
-		req.ChartLocation,
-		req.ChartName,
+		chartLocation,
+		filepath.Base(req.ChartName),
 		req.ChartVersion)
 
 	chartFileName, err := deps.Globber.Glob(searchPattern)
@@ -633,21 +666,93 @@ func (g RealHelmChartProcessor) ExtractHelmChart(ctx context.Context, deps ports
 		return errors.New("chart file not found")
 	}
 
-	// It's highly unlikely that we will have more than one file matching the pattern
-	// Nevertheless we need to handle this case, please submit an issue if you encounter this
 	if len(chartFileName) > 1 {
 		return errors.New("more than one chart file found, please check your cache directory")
 	}
 
-	stdout, stderr, err := deps.CmdRunner.Run(ctx, "tar",
-		"xf",
-		chartFileName[0],
-		"-C", req.ExtractDir,
-	)
+	return extractChartArchive(ctx, chartFileName[0], req.ExtractDir)
+}
 
-	g.logOutput(stdout, stderr)
+// extractChartArchive unpacks the gzipped tarball at archivePath into destDir. The archive can
+// come from any registry the change under review names, and helm follows symlinks when loading
+// a chart, so links, special files and paths leaving destDir fail with ErrUnsafeChartArchive.
+func extractChartArchive(ctx context.Context, archivePath, destDir string) error {
+	archive, err := os.Open(archivePath) // #nosec G304 -- archivePath comes from the chart cache glob
+	if err != nil {
+		return fmt.Errorf("open chart archive %q: %w", archivePath, err)
+	}
+	defer func() { _ = archive.Close() }()
 
-	return err
+	gz, err := gzip.NewReader(archive)
+	if err != nil {
+		return fmt.Errorf("read chart archive %q: %w", archivePath, err)
+	}
+	defer func() { _ = gz.Close() }()
+
+	root, err := os.OpenRoot(destDir)
+	if err != nil {
+		return fmt.Errorf("open chart extraction directory %q: %w", destDir, err)
+	}
+	defer func() { _ = root.Close() }()
+
+	tr := tar.NewReader(contextReader{ctx: ctx, r: gz})
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read chart archive %q: %w", archivePath, err)
+		}
+		if err := extractChartEntry(tr, hdr, archivePath, root); err != nil {
+			return err
+		}
+	}
+}
+
+// contextReader fails every Read once ctx is done, so cancelling stops extraction mid-file.
+type contextReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+// Read reads from the wrapped reader unless the context is already done.
+func (c contextReader) Read(p []byte) (int, error) {
+	if err := c.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return c.r.Read(p)
+}
+
+// extractChartEntry writes one tar entry through root, refusing anything extractChartArchive
+// documents as unsafe. root confines every write to the extract directory.
+func extractChartEntry(tr *tar.Reader, hdr *tar.Header, archivePath string, root *os.Root) error {
+	if hdr.Typeflag == tar.TypeXGlobalHeader {
+		return nil
+	}
+	if !filepath.IsLocal(hdr.Name) {
+		return fmt.Errorf("%w: %q holds %q, which leaves the extract directory",
+			ErrUnsafeChartArchive, archivePath, hdr.Name)
+	}
+
+	switch hdr.Typeflag {
+	case tar.TypeDir:
+		return root.MkdirAll(hdr.Name, workDirPerm)
+	case tar.TypeReg:
+		if err := root.MkdirAll(filepath.Dir(hdr.Name), workDirPerm); err != nil {
+			return err
+		}
+		out, err := root.OpenFile(hdr.Name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, chartFilePerm)
+		if err != nil {
+			return fmt.Errorf("extract %q from %q: %w", hdr.Name, archivePath, err)
+		}
+		_, copyErr := io.Copy(out, tr) // #nosec G110 -- an oversized archive only exhausts the run that asked for it
+		closeErr := out.Close()
+		return errors.Join(copyErr, closeErr)
+	default:
+		return fmt.Errorf("%w: %q holds %q of unsupported type %q; only regular files and directories are allowed",
+			ErrUnsafeChartArchive, archivePath, hdr.Name, string(hdr.Typeflag))
+	}
 }
 
 // RenderAppSource uses the Helm CLI to render the templates of a given chart.
@@ -672,6 +777,12 @@ func (g RealHelmChartProcessor) RenderAppSource(ctx context.Context, cmdRunner p
 		ui.Cyan(req.TargetType),
 		ui.Cyan(req.ReleaseName))
 
+	if err := validateReleaseName(req.ReleaseName); err != nil {
+		return err
+	}
+
+	// --release-name is a boolean (nest output under the release name); ReleaseName is the
+	// NAME positional that follows it.
 	args := []string{
 		"template",
 		"--release-name", req.ReleaseName,

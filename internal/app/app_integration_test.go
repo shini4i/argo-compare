@@ -247,7 +247,7 @@ func (s *stubHelmProcessor) DownloadHelmChart(_ context.Context, _ ports.HelmDep
 func (s *stubHelmProcessor) ExtractHelmChart(_ context.Context, _ ports.HelmDeps, req ports.ChartExtractRequest) error {
 	s.record("ExtractHelmChart", req.ExtractDir)
 	// Mirrors tar: the tarball's own top-level directory appears under ExtractDir.
-	dir := filepath.Join(req.ExtractDir, req.ChartName)
+	dir := filepath.Join(req.ExtractDir, filepath.Base(req.ChartName))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}

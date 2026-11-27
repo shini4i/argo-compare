@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `ARGO_COMPARE_GIT_TOKEN` is now sent to an anchor's `repo:` clone only when that URL is `https://` on the same host and port as `origin`, the rule `ref` source clones already follow. To migrate, make an anchored repository on another host readable anonymously, or point the anchor at it over `ssh://` so the SSH agent authenticates the clone.
+- Helm release names, from `helm.releaseName` or the Application's name, are checked against Helm's naming rule before rendering, and a name that breaks it is refused with the rule named.
+- Chart archives are unpacked by `argo-compare` itself instead of `tar`. An archive holding a link, a special file, or a path outside the chart is refused.
+- AWS ECR credentials are requested only for a `repoURL` whose host is exactly an ECR registry host.
+- A `repoURL` or `chart` containing a `.` or `..` path segment is refused.
+- A path-based source whose `path` runs through a symlinked directory is refused, as a symlink inside the chart already was.
+
 ## [0.10.0] - 2026-09-14
 
 ### Added

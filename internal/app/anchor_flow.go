@@ -54,7 +54,7 @@ func (a *App) compareAnchorGroups(ctx context.Context, repo *GitRepo, groups []A
 		return false, err
 	}
 
-	fetcher := a.applicationFetcher()
+	fetcher := a.applicationFetcher(originURL)
 
 	anyFailed := false
 	for _, group := range groups {
@@ -514,8 +514,8 @@ func firstMissingValueFile(fs afero.Fs, chartDir string, valueFiles []string) (s
 }
 
 // valueFileExists reports whether vf exists under chartDir along a path of real directories. A
-// symlink at any component counts as present: materialization rejects any symlink at or under
-// the chart dir uniformly, and looking through one would reveal what exists on the runner.
+// symlink at any component counts as present: materialization rejects every symlink on the
+// chart's path and inside it, and looking through one would reveal what exists on the runner.
 func valueFileExists(fs afero.Fs, chartDir, vf string) (bool, error) {
 	path := chartDir
 	for _, part := range strings.Split(filepath.ToSlash(filepath.Clean(vf)), "/") {
@@ -561,7 +561,7 @@ func isChartRelativeValueFile(vf string) bool {
 
 // applicationFetcher returns the configured fetcher or builds a default real
 // implementation on demand. Tests override this via Dependencies.
-func (a *App) applicationFetcher() ports.ApplicationFetcher {
+func (a *App) applicationFetcher(originURL string) ports.ApplicationFetcher {
 	if a.fetcher != nil {
 		return a.fetcher
 	}
@@ -569,6 +569,7 @@ func (a *App) applicationFetcher() ports.ApplicationFetcher {
 		FileReader:  a.fileReader,
 		GitUsername: a.cfg.GitUsername,
 		GitToken:    a.cfg.GitToken,
+		OriginURL:   originURL,
 	}
 }
 

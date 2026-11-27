@@ -346,6 +346,68 @@ func TestMaterializeChartFromWorkingTree_RejectsSymlinkedChartDir(t *testing.T) 
 	assert.Contains(t, err.Error(), "not a regular directory")
 }
 
+func TestMaterializeChartFromWorkingTree_RejectsSymlinkedParent(t *testing.T) {
+	// A symlink above the chart dir passes the lexical repo-root check, and an
+	// Lstat of the final component sees a real directory. Both a resolving and
+	// a dangling link must fail the same way, so the error never reveals what
+	// exists on the runner.
+	outsideDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(outsideDir, "demo"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(outsideDir, "demo", "Chart.yaml"), []byte("name: outside\n"), 0o644))
+
+	cases := map[string]string{
+		"resolving": outsideDir,
+		"dangling":  filepath.Join(outsideDir, "missing"),
+	}
+	for name, linkTarget := range cases {
+		t.Run(name, func(t *testing.T) {
+			repoRoot := t.TempDir()
+			// charts -> linkTarget, so charts/demo lives outside the repository.
+			require.NoError(t, os.Symlink(linkTarget, filepath.Join(repoRoot, "charts")))
+
+			tmpDir := t.TempDir()
+			tgt := Target{
+				TmpDir: tmpDir,
+				Type:   TargetTypeSource,
+				Log:    logger.New("target-path-symlink-parent-test"),
+				App: models.Application{Spec: struct {
+					Source      *models.Source      `yaml:"source"`
+					Sources     []*models.Source    `yaml:"sources"`
+					MultiSource bool                `yaml:"-"`
+					Destination *models.Destination `yaml:"destination"`
+				}{Source: &models.Source{Path: "charts/demo"}}},
+			}
+
+			err := tgt.MaterializeChartFromWorkingTree(context.Background(), afero.NewOsFs(), repoRoot)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), `"charts" is a symlink`)
+
+			_, statErr := os.Stat(filepath.Join(tgt.chartDirFor(tgt.App.Spec.Source), "Chart.yaml"))
+			assert.True(t, os.IsNotExist(statErr), "chart content behind the symlink must not be copied")
+		})
+	}
+}
+
+func TestMaterializeChartFromWorkingTree_MissingParentReportsMissingPath(t *testing.T) {
+	repoRoot := t.TempDir()
+	tgt := Target{
+		TmpDir: t.TempDir(),
+		Type:   TargetTypeSource,
+		Log:    logger.New("target-path-missing-parent-test"),
+		App: models.Application{Spec: struct {
+			Source      *models.Source      `yaml:"source"`
+			Sources     []*models.Source    `yaml:"sources"`
+			MultiSource bool                `yaml:"-"`
+			Destination *models.Destination `yaml:"destination"`
+		}{Source: &models.Source{Path: "nope/demo"}}},
+	}
+
+	err := tgt.MaterializeChartFromWorkingTree(context.Background(), afero.NewOsFs(), repoRoot)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, os.ErrNotExist)
+	assert.NotContains(t, err.Error(), "is a symlink")
+}
+
 func TestMaterializeChartFromTree(t *testing.T) {
 	tree := commitTreeWith(t, map[string]string{
 		fooChartYAML:                    "name: foo\n",

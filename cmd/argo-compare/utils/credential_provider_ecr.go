@@ -17,11 +17,10 @@ import (
 	"github.com/shini4i/argo-compare/internal/ports"
 )
 
-// ecrURLRegex matches private AWS ECR registry URLs and captures the region.
-// Format: <account-id>.dkr.ecr.<region>.amazonaws.com
-// ECR Public (public.ecr.aws) is intentionally excluded as it does not require
-// ecr:GetAuthorizationToken for anonymous pulls.
-var ecrURLRegex = regexp.MustCompile(`^(\d+)\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com`)
+// ecrURLRegex matches private ECR registries (<account-id>.dkr.ecr.<region>.amazonaws.com) and
+// captures the region. The host must end there: repoURL is chosen by the change under review,
+// and a lookalike host would receive the token. ECR Public needs no token, so it is excluded.
+var ecrURLRegex = regexp.MustCompile(`^(\d+)\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com(/|$)`)
 
 // AuthorizationTokenGetter abstracts the subset of the AWS ECR client used by ECRCredentialProvider,
 // enabling unit testing without real AWS calls.

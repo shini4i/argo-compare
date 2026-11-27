@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -390,88 +392,205 @@ func TestDownloadHelmChart_OCIPrefixNormalization(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestExtractHelmChart(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+// tarEntry describes one member of a chart archive built by writeChartArchive.
+type tarEntry struct {
+	name     string
+	typeflag byte
+	body     string
+	linkname string
+}
 
+// writeChartArchive writes a gzipped tarball holding entries to archivePath.
+func writeChartArchive(t *testing.T, archivePath string, entries []tarEntry) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Dir(archivePath), 0o755))
+	f, err := os.Create(archivePath)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, f.Close()) }()
+
+	gz := gzip.NewWriter(f)
+	tw := tar.NewWriter(gz)
+	for _, e := range entries {
+		if e.typeflag == tar.TypeXGlobalHeader {
+			// archive/tar accepts only PAXRecords on a global header.
+			require.NoError(t, tw.WriteHeader(&tar.Header{Typeflag: e.typeflag, PAXRecords: map[string]string{"comment": "x"}}))
+			continue
+		}
+		hdr := &tar.Header{Name: e.name, Typeflag: e.typeflag, Linkname: e.linkname, Mode: 0o644}
+		if e.typeflag == tar.TypeDir {
+			hdr.Mode = 0o755
+		}
+		if e.typeflag == tar.TypeReg {
+			hdr.Size = int64(len(e.body))
+		}
+		require.NoError(t, tw.WriteHeader(hdr))
+		if e.typeflag == tar.TypeReg {
+			_, err := tw.Write([]byte(e.body))
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, tw.Close())
+	require.NoError(t, gz.Close())
+}
+
+func TestExtractHelmChart(t *testing.T) {
 	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
 	baseDir := t.TempDir()
-	expectedChartLocation := filepath.Join(baseDir, "cache")
-	expectedExtractDir := filepath.Join(baseDir, "tmp", "charts", "target", "a3f91c2e")
+	cacheDir := filepath.Join(baseDir, "cache")
+	repoURL := "oci://registry.example.com/charts"
+	chartLocation := filepath.Join(cacheDir, "registry.example.com", "charts")
+	pattern := fmt.Sprintf("%s/%s-%s*.tgz", chartLocation, "ingress-nginx", "3.34.0")
+	archive := filepath.Join(chartLocation, "ingress-nginx-3.34.0.tgz")
+	writeChartArchive(t, archive, []tarEntry{
+		{name: "ingress-nginx/", typeflag: tar.TypeDir},
+		{name: "ingress-nginx/Chart.yaml", typeflag: tar.TypeReg, body: "name: ingress-nginx\n"},
+		{name: "ingress-nginx/templates/cm.yaml", typeflag: tar.TypeReg, body: "kind: ConfigMap\n"},
+	})
 
-	// Create the mocks
-	mockCmdRunner := mocks.NewMockCmdRunner(ctrl)
-	mockGlobber := mocks.NewMockGlobber(ctrl)
-	deps := ports.HelmDeps{CmdRunner: mockCmdRunner, Globber: mockGlobber}
-
-	// Set up the expected behavior for the mocks
-
-	// Test case 1: Single chart file found
-	expectedChartFileName := filepath.Join(baseDir, "charts", "ingress-nginx", "ingress-nginx-3.34.0.tgz")
-
-	// Mock the behavior of the globber
-	mockGlobber.EXPECT().Glob(fmt.Sprintf("%s/%s-%s*.tgz", expectedChartLocation, "ingress-nginx", "3.34.0")).Return([]string{expectedChartFileName}, nil)
-
-	// Mock the behavior of the cmdRunner
-	mockCmdRunner.EXPECT().Run(gomock.Any(), "tar",
-		"xf",
-		expectedChartFileName,
-		"-C",
-		expectedExtractDir,
-	).Return("", "", nil)
-
-	req := ports.ChartExtractRequest{
-		ChartName:     "ingress-nginx",
-		ChartVersion:  "3.34.0",
-		ChartLocation: expectedChartLocation,
-		ExtractDir:    expectedExtractDir,
-	}
-	err := helmChartProcessor.ExtractHelmChart(context.Background(), deps, req)
-
-	assert.NoError(t, err, "expected no error, got %v", err)
-	// tar is mocked, so only the adapter's own MkdirAll can have created this.
-	require.DirExists(t, expectedExtractDir)
-
-	// Test case 2: Multiple chart files found, error expected
-	expectedChartFilesNames := []string{
-		filepath.Join(baseDir, "charts", "sonarqube", "sonarqube-4.0.0+315.tgz"),
-		filepath.Join(baseDir, "charts", "sonarqube", "sonarqube-4.0.0+316.tgz"),
+	newRequest := func(extractDir string) ports.ChartExtractRequest {
+		return ports.ChartExtractRequest{
+			CacheDir:     cacheDir,
+			RepoURL:      repoURL,
+			ChartName:    "ingress-nginx",
+			ChartVersion: "3.34.0",
+			ExtractDir:   extractDir,
+		}
 	}
 
-	mockGlobber.EXPECT().Glob(fmt.Sprintf("%s/%s-%s*.tgz", expectedChartLocation, "sonarqube", "4.0.0")).Return(expectedChartFilesNames, nil)
+	t.Run("extracts the single matching archive", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockGlobber := mocks.NewMockGlobber(ctrl)
+		mockGlobber.EXPECT().Glob(pattern).Return([]string{archive}, nil)
+		extractDir := filepath.Join(t.TempDir(), "charts", "target", "a3f91c2e")
 
-	req2 := ports.ChartExtractRequest{
-		ChartName:     "sonarqube",
-		ChartVersion:  "4.0.0",
-		ChartLocation: expectedChartLocation,
-		ExtractDir:    expectedExtractDir,
+		err := helmChartProcessor.ExtractHelmChart(context.Background(), ports.HelmDeps{Globber: mockGlobber}, newRequest(extractDir))
+		require.NoError(t, err)
+		content, err := os.ReadFile(filepath.Join(extractDir, "ingress-nginx", "templates", "cm.yaml"))
+		require.NoError(t, err)
+		assert.Equal(t, "kind: ConfigMap\n", string(content))
+	})
+
+	t.Run("skips a pax global header", func(t *testing.T) {
+		withHeader := filepath.Join(t.TempDir(), "ingress-nginx-3.34.0.tgz")
+		writeChartArchive(t, withHeader, []tarEntry{
+			{name: "pax_global_header", typeflag: tar.TypeXGlobalHeader},
+			{name: "ingress-nginx/Chart.yaml", typeflag: tar.TypeReg, body: "name: ingress-nginx\n"},
+		})
+		ctrl := gomock.NewController(t)
+		mockGlobber := mocks.NewMockGlobber(ctrl)
+		mockGlobber.EXPECT().Glob(pattern).Return([]string{withHeader}, nil)
+		extractDir := t.TempDir()
+
+		err := helmChartProcessor.ExtractHelmChart(context.Background(), ports.HelmDeps{Globber: mockGlobber}, newRequest(extractDir))
+		require.NoError(t, err)
+		assert.FileExists(t, filepath.Join(extractDir, "ingress-nginx", "Chart.yaml"))
+	})
+
+	t.Run("more than one matching archive", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockGlobber := mocks.NewMockGlobber(ctrl)
+		mockGlobber.EXPECT().Glob(pattern).Return([]string{archive, archive + ".2"}, nil)
+
+		err := helmChartProcessor.ExtractHelmChart(context.Background(), ports.HelmDeps{Globber: mockGlobber}, newRequest(t.TempDir()))
+		assert.Error(t, err)
+	})
+
+	t.Run("glob failure", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockGlobber := mocks.NewMockGlobber(ctrl)
+		mockGlobber.EXPECT().Glob(pattern).Return(nil, os.ErrPermission)
+
+		err := helmChartProcessor.ExtractHelmChart(context.Background(), ports.HelmDeps{Globber: mockGlobber}, newRequest(t.TempDir()))
+		assert.ErrorIs(t, err, os.ErrPermission)
+	})
+
+	t.Run("no matching archive", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockGlobber := mocks.NewMockGlobber(ctrl)
+		mockGlobber.EXPECT().Glob(pattern).Return(nil, nil)
+
+		err := helmChartProcessor.ExtractHelmChart(context.Background(), ports.HelmDeps{Globber: mockGlobber}, newRequest(t.TempDir()))
+		assert.Error(t, err)
+	})
+
+	t.Run("corrupt archive", func(t *testing.T) {
+		corrupt := filepath.Join(t.TempDir(), "ingress-nginx-3.34.0.tgz")
+		require.NoError(t, os.WriteFile(corrupt, []byte("not a tarball"), 0o644))
+		ctrl := gomock.NewController(t)
+		mockGlobber := mocks.NewMockGlobber(ctrl)
+		mockGlobber.EXPECT().Glob(pattern).Return([]string{corrupt}, nil)
+
+		err := helmChartProcessor.ExtractHelmChart(context.Background(), ports.HelmDeps{Globber: mockGlobber}, newRequest(t.TempDir()))
+		assert.Error(t, err)
+	})
+
+	t.Run("cache path escape is refused before globbing", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		req := newRequest(t.TempDir())
+		req.RepoURL = "https://evil.example/../../registry.example.com"
+
+		err := helmChartProcessor.ExtractHelmChart(context.Background(), ports.HelmDeps{Globber: mocks.NewMockGlobber(ctrl)}, req)
+		assert.ErrorIs(t, err, ErrInvalidChartCachePath)
+	})
+}
+
+func TestContextReader_StopsOnCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	r := contextReader{ctx: ctx, r: strings.NewReader("chart content")}
+
+	buf := make([]byte, 5)
+	n, err := r.Read(buf)
+	require.NoError(t, err)
+	assert.Equal(t, 5, n)
+
+	cancel()
+	_, err = r.Read(buf)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+// TestExtractHelmChart_RejectsUnsafeEntries pins that a chart archive from a registry the change
+// under review chose cannot plant links or write outside the extract directory: helm follows
+// symlinks when it loads a chart, so a link would render runner files into the diff.
+func TestExtractHelmChart_RejectsUnsafeEntries(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "secret.yaml")
+	require.NoError(t, os.WriteFile(outside, []byte("token: hunter2\n"), 0o644))
+
+	tests := []struct {
+		name  string
+		entry tarEntry
+	}{
+		{name: "symlink to a runner file", entry: tarEntry{name: "demo/templates/leak.yaml", typeflag: tar.TypeSymlink, linkname: outside}},
+		{name: "relative symlink", entry: tarEntry{name: "demo/templates/leak.yaml", typeflag: tar.TypeSymlink, linkname: "../../../secret.yaml"}},
+		{name: "hardlink", entry: tarEntry{name: "demo/templates/leak.yaml", typeflag: tar.TypeLink, linkname: outside}},
+		{name: "parent traversal", entry: tarEntry{name: "../escape.yaml", typeflag: tar.TypeReg, body: "x"}},
+		{name: "absolute path", entry: tarEntry{name: "/tmp/escape.yaml", typeflag: tar.TypeReg, body: "x"}},
+		{name: "fifo", entry: tarEntry{name: "demo/templates/pipe.yaml", typeflag: tar.TypeFifo}},
 	}
-	err = helmChartProcessor.ExtractHelmChart(context.Background(), deps, req2)
-	assert.Error(t, err, "expected error, got %v", err)
 
-	// Test case 3: Chart file found, but failed to extract
-	mockGlobber.EXPECT().Glob(fmt.Sprintf("%s/%s-%s*.tgz", expectedChartLocation, "ingress-nginx", "3.34.0")).Return([]string{expectedChartFileName}, nil)
-	mockCmdRunner.EXPECT().Run(gomock.Any(), "tar",
-		"xf",
-		expectedChartFileName,
-		"-C",
-		expectedExtractDir,
-	).Return("", "some unexpected error", errors.New("some unexpected error"))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cacheDir := t.TempDir()
+			archive := filepath.Join(cacheDir, "registry.example.com", "demo-1.0.0.tgz")
+			writeChartArchive(t, archive, []tarEntry{
+				{name: "demo/Chart.yaml", typeflag: tar.TypeReg, body: "name: demo\n"},
+				tt.entry,
+			})
+			ctrl := gomock.NewController(t)
+			mockGlobber := mocks.NewMockGlobber(ctrl)
+			mockGlobber.EXPECT().Glob(gomock.Any()).Return([]string{archive}, nil)
+			extractDir := filepath.Join(t.TempDir(), "extract")
 
-	err = helmChartProcessor.ExtractHelmChart(context.Background(), deps, req)
-	assert.Error(t, err, "expected error, got %v", err)
+			err := RealHelmChartProcessor{Log: logger.New("test")}.ExtractHelmChart(context.Background(),
+				ports.HelmDeps{Globber: mockGlobber},
+				ports.ChartExtractRequest{CacheDir: cacheDir, RepoURL: "registry.example.com", ChartName: "demo", ChartVersion: "1.0.0", ExtractDir: extractDir})
+			require.ErrorIs(t, err, ErrUnsafeChartArchive)
 
-	// Test case 4: zglob failed to run
-	mockGlobber.EXPECT().Glob(fmt.Sprintf("%s/%s-%s*.tgz", expectedChartLocation, "ingress-nginx", "3.34.0")).Return([]string{}, os.ErrPermission)
-
-	err = helmChartProcessor.ExtractHelmChart(context.Background(), deps, req)
-	assert.Error(t, err, "expected error, got %v", err)
-
-	// Test case 5: Failed to find chart file
-	mockGlobber.EXPECT().Glob(fmt.Sprintf("%s/%s-%s*.tgz", expectedChartLocation, "ingress-nginx", "3.34.0")).Return([]string{}, nil)
-
-	err = helmChartProcessor.ExtractHelmChart(context.Background(), deps, req)
-	assert.Error(t, err, "expected error, got %v", err)
+			_, statErr := os.Lstat(filepath.Join(extractDir, "demo", "templates", "leak.yaml"))
+			assert.True(t, os.IsNotExist(statErr), "unsafe entry must not be written")
+			_, statErr = os.Lstat(filepath.Join(filepath.Dir(extractDir), "escape.yaml"))
+			assert.True(t, os.IsNotExist(statErr), "nothing may be written outside the extract directory")
+		})
+	}
 }
 
 func TestRenderAppSource(t *testing.T) {
@@ -865,6 +984,43 @@ func TestRenderAppSource_ValueFileValidation(t *testing.T) {
 		}
 		err := helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req)
 		assert.ErrorIs(t, err, ErrInvalidValueFile, "expected rejection of valueFile %q", vf)
+	}
+}
+
+func TestRenderAppSource_ReleaseNameValidation(t *testing.T) {
+	// The release name comes from the Application under review and sits in helm's argv, so a
+	// name shaped like a flag would be parsed as one (e.g. --post-renderer runs a program).
+	helmChartProcessor := RealHelmChartProcessor{Log: logger.New("test")}
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockCmdRunner := mocks.NewMockCmdRunner(ctrl) // no Run() expected: helm must never start
+
+	tmpDir := t.TempDir()
+	invalid := []string{
+		"--post-renderer=sh",
+		"-n",
+		"--namespace=injected",
+		"Bad_Name",
+		"",
+		strings.Repeat("a", 54),
+	}
+	for _, name := range invalid {
+		req := ports.ChartRenderRequest{
+			ReleaseName: name,
+			ChartName:   "my-chart",
+			TmpDir:      tmpDir,
+			TargetType:  "src",
+			ChartDir:    filepath.Join(tmpDir, "charts", "src", "my-chart"),
+			OutputDir:   filepath.Join(tmpDir, "templates", "src"),
+		}
+		err := helmChartProcessor.RenderAppSource(context.Background(), mockCmdRunner, req)
+		assert.ErrorIs(t, err, ErrInvalidReleaseName, "expected rejection of release name %q", name)
+	}
+}
+
+func TestValidateReleaseName_AcceptsHelmNames(t *testing.T) {
+	for _, name := range []string{"my-release", "a", "my.release", "r1", strings.Repeat("a", 53)} {
+		assert.NoError(t, validateReleaseName(name), "release name %q", name)
 	}
 }
 
@@ -1410,6 +1566,10 @@ func TestDownloadHelmChart_RejectsCachePathEscape(t *testing.T) {
 	}{
 		{name: "chart traversal", repoURL: "registry.example.com", chartName: "../../outside/my-chart"},
 		{name: "repoURL traversal", repoURL: "../../outside", chartName: "my-chart"},
+		// These stay inside the cache, but cleaning would land them in another repository's slot.
+		{name: "repoURL dot-dot into another slot", repoURL: "https://evil.example/../../charts.example.com", chartName: "redis"},
+		{name: "repoURL dot segment", repoURL: "registry.example.com/./team", chartName: "redis"},
+		{name: "chart dot-dot inside cache", repoURL: "registry.example.com", chartName: "team/../redis"},
 	}
 
 	for _, tt := range tests {

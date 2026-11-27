@@ -277,7 +277,7 @@ func TestMultiSourceSameChartNameRendersFromItsOwnDirectory(t *testing.T) {
 
 	require.Len(t, processor.renderRequests, 2)
 	for i, ext := range processor.extractRequests {
-		assert.Equal(t, filepath.Join(ext.ExtractDir, ext.ChartName), processor.renderRequests[i].ChartDir,
+		assert.Equal(t, filepath.Join(ext.ExtractDir, filepath.Base(ext.ChartName)), processor.renderRequests[i].ChartDir,
 			"helm must be pointed at the directory tar unpacked the chart into")
 	}
 	assert.NotEqual(t, processor.renderRequests[0].ChartDir, processor.renderRequests[1].ChartDir,
